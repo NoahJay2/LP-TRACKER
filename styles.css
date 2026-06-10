@@ -1086,7 +1086,17 @@ a.invoice-payment-value { color: #1d4ed8; }
   letter-spacing: .04em;
   color: var(--muted);
 }
+.cal-weekdays .cal-weekdays-spacer { grid-column: span 7; }
 .cal-weekdays span:last-child { color: var(--primary); }
+.cal-cell-dow {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  margin-left: 3px;
+}
+.cal-cell-active .cal-cell-dow { color: var(--muted-2); }
 .cal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr) 1.1fr;
