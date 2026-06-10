@@ -1074,7 +1074,7 @@ a.invoice-payment-value { color: #1d4ed8; }
 .cal-sum-net b { color: var(--success); }
 .cal-weekdays {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, 1fr) 1.1fr;
   gap: 6px;
   margin-bottom: 6px;
 }
@@ -1086,11 +1086,39 @@ a.invoice-payment-value { color: #1d4ed8; }
   letter-spacing: .04em;
   color: var(--muted);
 }
+.cal-weekdays span:last-child { color: var(--primary); }
 .cal-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, 1fr) 1.1fr;
   gap: 6px;
 }
+.cal-week-total {
+  min-height: 80px;
+  border: 1px dashed rgba(129, 140, 248, 0.28);
+  border-radius: 10px;
+  background: rgba(129, 140, 248, 0.05);
+  padding: 7px 7px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  text-align: left;
+}
+.cal-week-total-active {
+  border-style: solid;
+  background: linear-gradient(160deg, var(--primary-soft), rgba(129, 140, 248, 0.06) 75%);
+}
+.cal-week-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--muted);
+}
+.cal-week-total-active .cal-week-label { color: var(--primary); }
+.cal-week-gross { font-size: 13.5px; font-weight: 700; color: var(--primary); font-variant-numeric: tabular-nums; margin-top: auto; letter-spacing: -0.01em; }
+.cal-week-net { font-size: 11.5px; font-weight: 600; color: var(--success); font-variant-numeric: tabular-nums; }
+.cal-week-qty { font-size: 10px; color: var(--muted); }
+.cal-week-empty { font-size: 13px; color: var(--muted); margin-top: auto; }
 .cal-cell {
   min-height: 80px;
   border: 1px solid transparent;
@@ -2715,15 +2743,20 @@ tr.row-flag-pending:hover > td,
   .modal-body textarea { font-size: 16px; padding: 10px 12px; } /* prevent iOS zoom */
   .modal-body .row-2 { grid-template-columns: 1fr; gap: 10px; }
 
-  /* Calendar: tighten for 7 narrow columns on phones */
+  /* Calendar: tighten for 7 narrow columns + 1 week-total column on phones */
   .cal-card { padding: 14px 10px 16px; }
-  .cal-grid, .cal-weekdays { gap: 3px; }
+  .cal-grid, .cal-weekdays { gap: 3px; grid-template-columns: repeat(7, 1fr) 1.15fr; }
   .cal-cell { min-height: 62px; padding: 4px 3px 5px; border-radius: 7px; gap: 0; }
   .cal-cell-day { font-size: 11px; }
   .cal-cell-gross { font-size: 11px; }
   .cal-cell-net { font-size: 9.5px; }
   .cal-cell-qty { display: none; } /* too tight to show item count on phones */
   .cal-weekdays span { font-size: 9px; }
+  .cal-week-total { min-height: 62px; padding: 4px 3px 5px; border-radius: 7px; gap: 0; }
+  .cal-week-label { font-size: 9px; letter-spacing: .03em; }
+  .cal-week-gross { font-size: 11px; }
+  .cal-week-net { font-size: 9.5px; }
+  .cal-week-qty { display: none; }
   .cal-summary { gap: 6px; }
   .cal-sum-stat { padding: 8px 6px; }
   .cal-sum-stat b { font-size: 15px; }

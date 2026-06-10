@@ -4568,8 +4568,29 @@ function renderCalendar(mk, dayBuckets) {
   const daysInMonth = new Date(yr, mo, 0).getDate();
   const todayKey = todayISO();
 
+  // Track per-week totals; flush an 8th "Week" cell after each row of 7 days,
+  // padding short trailing weeks so the column stays aligned.
   let grid = '';
-  for (let i = 0; i < firstDow; i++) grid += `<div class="cal-cell cal-cell-empty"></div>`;
+  let weekIdx = 0;
+  let wg = 0, wn = 0, wq = 0;
+  const flushWeek = () => {
+    while (weekIdx < 7) { grid += `<div class="cal-cell cal-cell-empty"></div>`; weekIdx++; }
+    const had = wg || wn || wq;
+    if (had) {
+      grid += `
+        <div class="cal-week-total cal-week-total-active">
+          <span class="cal-week-label">Week</span>
+          <span class="cal-week-gross">${fmt$(round2(wg))}</span>
+          <span class="cal-week-net">${fmt$(round2(wn))}</span>
+          <span class="cal-week-qty">${fmtN(wq)} item${wq === 1 ? '' : 's'}</span>
+        </div>`;
+    } else {
+      grid += `<div class="cal-week-total"><span class="cal-week-label">Week</span><span class="cal-week-empty">—</span></div>`;
+    }
+    weekIdx = 0; wg = 0; wn = 0; wq = 0;
+  };
+
+  for (let i = 0; i < firstDow; i++) { grid += `<div class="cal-cell cal-cell-empty"></div>`; weekIdx++; }
   for (let d = 1; d <= daysInMonth; d++) {
     const dk = `${mk}-${String(d).padStart(2, '0')}`;
     const b = dayBuckets[dk];
@@ -4578,6 +4599,7 @@ function renderCalendar(mk, dayBuckets) {
     if (has) cls.push('cal-cell-active');
     if (dk === todayKey) cls.push('cal-cell-today');
     if (has) {
+      wg += b.gross; wn += b.net; wq += b.qty;
       grid += `
         <button type="button" class="${cls.join(' ')}" data-cal-day="${dk}">
           <span class="cal-cell-day">${d}</span>
@@ -4588,10 +4610,14 @@ function renderCalendar(mk, dayBuckets) {
     } else {
       grid += `<div class="${cls.join(' ')}"><span class="cal-cell-day">${d}</span></div>`;
     }
+    weekIdx++;
+    if (weekIdx === 7) flushWeek();
   }
+  if (weekIdx > 0) flushWeek();
+
   content.innerHTML = `
     <div class="cal-weekdays" aria-hidden="true">
-      <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+      <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Week</span>
     </div>
     <div class="cal-grid">${grid}</div>
   `;
