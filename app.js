@@ -980,6 +980,11 @@ function renderRecentOrderGroup(g, readonly = false) {
     : `<span class="pill mixed" data-expand-group="${groupId}" title="Mixed — expand to see each">Mixed</span>`;
 
   const totalProfit = g.orders.reduce((s, o) => s + orderProfit(o), 0);
+  // 9-col layout when interactive (last cell is the edit action); 8-col in
+  // readonly mode (used by Recently Completed). Group rows have no single
+  // editable order — users expand to edit a specific child.
+  const groupEditCell = readonly ? '' : `<td></td>`;
+  const childColspan = readonly ? 8 : 9;
   let html = `
     <tr class="${aggCls}">
       <td>${fmtDateShort(g.date)}</td>
@@ -990,6 +995,7 @@ function renderRecentOrderGroup(g, readonly = false) {
       <td class="num">${fmt$(totalProfit)}</td>
       <td>${paidCell}</td>
       <td>${deliveredCell}</td>
+      ${groupEditCell}
     </tr>`;
   html += g.orders.map(o => {
     const flag = orderStatusFlag(o);
@@ -997,10 +1003,11 @@ function renderRecentOrderGroup(g, readonly = false) {
     if (flag) cls.push(`row-flag-${flag}`);
     const childToggles = readonly ? '' : `
           <span class="cs-toggle"><span class="cs-tlabel">Paid</span><label class="switch"><input type="checkbox" data-toggle-paid="${o.id}" ${o.paid ? 'checked' : ''} /><span class="slider"></span></label>${partialPaidPill(o)}</span>
-          <span class="cs-toggle"><span class="cs-tlabel">Delivered</span><label class="switch"><input type="checkbox" data-toggle-delivered="${o.id}" ${o.delivered ? 'checked' : ''} /><span class="slider"></span></label></span>`;
+          <span class="cs-toggle"><span class="cs-tlabel">Delivered</span><label class="switch"><input type="checkbox" data-toggle-delivered="${o.id}" ${o.delivered ? 'checked' : ''} /><span class="slider"></span></label></span>
+          <span class="cs-actions"><button class="icon-btn" data-edit-order="${o.id}" title="Edit">✎</button></span>`;
     return `
     <tr class="${cls.join(' ')}" data-parent="${groupId}" hidden>
-      <td colspan="8" class="child-cell">
+      <td colspan="${childColspan}" class="child-cell">
         <div class="child-strip">
           <span class="cs-label">↳${statusFlagBadge(flag)}</span>
           <span class="cs-items">${itemsCellInline(orderItems(o))}</span>
@@ -1028,6 +1035,8 @@ function renderRecentOrderRow(o, readonly = false) {
   }
   const paidCellTd = readonly ? '<td></td>' : `<td><div class="paid-cell"><label class="switch"><input type="checkbox" data-toggle-paid="${o.id}" ${o.paid ? 'checked' : ''} /><span class="slider"></span></label>${partialPaidPill(o)}</div></td>`;
   const deliveredCellTd = readonly ? '<td></td>' : `<td><label class="switch"><input type="checkbox" data-toggle-delivered="${o.id}" ${o.delivered ? 'checked' : ''} /><span class="slider"></span></label></td>`;
+  const editCellTd = readonly ? '' : `<td style="white-space:nowrap;"><button class="icon-btn" data-edit-order="${o.id}" title="Edit">✎</button></td>`;
+  const childColspan = readonly ? 8 : 9;
   if (items.length <= 1) {
     return `<tr class="${flagCls.trim()}">
       <td>${fmtDateShort(o.date)}</td>
@@ -1038,6 +1047,7 @@ function renderRecentOrderRow(o, readonly = false) {
       <td class="num">${fmt$(orderProfit(o))}</td>
       ${paidCellTd}
       ${deliveredCellTd}
+      ${editCellTd}
     </tr>`;
   }
   // Multi-item: parent row with chevron, plus child rows for each line item.
@@ -1052,10 +1062,11 @@ function renderRecentOrderRow(o, readonly = false) {
       <td class="num">${fmt$(orderProfit(o))}</td>
       ${paidCellTd}
       ${deliveredCellTd}
+      ${editCellTd}
     </tr>`;
   html += items.map(it => `
     <tr class="child-row" data-parent="${groupId}" hidden>
-      <td colspan="8" class="child-cell">
+      <td colspan="${childColspan}" class="child-cell">
         <div class="child-strip">
           <span class="cs-label">↳</span>
           <span class="cs-items">${itemPill(it)}</span>

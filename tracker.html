@@ -19,7 +19,7 @@
      fresh JS/CSS instead of serving the cached copy. iOS standalone mode
      caches scripts indefinitely once installed; a query-string change is the
      only thing that reliably busts it without removing/re-adding the bookmark. -->
-<link rel="stylesheet" href="styles.css?v=20260610-5" />
+<link rel="stylesheet" href="styles.css?v=20260610-6" />
 </head>
 <body class="app-booting">
 <div id="loginOverlay" class="login-overlay">
@@ -116,7 +116,7 @@
         <div class="card span-2">
           <div class="card-head"><h3>Pending Orders</h3><span class="muted" id="pendingOrdersCount"></span></div>
           <table class="table compact">
-            <thead><tr><th>Date</th><th>Customer</th><th>Items</th><th class="num">Qty</th><th class="num">Total</th><th class="num">Profit</th><th>Paid</th><th>Delivered</th></tr></thead>
+            <thead><tr><th>Date</th><th>Customer</th><th>Items</th><th class="num">Qty</th><th class="num">Total</th><th class="num">Profit</th><th>Paid</th><th>Delivered</th><th></th></tr></thead>
             <tbody id="pendingOrdersBody"></tbody>
           </table>
         </div>
@@ -460,8 +460,8 @@
 <div id="toast" class="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="config.js?v=20260610-5"></script>
-<script src="seed.js?v=20260610-5"></script>
-<script src="app.js?v=20260610-5"></script>
+<script src="config.js?v=20260610-6"></script>
+<script src="seed.js?v=20260610-6"></script>
+<script src="app.js?v=20260610-6"></script>
 </body>
 </html>
