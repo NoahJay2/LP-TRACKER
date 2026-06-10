@@ -1,0 +1,1234 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0d14" />
+  <title>Lumen Peptides — Research-Grade Peptides</title>
+  <meta name="description" content="Lumen Peptides — premium research-grade peptides for performance, recovery, longevity, and wellness." />
+  <link rel="icon" type="image/png" href="public/lplogo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *,
+    *::before,
+    *::after { box-sizing: border-box; }
+    :root {
+      --bg-0: #05070c;
+      --bg-1: #0a0d14;
+      --bg-2: #11151f;
+      --bg-3: #161b27;
+      --line: rgba(180, 200, 230, 0.08);
+      --line-strong: rgba(180, 200, 230, 0.16);
+      --text: #e9eef7;
+      --muted: #8a94a6;
+      --muted-2: #5d6678;
+      --blue: #2b86ff;
+      --blue-bright: #4a9bff;
+      --blue-deep: #1058d6;
+      --chrome-1: #e6ecf5;
+      --chrome-2: #aab8cc;
+      --chrome-3: #6c7a91;
+      --glow: 0 0 60px rgba(43, 134, 255, 0.45);
+    }
+    html { scroll-behavior: smooth; }
+    html, body {
+      margin: 0;
+      background: var(--bg-0);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      overflow-x: hidden;
+    }
+    a { color: inherit; text-decoration: none; }
+    img { max-width: 100%; display: block; }
+    .container {
+      width: 100%;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* ========= NAV ========= */
+    .nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 50;
+      backdrop-filter: blur(14px) saturate(140%);
+      -webkit-backdrop-filter: blur(14px) saturate(140%);
+      background: rgba(8, 11, 18, 0.62);
+      border-bottom: 1px solid var(--line);
+      transition: background 200ms ease, border-color 200ms ease;
+    }
+    .nav-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 68px;
+    }
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      font-size: 15px;
+    }
+    .nav-brand img {
+      width: 36px;
+      height: 36px;
+      object-fit: contain;
+      filter: drop-shadow(0 0 10px rgba(43, 134, 255, 0.55));
+    }
+    .nav-brand span:last-child { color: var(--chrome-1); }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 32px;
+    }
+    .nav-links a {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--muted);
+      transition: color 150ms ease;
+    }
+    .nav-links a:hover { color: var(--text); }
+    .nav-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 18px;
+      border-radius: 999px;
+      background: linear-gradient(135deg, var(--blue) 0%, var(--blue-deep) 100%);
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      box-shadow: 0 4px 22px rgba(43, 134, 255, 0.35);
+      transition: transform 150ms ease, box-shadow 150ms ease;
+    }
+    .nav-cta:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 28px rgba(43, 134, 255, 0.55);
+    }
+    @media (max-width: 720px) {
+      .nav-links a:not(.nav-cta) { display: none; }
+    }
+
+    /* ========= HERO ========= */
+    .hero {
+      position: relative;
+      min-height: 100vh;
+      padding: 140px 0 100px;
+      display: flex;
+      align-items: center;
+      overflow: hidden;
+      background:
+        radial-gradient(900px 600px at 80% 10%, rgba(43, 134, 255, 0.18), transparent 60%),
+        radial-gradient(700px 500px at 10% 70%, rgba(43, 134, 255, 0.10), transparent 60%),
+        linear-gradient(180deg, #060810 0%, #0a0d14 100%);
+    }
+    .hero::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(180, 200, 230, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(180, 200, 230, 0.04) 1px, transparent 1px);
+      background-size: 60px 60px;
+      mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 70%);
+      -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 70%);
+      pointer-events: none;
+    }
+    .hero-grid {
+      position: relative;
+      display: grid;
+      grid-template-columns: 1.1fr 1fr;
+      gap: 64px;
+      align-items: center;
+      z-index: 1;
+    }
+    @media (max-width: 920px) {
+      .hero-grid { grid-template-columns: 1fr; gap: 48px; text-align: center; }
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border: 1px solid var(--line-strong);
+      border-radius: 999px;
+      background: rgba(43, 134, 255, 0.06);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--blue-bright);
+      margin-bottom: 28px;
+    }
+    .eyebrow .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--blue-bright);
+      box-shadow: 0 0 10px var(--blue-bright);
+      animation: pulse 2.4s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(1.3); }
+    }
+
+    .hero h1 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: clamp(44px, 6.6vw, 86px);
+      line-height: 0.98;
+      letter-spacing: -0.03em;
+      font-weight: 700;
+      margin: 0 0 24px;
+      color: var(--chrome-1);
+    }
+    .hero h1 .accent {
+      background: linear-gradient(180deg, #6fb1ff 0%, #2b86ff 50%, #0e54d4 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 4px 26px rgba(43, 134, 255, 0.25));
+    }
+    .hero p.lede {
+      font-size: clamp(16px, 1.3vw, 19px);
+      line-height: 1.6;
+      color: var(--muted);
+      max-width: 560px;
+      margin: 0 0 36px;
+    }
+    @media (max-width: 920px) { .hero p.lede { margin-left: auto; margin-right: auto; } }
+
+    .hero-cta {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    @media (max-width: 920px) { .hero-cta { justify-content: center; } }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 16px 28px;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      cursor: pointer;
+      border: none;
+      transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease;
+      font-family: inherit;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--blue-bright) 0%, var(--blue) 50%, var(--blue-deep) 100%);
+      color: #fff;
+      box-shadow: 0 8px 32px rgba(43, 134, 255, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 40px rgba(43, 134, 255, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    }
+    .btn-ghost {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--line-strong);
+      color: var(--text);
+    }
+    .btn-ghost:hover {
+      background: rgba(255, 255, 255, 0.08);
+      transform: translateY(-2px);
+    }
+    .btn .arrow { transition: transform 200ms ease; }
+    .btn:hover .arrow { transform: translateX(4px); }
+
+    /* Hero visual side */
+    .hero-visual {
+      position: relative;
+      aspect-ratio: 1 / 1;
+      max-width: 520px;
+      width: 100%;
+      margin-left: auto;
+    }
+    @media (max-width: 920px) {
+      .hero-visual { margin: 0 auto; max-width: 360px; }
+    }
+    .hero-orb {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle at 30% 30%, rgba(80, 160, 255, 0.6), transparent 50%),
+        radial-gradient(circle at 70% 70%, rgba(16, 88, 214, 0.5), transparent 55%),
+        radial-gradient(circle at 50% 50%, rgba(43, 134, 255, 0.3), rgba(8, 14, 30, 0.95) 75%);
+      filter: blur(8px);
+      animation: orbFloat 8s ease-in-out infinite;
+    }
+    .hero-ring {
+      position: absolute;
+      inset: 8%;
+      border: 1px solid rgba(180, 200, 230, 0.16);
+      border-radius: 50%;
+      animation: ringSpin 30s linear infinite;
+    }
+    .hero-ring::before,
+    .hero-ring::after {
+      content: '';
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--blue-bright);
+      box-shadow: 0 0 16px var(--blue-bright);
+    }
+    .hero-ring::before { top: -4px; left: 50%; transform: translateX(-50%); }
+    .hero-ring::after  { bottom: -4px; left: 30%; }
+    .hero-ring-2 {
+      position: absolute;
+      inset: 18%;
+      border: 1px solid rgba(180, 200, 230, 0.10);
+      border-radius: 50%;
+      animation: ringSpin 22s linear infinite reverse;
+    }
+    .hero-logo {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      filter: drop-shadow(0 0 50px rgba(43, 134, 255, 0.55));
+      animation: logoFloat 6s ease-in-out infinite;
+    }
+    .hero-logo img {
+      width: 70%;
+      height: 70%;
+      object-fit: contain;
+    }
+    @keyframes orbFloat {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.04); }
+    }
+    @keyframes logoFloat {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-12px); }
+    }
+    @keyframes ringSpin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* ========= MARQUEE / TRUST STRIP ========= */
+    .strip {
+      position: relative;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(15, 20, 32, 0.7), rgba(8, 11, 18, 0.7));
+      padding: 18px 0;
+      overflow: hidden;
+    }
+    .strip-track {
+      display: flex;
+      gap: 64px;
+      animation: stripScroll 36s linear infinite;
+      white-space: nowrap;
+    }
+    .strip-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 13px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .strip-item .sep {
+      width: 4px; height: 4px; border-radius: 50%;
+      background: var(--blue-bright);
+    }
+    @keyframes stripScroll {
+      to { transform: translateX(-50%); }
+    }
+
+    /* ========= SECTION SHARED ========= */
+    .section { padding: 120px 0; position: relative; }
+    .section-head { text-align: center; margin-bottom: 64px; }
+    .section-tag {
+      display: inline-block;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 12px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--blue-bright);
+      margin-bottom: 14px;
+    }
+    .section-head h2 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: clamp(34px, 4.4vw, 56px);
+      line-height: 1.05;
+      letter-spacing: -0.02em;
+      font-weight: 700;
+      margin: 0 0 16px;
+      color: var(--chrome-1);
+    }
+    .section-head p {
+      max-width: 640px;
+      margin: 0 auto;
+      color: var(--muted);
+      font-size: 17px;
+      line-height: 1.6;
+    }
+
+    /* ========= CATEGORIES ========= */
+    #categories {
+      background:
+        radial-gradient(1000px 700px at 50% 0%, rgba(43, 134, 255, 0.07), transparent 70%),
+        var(--bg-0);
+    }
+    .cat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 18px;
+    }
+    .cat-card {
+      position: relative;
+      padding: 28px 24px;
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(22, 28, 40, 0.7), rgba(14, 18, 28, 0.7));
+      border: 1px solid var(--line);
+      transition: transform 200ms ease, border-color 200ms ease, background 200ms ease;
+      overflow: hidden;
+    }
+    .cat-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 18px;
+      padding: 1px;
+      background: linear-gradient(135deg, rgba(43, 134, 255, 0.4), transparent 60%);
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor;
+              mask-composite: exclude;
+      opacity: 0;
+      transition: opacity 200ms ease;
+      pointer-events: none;
+    }
+    .cat-card:hover { transform: translateY(-4px); border-color: var(--line-strong); }
+    .cat-card:hover::before { opacity: 1; }
+    .cat-icon {
+      width: 44px; height: 44px;
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, rgba(43, 134, 255, 0.22), rgba(16, 88, 214, 0.10));
+      border: 1px solid rgba(43, 134, 255, 0.25);
+      margin-bottom: 18px;
+      color: var(--blue-bright);
+    }
+    .cat-icon svg { width: 22px; height: 22px; }
+    .cat-card h3 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 19px;
+      font-weight: 700;
+      margin: 0 0 8px;
+      color: var(--chrome-1);
+    }
+    .cat-card p {
+      margin: 0 0 14px;
+      font-size: 14px;
+      line-height: 1.55;
+      color: var(--muted);
+    }
+    .cat-card ul {
+      margin: 0; padding: 0; list-style: none;
+      display: flex; flex-wrap: wrap; gap: 6px;
+    }
+    .cat-card li {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--chrome-2);
+      padding: 4px 10px;
+      border: 1px solid var(--line-strong);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    /* ========= CATALOG (peptides grid) ========= */
+    #catalog { background: var(--bg-1); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .pep-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+    }
+    .pep-card {
+      position: relative;
+      padding: 26px 22px;
+      border-radius: 16px;
+      background: linear-gradient(180deg, rgba(20, 26, 38, 0.85), rgba(11, 15, 24, 0.85));
+      border: 1px solid var(--line);
+      transition: transform 200ms ease, border-color 200ms ease;
+      overflow: hidden;
+    }
+    .pep-card::after {
+      content: '';
+      position: absolute;
+      top: -40%;
+      right: -40%;
+      width: 80%;
+      height: 80%;
+      background: radial-gradient(circle, rgba(43, 134, 255, 0.18), transparent 60%);
+      opacity: 0;
+      transition: opacity 250ms ease;
+      pointer-events: none;
+    }
+    .pep-card:hover { transform: translateY(-4px); border-color: rgba(43, 134, 255, 0.4); }
+    .pep-card:hover::after { opacity: 1; }
+    .pep-head {
+      display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+      margin-bottom: 14px;
+    }
+    .pep-name {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--chrome-1);
+      margin: 0;
+      line-height: 1.25;
+    }
+    .pep-tag {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--blue-bright);
+      padding: 4px 9px;
+      border-radius: 6px;
+      background: rgba(43, 134, 255, 0.10);
+      border: 1px solid rgba(43, 134, 255, 0.25);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .pep-desc {
+      font-size: 13.5px;
+      line-height: 1.55;
+      color: var(--muted);
+      margin: 0 0 18px;
+    }
+    .pep-meta {
+      display: flex; align-items: center; justify-content: space-between;
+      padding-top: 14px;
+      border-top: 1px solid var(--line);
+      font-size: 12px;
+      color: var(--muted-2);
+      letter-spacing: 0.04em;
+    }
+    .pep-meta .dot { color: var(--blue-bright); }
+
+    /* ========= STATS ========= */
+    #stats {
+      padding: 80px 0;
+      background:
+        linear-gradient(180deg, var(--bg-1) 0%, var(--bg-0) 100%);
+      border-bottom: 1px solid var(--line);
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+    @media (max-width: 720px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
+    .stat {
+      text-align: center;
+      padding: 28px 20px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.015);
+    }
+    .stat-num {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: clamp(34px, 4vw, 48px);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--chrome-1);
+      line-height: 1;
+      margin-bottom: 8px;
+    }
+    .stat-num .blue {
+      background: linear-gradient(180deg, #6fb1ff 0%, #2b86ff 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .stat-label {
+      font-size: 12px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    /* ========= WHY ========= */
+    #why {
+      background:
+        radial-gradient(800px 500px at 100% 50%, rgba(43, 134, 255, 0.07), transparent 70%),
+        var(--bg-0);
+    }
+    .why-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+    }
+    @media (max-width: 880px) { .why-grid { grid-template-columns: 1fr; } }
+    .why-item {
+      padding: 32px 28px;
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(22, 28, 40, 0.55), rgba(14, 18, 28, 0.55));
+      border: 1px solid var(--line);
+      position: relative;
+    }
+    .why-item .num {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--blue-bright);
+      letter-spacing: 0.16em;
+      margin-bottom: 18px;
+    }
+    .why-item h3 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 22px;
+      margin: 0 0 12px;
+      color: var(--chrome-1);
+    }
+    .why-item p {
+      margin: 0;
+      font-size: 14.5px;
+      line-height: 1.65;
+      color: var(--muted);
+    }
+
+    /* ========= FAQ ========= */
+    #faq { border-top: 1px solid var(--line); background: var(--bg-1); }
+    .faq-list {
+      max-width: 760px;
+      margin: 0 auto;
+    }
+    details.faq-item {
+      border-bottom: 1px solid var(--line);
+      padding: 22px 4px;
+    }
+    details.faq-item[open] summary { color: var(--chrome-1); }
+    details.faq-item summary {
+      list-style: none;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--chrome-2);
+      transition: color 150ms ease;
+    }
+    details.faq-item summary::-webkit-details-marker { display: none; }
+    details.faq-item summary::after {
+      content: '+';
+      width: 28px; height: 28px;
+      border: 1px solid var(--line-strong);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; font-weight: 300;
+      color: var(--blue-bright);
+      transition: transform 200ms ease;
+      flex-shrink: 0;
+    }
+    details.faq-item[open] summary::after { content: '−'; transform: rotate(180deg); }
+    details.faq-item p {
+      margin: 14px 0 0;
+      color: var(--muted);
+      font-size: 14.5px;
+      line-height: 1.7;
+      max-width: 600px;
+    }
+
+    /* ========= CTA BLOCK ========= */
+    #cta {
+      padding: 100px 0;
+      background:
+        radial-gradient(700px 400px at 50% 50%, rgba(43, 134, 255, 0.18), transparent 70%),
+        linear-gradient(180deg, var(--bg-0), var(--bg-1));
+      text-align: center;
+    }
+    #cta .panel {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 56px 32px;
+      border-radius: 22px;
+      border: 1px solid var(--line-strong);
+      background: linear-gradient(180deg, rgba(22, 28, 40, 0.85), rgba(11, 15, 24, 0.85));
+      backdrop-filter: blur(8px);
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+    #cta h2 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: clamp(30px, 4vw, 44px);
+      letter-spacing: -0.02em;
+      font-weight: 700;
+      margin: 0 0 14px;
+      color: var(--chrome-1);
+    }
+    #cta p {
+      color: var(--muted);
+      max-width: 520px;
+      margin: 0 auto 32px;
+      font-size: 16px;
+      line-height: 1.6;
+    }
+
+    /* ========= FOOTER ========= */
+    footer {
+      border-top: 1px solid var(--line);
+      background: var(--bg-0);
+      padding: 56px 0 28px;
+    }
+    .foot-top {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr 1fr 1fr;
+      gap: 40px;
+      margin-bottom: 40px;
+    }
+    @media (max-width: 760px) { .foot-top { grid-template-columns: 1fr 1fr; gap: 28px; } }
+    .foot-brand {
+      display: flex; align-items: center; gap: 12px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      font-size: 15px;
+      margin-bottom: 14px;
+    }
+    .foot-brand img { width: 36px; height: 36px; filter: drop-shadow(0 0 10px rgba(43, 134, 255, 0.5)); }
+    .foot-tag {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+      max-width: 320px;
+    }
+    .foot-col h4 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 12px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--chrome-2);
+      margin: 0 0 16px;
+    }
+    .foot-col a {
+      display: block;
+      color: var(--muted);
+      font-size: 14px;
+      margin-bottom: 10px;
+      transition: color 150ms ease;
+    }
+    .foot-col a:hover { color: var(--text); }
+    .foot-bottom {
+      padding-top: 28px;
+      border-top: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 24px;
+      font-size: 12px;
+      color: var(--muted-2);
+      flex-wrap: wrap;
+    }
+    .disclaimer {
+      max-width: 100%;
+      padding: 18px 22px;
+      margin-top: 24px;
+      border-radius: 12px;
+      border: 1px solid rgba(252, 211, 77, 0.18);
+      background: rgba(252, 211, 77, 0.04);
+      font-size: 12.5px;
+      color: #d2b878;
+      line-height: 1.6;
+    }
+    .disclaimer b { color: #f3d795; }
+
+    /* ========= Reveal-on-scroll ========= */
+    .reveal {
+      opacity: 0;
+      transform: translateY(28px);
+      transition: opacity 700ms ease, transform 700ms ease;
+    }
+    .reveal.in {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .reveal { opacity: 1; transform: none; transition: none; }
+      .hero-orb, .hero-logo, .hero-ring, .hero-ring-2, .strip-track, .eyebrow .dot { animation: none !important; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="#" class="nav-brand">
+        <img src="public/lplogo.png" alt="Lumen Peptides" />
+        <span>Lumen</span><span>Peptides</span>
+      </a>
+      <div class="nav-links">
+        <a href="#categories">Categories</a>
+        <a href="#catalog">Catalog</a>
+        <a href="#why">Why Lumen</a>
+        <a href="#faq">FAQ</a>
+        <a href="#cta" class="nav-cta">Inquire <span>→</span></a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="container hero-grid">
+      <div class="reveal">
+        <span class="eyebrow"><span class="dot"></span> Research-grade peptides</span>
+        <h1>Precision peptides<br />for performance &<br /><span class="accent">longevity.</span></h1>
+        <p class="lede">
+          A curated catalog of premium-quality peptides — sourced for purity, trusted by researchers,
+          delivered with discretion. Built for those who take recovery, performance, and wellness seriously.
+        </p>
+        <div class="hero-cta">
+          <a href="#catalog" class="btn btn-primary">
+            Explore Catalog <span class="arrow">→</span>
+          </a>
+          <a href="#cta" class="btn btn-ghost">
+            Get in Touch
+          </a>
+        </div>
+      </div>
+
+      <div class="hero-visual reveal">
+        <div class="hero-orb"></div>
+        <div class="hero-ring"></div>
+        <div class="hero-ring-2"></div>
+        <div class="hero-logo">
+          <img src="public/lplogo.png" alt="" />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TRUST STRIP -->
+  <div class="strip" aria-hidden="true">
+    <div class="strip-track">
+      <span class="strip-item">Research Grade</span><span class="strip-item"><span class="sep"></span></span>
+      <span class="strip-item">Discreet Shipping</span><span class="strip-item"><span class="sep"></span></span>
+      <span class="strip-item">Verified Purity</span><span class="strip-item"><span class="sep"></span></span>
+      <span class="strip-item">Cold-Chain Handling</span><span class="strip-item"><span class="sep"></span></span>
+      <span class="strip-item">Trusted Sourcing</span><span class="strip-item"><span class="sep"></span></span>
+      <span class="strip-item">Fast Turnaround</span><span class="strip-item"><span class="sep"></span></span>
+      <!-- duplicate for seamless loop -->
+      <span class="strip-item">Research Grade</span><span class="strip-item"><span class="sep"></span></span>
+      <span class="strip-item">Discreet Shipping</span><span class="strip-item"><span class="sep"></span></span>
+      <span class="strip-item">Verified Purity</span><span class="strip-item"><span class="sep"></span></span>
+      <span class="strip-item">Cold-Chain Handling</span><span class="strip-item"><span class="sep"></span></span>
+      <span class="strip-item">Trusted Sourcing</span><span class="strip-item"><span class="sep"></span></span>
+      <span class="strip-item">Fast Turnaround</span><span class="strip-item"><span class="sep"></span></span>
+    </div>
+  </div>
+
+  <!-- CATEGORIES -->
+  <section id="categories" class="section">
+    <div class="container">
+      <div class="section-head reveal">
+        <span class="section-tag">What we offer</span>
+        <h2>Built around the science<br />of how you feel.</h2>
+        <p>Five focused categories. Every peptide in our catalog is chosen for a reason — recovery, metabolism, vitality, or longevity.</p>
+      </div>
+
+      <div class="cat-grid">
+        <div class="cat-card reveal">
+          <div class="cat-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 0 1 12 0c0 4.5-6 11-6 11S6 13.5 6 9z"/><circle cx="12" cy="9" r="2.5"/></svg>
+          </div>
+          <h3>Weight Management</h3>
+          <p>Next-generation incretin and GLP analogs designed to support metabolic balance and body-composition goals.</p>
+          <ul>
+            <li>Retatrutide</li>
+            <li>Tirzepatide</li>
+          </ul>
+        </div>
+
+        <div class="cat-card reveal">
+          <div class="cat-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-4.5-7-11a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6.5-7 11-7 11"/><path d="M3 12h4l2-3 3 6 2-3h7"/></svg>
+          </div>
+          <h3>Healing &amp; Recovery</h3>
+          <p>Targeted peptides to support tissue repair, joint integrity, and post-exercise recovery for active researchers.</p>
+          <ul>
+            <li>BPC-157</li>
+            <li>Wolverine Stack</li>
+          </ul>
+        </div>
+
+        <div class="cat-card reveal">
+          <div class="cat-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>
+          </div>
+          <h3>Skin &amp; Anti-Aging</h3>
+          <p>Copper-based and synergy peptides supporting collagen, elasticity, and the cellular pathways behind youthful skin.</p>
+          <ul>
+            <li>GHK-Cu</li>
+            <li>GLOW 70</li>
+            <li>NAD+</li>
+          </ul>
+        </div>
+
+        <div class="cat-card reveal">
+          <div class="cat-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12c3-6 15-6 18 0M5 12c2-3 12-3 14 0M9 12h6"/></svg>
+          </div>
+          <h3>Growth Hormone Support</h3>
+          <p>Secretagogues and analogs designed to support endogenous GH pulses, body composition, and sleep architecture.</p>
+          <ul>
+            <li>CJC / Ipamorelin</li>
+            <li>Tesamorelin</li>
+            <li>HGH</li>
+            <li>MK-677</li>
+          </ul>
+        </div>
+
+        <div class="cat-card reveal">
+          <div class="cat-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z"/></svg>
+          </div>
+          <h3>Vitality &amp; Wellness</h3>
+          <p>Peptides supporting libido, mitochondrial function, and the nuanced systems that drive day-to-day vitality.</p>
+          <ul>
+            <li>PT-141</li>
+            <li>MOTS-C</li>
+            <li>KLOW 80</li>
+          </ul>
+        </div>
+
+        <div class="cat-card reveal">
+          <div class="cat-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+          </div>
+          <h3>Custom Stacks</h3>
+          <p>Curated combinations for specific outcomes — designed for those who want a single solution, not a guessing game.</p>
+          <ul>
+            <li>Wolverine</li>
+            <li>KLOW</li>
+            <li>GLOW</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CATALOG -->
+  <section id="catalog" class="section">
+    <div class="container">
+      <div class="section-head reveal">
+        <span class="section-tag">The Catalog</span>
+        <h2>Featured peptides.</h2>
+        <p>A snapshot of what's in stock — premium-quality, ready to ship.</p>
+      </div>
+
+      <div class="pep-grid">
+        <div class="pep-card reveal">
+          <div class="pep-head">
+            <h3 class="pep-name">Retatrutide <small style="font-weight:400;color:var(--muted);font-size:13px">(GLP-3)</small></h3>
+            <span class="pep-tag">10 / 20 mg</span>
+          </div>
+          <p class="pep-desc">Triple-agonist incretin — the next-generation evolution beyond GLP-1 and dual-agonist therapies. A flagship of the catalog.</p>
+          <div class="pep-meta"><span>Weight Management</span><span class="dot">●</span><span>In Stock</span></div>
+        </div>
+
+        <div class="pep-card reveal">
+          <div class="pep-head">
+            <h3 class="pep-name">Tirzepatide</h3>
+            <span class="pep-tag">20 mg</span>
+          </div>
+          <p class="pep-desc">Dual GIP / GLP-1 receptor agonist supporting metabolic regulation and meaningful body-composition shifts.</p>
+          <div class="pep-meta"><span>Weight Management</span><span class="dot">●</span><span>In Stock</span></div>
+        </div>
+
+        <div class="pep-card reveal">
+          <div class="pep-head">
+            <h3 class="pep-name">BPC-157</h3>
+            <span class="pep-tag">10 mg</span>
+          </div>
+          <p class="pep-desc">A research staple in tissue repair — supports gut, joint, and connective-tissue regeneration with a clean profile.</p>
+          <div class="pep-meta"><span>Healing &amp; Recovery</span><span class="dot">●</span><span>In Stock</span></div>
+        </div>
+
+        <div class="pep-card reveal">
+          <div class="pep-head">
+            <h3 class="pep-name">Wolverine Stack</h3>
+            <span class="pep-tag">20 mg</span>
+          </div>
+          <p class="pep-desc">A purpose-built blend formulated to amplify recovery — popular among performance researchers and athletes alike.</p>
+          <div class="pep-meta"><span>Healing &amp; Recovery</span><span class="dot">●</span><span>In Stock</span></div>
+        </div>
+
+        <div class="pep-card reveal">
+          <div class="pep-head">
+            <h3 class="pep-name">CJC / Ipamorelin</h3>
+            <span class="pep-tag">10 mg</span>
+          </div>
+          <p class="pep-desc">A classic synergistic pair supporting natural GH pulses, lean tissue, and the deep-sleep architecture that drives recovery.</p>
+          <div class="pep-meta"><span>Growth Hormone</span><span class="dot">●</span><span>In Stock</span></div>
+        </div>
+
+        <div class="pep-card reveal">
+          <div class="pep-head">
+            <h3 class="pep-name">Tesamorelin</h3>
+            <span class="pep-tag">10 mg</span>
+          </div>
+          <p class="pep-desc">A potent GHRH analog supporting body composition and metabolic health in the visceral compartment.</p>
+          <div class="pep-meta"><span>Growth Hormone</span><span class="dot">●</span><span>In Stock</span></div>
+        </div>
+
+        <div class="pep-card reveal">
+          <div class="pep-head">
+            <h3 class="pep-name">PT-141</h3>
+            <span class="pep-tag">10 mg</span>
+          </div>
+          <p class="pep-desc">Bremelanotide — a melanocortin agonist studied for its role in libido and sexual-response pathways.</p>
+          <div class="pep-meta"><span>Vitality</span><span class="dot">●</span><span>In Stock</span></div>
+        </div>
+
+        <div class="pep-card reveal">
+          <div class="pep-head">
+            <h3 class="pep-name">GHK-Cu</h3>
+            <span class="pep-tag">50 / 100 mg</span>
+          </div>
+          <p class="pep-desc">Copper-binding tripeptide widely studied for skin remodeling, collagen, and connective-tissue support.</p>
+          <div class="pep-meta"><span>Skin &amp; Anti-Aging</span><span class="dot">●</span><span>In Stock</span></div>
+        </div>
+
+        <div class="pep-card reveal">
+          <div class="pep-head">
+            <h3 class="pep-name">MOTS-C</h3>
+            <span class="pep-tag">10 mg</span>
+          </div>
+          <p class="pep-desc">A mitochondrial-derived peptide studied for its role in metabolic health and cellular energy regulation.</p>
+          <div class="pep-meta"><span>Vitality</span><span class="dot">●</span><span>In Stock</span></div>
+        </div>
+
+        <div class="pep-card reveal">
+          <div class="pep-head">
+            <h3 class="pep-name">NAD+</h3>
+            <span class="pep-tag">500 mg</span>
+          </div>
+          <p class="pep-desc">A foundational coenzyme studied for cellular repair, mitochondrial function, and longevity-related pathways.</p>
+          <div class="pep-meta"><span>Anti-Aging</span><span class="dot">●</span><span>In Stock</span></div>
+        </div>
+
+        <div class="pep-card reveal">
+          <div class="pep-head">
+            <h3 class="pep-name">KLOW 80</h3>
+            <span class="pep-tag">Blend</span>
+          </div>
+          <p class="pep-desc">A signature multi-peptide blend designed for whole-system repair — a category favorite for advanced protocols.</p>
+          <div class="pep-meta"><span>Recovery Stack</span><span class="dot">●</span><span>In Stock</span></div>
+        </div>
+
+        <div class="pep-card reveal">
+          <div class="pep-head">
+            <h3 class="pep-name">HGH</h3>
+            <span class="pep-tag">170 IU</span>
+          </div>
+          <p class="pep-desc">Recombinant somatropin — pharmaceutical-grade growth hormone for advanced research and performance applications.</p>
+          <div class="pep-meta"><span>Growth Hormone</span><span class="dot">●</span><span>Inquire</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STATS -->
+  <section id="stats">
+    <div class="container">
+      <div class="stats-grid">
+        <div class="stat reveal">
+          <div class="stat-num"><span class="blue">12+</span></div>
+          <div class="stat-label">Premium Peptides</div>
+        </div>
+        <div class="stat reveal">
+          <div class="stat-num"><span class="blue">99%+</span></div>
+          <div class="stat-label">Verified Purity</div>
+        </div>
+        <div class="stat reveal">
+          <div class="stat-num"><span class="blue">24h</span></div>
+          <div class="stat-label">Avg. Turnaround</div>
+        </div>
+        <div class="stat reveal">
+          <div class="stat-num"><span class="blue">100%</span></div>
+          <div class="stat-label">Discreet Shipping</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- WHY -->
+  <section id="why" class="section">
+    <div class="container">
+      <div class="section-head reveal">
+        <span class="section-tag">Why Lumen</span>
+        <h2>The standard others<br />try to imitate.</h2>
+        <p>Sourcing, packaging, and care designed for people who don't compromise on what goes in their body — or what they study.</p>
+      </div>
+
+      <div class="why-grid">
+        <div class="why-item reveal">
+          <div class="num">— 01</div>
+          <h3>Premium sourcing</h3>
+          <p>Every batch is selected for purity and consistency. We don't carry filler — only peptides that meet the bar we'd use ourselves.</p>
+        </div>
+        <div class="why-item reveal">
+          <div class="num">— 02</div>
+          <h3>Discreet by default</h3>
+          <p>Plain, unbranded packaging. No external markings. Your privacy is built into the workflow — not bolted on as an afterthought.</p>
+        </div>
+        <div class="why-item reveal">
+          <div class="num">— 03</div>
+          <h3>Real human service</h3>
+          <p>Direct line, no chatbots. Questions about a compound, a stack, or your shipment — get a real answer, fast.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section id="faq" class="section">
+    <div class="container">
+      <div class="section-head reveal">
+        <span class="section-tag">Common questions</span>
+        <h2>Good to know.</h2>
+      </div>
+
+      <div class="faq-list">
+        <details class="faq-item reveal">
+          <summary>Are these for human consumption?</summary>
+          <p>No. All compounds offered through Lumen Peptides are intended strictly for laboratory and research purposes. They are not intended for human or animal consumption, diagnosis, or treatment.</p>
+        </details>
+        <details class="faq-item reveal">
+          <summary>How are products shipped?</summary>
+          <p>Orders ship in plain, unbranded packaging with no external markings related to the contents. Most orders are dispatched within 24 hours of confirmation.</p>
+        </details>
+        <details class="faq-item reveal">
+          <summary>How do I place an order?</summary>
+          <p>Reach out directly using the inquiry button. We'll confirm what's in stock, walk through pricing, and arrange the easiest payment and shipping option for you.</p>
+        </details>
+        <details class="faq-item reveal">
+          <summary>What payment methods are accepted?</summary>
+          <p>Zelle, Apple Pay, and CashApp. Payment details are shared with each invoice.</p>
+        </details>
+        <details class="faq-item reveal">
+          <summary>Do you offer custom stacks?</summary>
+          <p>Yes. Several signature blends — Wolverine, KLOW, GLOW — are formulated in-house. Custom requests are reviewed case-by-case.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section id="cta">
+    <div class="container">
+      <div class="panel reveal">
+        <h2>Ready when you are.</h2>
+        <p>Send a message and we'll walk you through what's in stock, lead times, and the easiest way to get it to you.</p>
+        <div class="hero-cta" style="justify-content:center">
+          <a href="sms:5125731342" class="btn btn-primary">Text Us <span class="arrow">→</span></a>
+          <a href="tel:5125731342" class="btn btn-ghost">Call (512) 573-1342</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="container">
+      <div class="foot-top">
+        <div>
+          <div class="foot-brand">
+            <img src="public/lplogo.png" alt="" />
+            <span>Lumen</span><span>Peptides</span>
+          </div>
+          <p class="foot-tag">Research-grade peptides for recovery, performance, and longevity. Quality you can trust, service you'll come back to.</p>
+        </div>
+        <div class="foot-col">
+          <h4>Catalog</h4>
+          <a href="#categories">Categories</a>
+          <a href="#catalog">Featured</a>
+          <a href="#cta">Custom Stacks</a>
+        </div>
+        <div class="foot-col">
+          <h4>Company</h4>
+          <a href="#why">Why Lumen</a>
+          <a href="#faq">FAQ</a>
+          <a href="#cta">Contact</a>
+        </div>
+        <div class="foot-col">
+          <h4>Contact</h4>
+          <a href="sms:5125731342">Text (512) 573-1342</a>
+          <a href="tel:5125731342">Call (512) 573-1342</a>
+          <a href="#cta">Inquire</a>
+        </div>
+      </div>
+
+      <div class="disclaimer">
+        <b>Research use only.</b> All products offered by Lumen Peptides are sold strictly for in-vitro laboratory and research purposes. They are not for human or animal consumption, ingestion, or use in any medical, diagnostic, therapeutic, or cosmetic application. By inquiring or ordering you confirm you are a qualified researcher of legal age and you accept full responsibility for compliance with all applicable laws.
+      </div>
+
+      <div class="foot-bottom">
+        <span>© <span id="year"></span> Lumen Peptides. All rights reserved.</span>
+        <span>Built for researchers, runners, and people who refuse to settle.</span>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Year
+    document.getElementById('year').textContent = new Date().getFullYear();
+
+    // Reveal-on-scroll
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          e.target.classList.add('in');
+          io.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+    document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+
+    // Subtle nav background shift on scroll
+    const nav = document.querySelector('.nav');
+    const onScroll = () => {
+      if (window.scrollY > 20) {
+        nav.style.background = 'rgba(5, 7, 12, 0.85)';
+        nav.style.borderBottomColor = 'rgba(180, 200, 230, 0.12)';
+      } else {
+        nav.style.background = 'rgba(8, 11, 18, 0.62)';
+        nav.style.borderBottomColor = 'rgba(180, 200, 230, 0.08)';
+      }
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+  </script>
+
+</body>
+</html>
