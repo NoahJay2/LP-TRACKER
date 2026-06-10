@@ -4564,67 +4564,84 @@ function renderCalendar(mk, dayBuckets) {
   }
   summary.innerHTML = calSummaryHtml(mg, mn, mq);
 
+  const firstDow = new Date(yr, mo - 1, 1).getDay();   // 0=Sun … 6=Sat
   const daysInMonth = new Date(yr, mo, 0).getDate();
+  const totalRows = Math.ceil((firstDow + daysInMonth) / 7);
+  // Months that span 6 Sun-Sat rows (31-day months starting Fri/Sat, 30-day
+  // months starting Sat) fold row 6 into Week 5 so every month renders as
+  // exactly 4 or 5 weekly totals — without breaking the calendar weekday
+  // alignment.
+  const foldRow6 = totalRows === 6;
   const todayKey = todayISO();
-  const dowShort = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-  // Weeks are month-relative (days 1-7, 8-14, …) rather than calendar weeks
-  // (Sun-Sat). This guarantees every month renders as 4 weeks (Feb-28) or
-  // 5 weeks (29-31 day months), so weekly totals are consistent regardless of
-  // which weekday the month starts on. Each cell shows its weekday so the
-  // calendar context isn't lost.
-  let grid = '';
-  let weekIdx = 0;
-  let weekNum = 1;
-  let wg = 0, wn = 0, wq = 0;
-  const flushWeek = () => {
-    while (weekIdx < 7) { grid += `<div class="cal-cell cal-cell-empty"></div>`; weekIdx++; }
-    const had = wg || wn || wq;
-    if (had) {
-      grid += `
-        <div class="cal-week-total cal-week-total-active">
-          <span class="cal-week-label">Week ${weekNum}</span>
-          <span class="cal-week-gross">${fmt$(round2(wg))}</span>
-          <span class="cal-week-net">${fmt$(round2(wn))}</span>
-          <span class="cal-week-qty">${fmtN(wq)} item${wq === 1 ? '' : 's'}</span>
-        </div>`;
-    } else {
-      grid += `<div class="cal-week-total"><span class="cal-week-label">Week ${weekNum}</span><span class="cal-week-empty">—</span></div>`;
-    }
-    weekIdx = 0; wg = 0; wn = 0; wq = 0;
-    weekNum++;
-  };
+  // Build a flat 7×totalRows sequence (leading pad + days + trailing pad), then
+  // walk row-by-row to interleave each row's Week-total cell.
+  const cells = [];
+  for (let i = 0; i < firstDow; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  while (cells.length < totalRows * 7) cells.push(null);
 
-  for (let d = 1; d <= daysInMonth; d++) {
+  const renderDayCell = (d) => {
+    if (d == null) return `<div class="cal-cell cal-cell-empty"></div>`;
     const dk = `${mk}-${String(d).padStart(2, '0')}`;
     const b = dayBuckets[dk];
     const has = b && b.orders.length;
-    const dow = new Date(yr, mo - 1, d).getDay();
-    const dayLabel = `${d} <span class="cal-cell-dow">${dowShort[dow]}</span>`;
     const cls = ['cal-cell'];
     if (has) cls.push('cal-cell-active');
     if (dk === todayKey) cls.push('cal-cell-today');
     if (has) {
-      wg += b.gross; wn += b.net; wq += b.qty;
-      grid += `
+      return `
         <button type="button" class="${cls.join(' ')}" data-cal-day="${dk}">
-          <span class="cal-cell-day">${dayLabel}</span>
+          <span class="cal-cell-day">${d}</span>
           <span class="cal-cell-gross">${fmt$(round2(b.gross))}</span>
           <span class="cal-cell-net">${fmt$(round2(b.net))}</span>
           <span class="cal-cell-qty">${fmtN(b.qty)} item${b.qty === 1 ? '' : 's'}</span>
         </button>`;
-    } else {
-      grid += `<div class="${cls.join(' ')}"><span class="cal-cell-day">${dayLabel}</span></div>`;
     }
-    weekIdx++;
-    if (weekIdx === 7) flushWeek();
+    return `<div class="${cls.join(' ')}"><span class="cal-cell-day">${d}</span></div>`;
+  };
+
+  const rowTotal = (r) => {
+    let g = 0, n = 0, q = 0;
+    for (let c = 0; c < 7; c++) {
+      const d = cells[r * 7 + c];
+      if (d == null) continue;
+      const b = dayBuckets[`${mk}-${String(d).padStart(2, '0')}`];
+      if (b) { g += b.gross; n += b.net; q += b.qty; }
+    }
+    return { g, n, q };
+  };
+
+  const renderWeekCell = (g, n, q, spanRows) => {
+    const spanClass = spanRows ? ' cal-week-total-span2' : '';
+    const had = g || n || q;
+    if (had) {
+      return `
+        <div class="cal-week-total cal-week-total-active${spanClass}">
+          <span class="cal-week-label">Week</span>
+          <span class="cal-week-gross">${fmt$(round2(g))}</span>
+          <span class="cal-week-net">${fmt$(round2(n))}</span>
+          <span class="cal-week-qty">${fmtN(q)} item${q === 1 ? '' : 's'}</span>
+        </div>`;
+    }
+    return `<div class="cal-week-total${spanClass}"><span class="cal-week-label">Week</span><span class="cal-week-empty">—</span></div>`;
+  };
+
+  let grid = '';
+  for (let r = 0; r < totalRows; r++) {
+    for (let c = 0; c < 7; c++) grid += renderDayCell(cells[r * 7 + c]);
+    if (foldRow6 && r === 5) continue;                 // row 6's totals already counted in Week 5
+    let { g, n, q } = rowTotal(r);
+    if (foldRow6 && r === 4) {                         // Week 5 absorbs row 6
+      const t6 = rowTotal(5);
+      g += t6.g; n += t6.n; q += t6.q;
+    }
+    grid += renderWeekCell(g, n, q, foldRow6 && r === 4);
   }
-  if (weekIdx > 0) flushWeek();
 
   content.innerHTML = `
     <div class="cal-weekdays" aria-hidden="true">
-      <span class="cal-weekdays-spacer"></span>
-      <span>Week</span>
+      <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Week</span>
     </div>
     <div class="cal-grid">${grid}</div>
   `;

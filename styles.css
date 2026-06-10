@@ -1086,17 +1086,7 @@ a.invoice-payment-value { color: #1d4ed8; }
   letter-spacing: .04em;
   color: var(--muted);
 }
-.cal-weekdays .cal-weekdays-spacer { grid-column: span 7; }
 .cal-weekdays span:last-child { color: var(--primary); }
-.cal-cell-dow {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: .03em;
-  margin-left: 3px;
-}
-.cal-cell-active .cal-cell-dow { color: var(--muted-2); }
 .cal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr) 1.1fr;
@@ -1117,6 +1107,10 @@ a.invoice-payment-value { color: #1d4ed8; }
   border-style: solid;
   background: linear-gradient(160deg, var(--primary-soft), rgba(129, 140, 248, 0.06) 75%);
 }
+/* Used for 6-row months: Week 5's total cell spans both row 5 and the trailing
+   partial row 6 so the calendar still reads as 5 weeks, not 6. */
+.cal-week-total-span2 { grid-row: span 2; justify-content: center; }
+.cal-week-total-span2 .cal-week-gross { margin-top: 4px; }
 .cal-week-label {
   font-size: 10px;
   font-weight: 700;
