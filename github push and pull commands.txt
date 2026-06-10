@@ -1,0 +1,7 @@
+From then on, your workflow between machines is:
+
+when you sit down to work (grab latest)
+>> git pull 
+
+when you're done (send changes up)
+>> git add . && git commit -m "what you changed" && git push 
