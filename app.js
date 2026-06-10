@@ -563,6 +563,30 @@ const monthName = (iso) => {
   const d = new Date(iso + 'T00:00:00');
   return d.toLocaleString('en-US', { month: 'short', year: 'numeric' });
 };
+// Calendar months + leftover days between two dates. Borrows days from the
+// previous month when the end-of-month day-number is smaller than the start —
+// matches how people intuitively count "X months and Y days".
+function monthsAndDaysBetween(startIso, endIso) {
+  if (!startIso || !endIso) return { months: 0, days: 0 };
+  const s = new Date(startIso + 'T00:00:00');
+  const e = new Date(endIso + 'T00:00:00');
+  if (e < s) return { months: 0, days: 0 };
+  let months = (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth());
+  let days = e.getDate() - s.getDate();
+  if (days < 0) {
+    months -= 1;
+    days += new Date(e.getFullYear(), e.getMonth(), 0).getDate();
+  }
+  if (months < 0) months = 0;
+  return { months, days };
+}
+function formatMonthsDays(months, days) {
+  if (months <= 0 && days <= 0) return '0 days';
+  const parts = [];
+  if (months > 0) parts.push(`${months} month${months === 1 ? '' : 's'}`);
+  if (days > 0 || months === 0) parts.push(`${days} day${days === 1 ? '' : 's'}`);
+  return parts.join(', ');
+}
 function toast(msg) {
   const t = $('#toast');
   t.textContent = msg;
@@ -1063,6 +1087,25 @@ function renderDashboard() {
   $('#kpiNetTrue').textContent = fmt$(trueNetProfit);
   $('#kpiPending').textContent = fmt$(pendingGross);
   $('#kpiPendingNet').textContent = fmt$(pendingNet);
+
+  // "Operating since" pill — anchored to the first fully-completed order
+  // (paid + delivered) so it reflects when the business actually started
+  // booking real revenue, not just when orders were entered.
+  const opEl = $('#operatingSince');
+  if (opEl) {
+    let firstDate = null;
+    for (const o of orders) {
+      if (o.paid && o.delivered && o.date && (!firstDate || o.date < firstDate)) firstDate = o.date;
+    }
+    if (firstDate) {
+      const { months, days } = monthsAndDaysBetween(firstDate, todayISO());
+      $('#opDuration').textContent = formatMonthsDays(months, days);
+      $('#opSince').textContent = `since ${fmtDateLong(firstDate)}`;
+      opEl.hidden = false;
+    } else {
+      opEl.hidden = true;
+    }
+  }
 
   // "This Month" card — current calendar month only, with a See more link to the
   // Monthly page. Revenue / Net Profit tiles use cash-basis (paid portion of
@@ -4298,7 +4341,12 @@ $('#calCard').addEventListener('click', (e) => {
     return;
   }
   const dayCell = e.target.closest('[data-cal-day]');
-  if (dayCell) openDayDetail(dayCell.dataset.calDay);
+  if (dayCell) { openDayDetail(dayCell.dataset.calDay); return; }
+  const weekCell = e.target.closest('[data-cal-week]');
+  if (weekCell) {
+    const [wmk, wn, sd, ed] = weekCell.dataset.calWeek.split(':');
+    openWeekDetail(wmk, Number(wn), Number(sd), Number(ed));
+  }
 });
 
 // Top Products card has its OWN filters — it shouldn't be tied to the months
@@ -4612,31 +4660,48 @@ function renderCalendar(mk, dayBuckets) {
     return { g, n, q };
   };
 
-  const renderWeekCell = (g, n, q, spanRows) => {
+  // First/last day-of-month in a given visual row (skips leading/trailing pad).
+  const rowDayRange = (r) => {
+    let start = null, end = null;
+    for (let c = 0; c < 7; c++) {
+      const d = cells[r * 7 + c];
+      if (d != null) { if (start == null) start = d; end = d; }
+    }
+    return { start, end };
+  };
+
+  const renderWeekCell = (weekNum, startDay, endDay, g, n, q, spanRows) => {
     const spanClass = spanRows ? ' cal-week-total-span2' : '';
+    const label = `Week ${weekNum}`;
     const had = g || n || q;
     if (had) {
+      const ds = `${mk}:${weekNum}:${startDay}:${endDay}`;
       return `
-        <div class="cal-week-total cal-week-total-active${spanClass}">
-          <span class="cal-week-label">Week</span>
+        <button type="button" class="cal-week-total cal-week-total-active${spanClass}" data-cal-week="${ds}">
+          <span class="cal-week-label">${label}</span>
           <span class="cal-week-gross">${fmt$(round2(g))}</span>
           <span class="cal-week-net">${fmt$(round2(n))}</span>
           <span class="cal-week-qty">${fmtN(q)} item${q === 1 ? '' : 's'}</span>
-        </div>`;
+        </button>`;
     }
-    return `<div class="cal-week-total${spanClass}"><span class="cal-week-label">Week</span><span class="cal-week-empty">—</span></div>`;
+    return `<div class="cal-week-total${spanClass}"><span class="cal-week-label">${label}</span><span class="cal-week-empty">—</span></div>`;
   };
 
   let grid = '';
+  let weekNum = 1;
   for (let r = 0; r < totalRows; r++) {
     for (let c = 0; c < 7; c++) grid += renderDayCell(cells[r * 7 + c]);
     if (foldRow6 && r === 5) continue;                 // row 6's totals already counted in Week 5
     let { g, n, q } = rowTotal(r);
+    let { start, end } = rowDayRange(r);
     if (foldRow6 && r === 4) {                         // Week 5 absorbs row 6
       const t6 = rowTotal(5);
       g += t6.g; n += t6.n; q += t6.q;
+      const r6 = rowDayRange(5);
+      if (r6.end != null) end = r6.end;
     }
-    grid += renderWeekCell(g, n, q, foldRow6 && r === 4);
+    grid += renderWeekCell(weekNum, start, end, g, n, q, foldRow6 && r === 4);
+    weekNum++;
   }
 
   content.innerHTML = `
@@ -4686,6 +4751,73 @@ function openDayDetail(dateKey) {
                   <span class="dd-item-name">${escapeHtml(it.product || '')}</span>
                   <span class="dd-item-qty muted">×${fmtN(qty)}</span>
                   <span class="dd-item-total">${fmt$(round2(qty * price))}</span>
+                </div>`;
+              }).join('')}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+
+  modalOnSave = null;
+  modal.classList.add('modal-readonly');
+  $('#modalCancel').textContent = 'Close';
+  showModal();
+}
+
+// Same shape as openDayDetail but aggregates every day in the week's range —
+// for 6-row months, Week 5's range extends through the folded row-6 days.
+function openWeekDetail(mk, weekNum, startDay, endDay) {
+  const allOrders = [];
+  let gross = 0, net = 0, qty = 0;
+  for (let d = startDay; d <= endDay; d++) {
+    const dk = `${mk}-${String(d).padStart(2, '0')}`;
+    const b = __monthlyDayBuckets[dk];
+    if (!b) continue;
+    allOrders.push(...b.orders);
+    gross += b.gross; net += b.net; qty += b.qty;
+  }
+  if (!allOrders.length) return;
+
+  const byCustomer = new Map();
+  for (const o of allOrders) {
+    const key = (o.customer || '').toLowerCase().trim();
+    if (!byCustomer.has(key)) byCustomer.set(key, { name: o.customer || '', total: 0, profit: 0, items: [] });
+    const c = byCustomer.get(key);
+    c.total += orderTotal(o);
+    c.profit += orderProfit(o);
+    c.items.push(...orderItems(o));
+  }
+
+  const startDk = `${mk}-${String(startDay).padStart(2, '0')}`;
+  const endDk = `${mk}-${String(endDay).padStart(2, '0')}`;
+  const rangeLabel = startDay === endDay ? fmtDateLong(startDk) : `${fmtDateLong(startDk)} – ${fmtDateLong(endDk)}`;
+  $('#modalTitle').textContent = `Week ${weekNum} · ${rangeLabel}`;
+
+  const form = $('#modalForm');
+  form.innerHTML = `
+    <div class="day-detail">
+      <div class="day-detail-summary">
+        <div class="dd-stat dd-stat-gross"><span>Total Gross</span><b>${fmt$(round2(gross))}</b></div>
+        <div class="dd-stat dd-stat-net"><span>Net Profit</span><b>${fmt$(round2(net))}</b></div>
+        <div class="dd-stat dd-stat-qty"><span>Total Items</span><b>${fmtN(qty)}</b></div>
+        <div class="dd-stat"><span>Customers</span><b>${fmtN(byCustomer.size)}</b></div>
+      </div>
+      <div class="day-detail-list">
+        ${[...byCustomer.values()].map(c => `
+          <div class="dd-customer">
+            <div class="dd-customer-head">
+              <b class="dd-customer-name">${escapeHtml(c.name || 'Customer')}</b>
+              <span class="dd-customer-totals">${fmt$(round2(c.total))} <span class="muted">· ${fmt$(round2(c.profit))} profit</span></span>
+            </div>
+            <div class="dd-items">
+              ${c.items.map(it => {
+                const qN = Number(it.qty) || 0, price = Number(it.price) || 0;
+                return `<div class="dd-item">
+                  <span class="dd-item-name">${escapeHtml(it.product || '')}</span>
+                  <span class="dd-item-qty muted">×${fmtN(qN)}</span>
+                  <span class="dd-item-total">${fmt$(round2(qN * price))}</span>
                 </div>`;
               }).join('')}
             </div>

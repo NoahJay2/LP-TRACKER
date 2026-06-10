@@ -245,6 +245,39 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
 .view-head p { margin: 6px 0 0; }
 .muted { color: var(--muted); font-size: 13px; }
 
+/* "Operating since" pill — quietly anchors the dashboard with a business-age
+   stat. Tucked top-right of the view header so it doesn't compete with KPIs. */
+.operating-since {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 8px 14px;
+  background: var(--surface-2);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  line-height: 1.2;
+}
+.op-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+}
+.op-duration {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.op-since {
+  font-size: 11.5px;
+  color: var(--muted);
+  width: 100%;
+}
+
 /* ============ KPIs ============ */
 .kpi-grid {
   display: grid;
@@ -1092,21 +1125,33 @@ a.invoice-payment-value { color: #1d4ed8; }
   grid-template-columns: repeat(7, 1fr) 1.1fr;
   gap: 6px;
 }
+/* Week totals use amber tones so the rightmost column reads as a different
+   bucket from the indigo day cells — easier to scan, and signals at-a-glance
+   that this column is aggregated rather than per-day. */
 .cal-week-total {
   min-height: 80px;
-  border: 1px dashed rgba(129, 140, 248, 0.28);
+  border: 1px dashed rgba(251, 191, 36, 0.32);
   border-radius: 10px;
-  background: rgba(129, 140, 248, 0.05);
+  background: rgba(251, 191, 36, 0.05);
   padding: 7px 7px 8px;
   display: flex;
   flex-direction: column;
   gap: 1px;
   text-align: left;
+  font-family: inherit;
+  color: var(--text);
 }
 .cal-week-total-active {
   border-style: solid;
-  background: linear-gradient(160deg, var(--primary-soft), rgba(129, 140, 248, 0.06) 75%);
+  background: linear-gradient(160deg, var(--warn-soft), rgba(251, 191, 36, 0.06) 75%);
 }
+button.cal-week-total {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background .12s var(--ease), transform .08s var(--ease), box-shadow .12s var(--ease);
+}
+button.cal-week-total:hover { box-shadow: var(--shadow-sm); transform: translateY(-1px); }
+button.cal-week-total:active { transform: scale(0.97); }
 /* Used for 6-row months: Week 5's total cell spans both row 5 and the trailing
    partial row 6 so the calendar still reads as 5 weeks, not 6. */
 .cal-week-total-span2 { grid-row: span 2; justify-content: center; }
@@ -1118,8 +1163,8 @@ a.invoice-payment-value { color: #1d4ed8; }
   letter-spacing: .05em;
   color: var(--muted);
 }
-.cal-week-total-active .cal-week-label { color: var(--primary); }
-.cal-week-gross { font-size: 13.5px; font-weight: 700; color: var(--primary); font-variant-numeric: tabular-nums; margin-top: auto; letter-spacing: -0.01em; }
+.cal-week-total-active .cal-week-label { color: var(--warn); }
+.cal-week-gross { font-size: 13.5px; font-weight: 700; color: var(--warn); font-variant-numeric: tabular-nums; margin-top: auto; letter-spacing: -0.01em; }
 .cal-week-net { font-size: 11.5px; font-weight: 600; color: var(--success); font-variant-numeric: tabular-nums; }
 .cal-week-qty { font-size: 10px; color: var(--muted); }
 .cal-week-empty { font-size: 13px; color: var(--muted); margin-top: auto; }
