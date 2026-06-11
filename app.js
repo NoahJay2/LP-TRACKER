@@ -1339,6 +1339,7 @@ function renderDashboard() {
   restoreGroupExpansion(pendingBody, pendingExpanded);
   wireGroupExpand(pendingBody);
   wireOrderInteractions(pendingBody);
+  wirePendingMobileRowEdit(pendingBody);
   // Pending header total/profit = outstanding balance only. Paid-but-undelivered
   // orders contribute $0 here (cash already collected); partial orders contribute
   // just the unpaid portion.
@@ -1988,6 +1989,33 @@ function renderOrders() {
 
 // Wire paid/delivered toggles, group toggles, edit, and delete buttons inside
 // any tbody that renders order rows (orders page, dashboard recent, dashboard pending).
+// Mobile-only convenience: tap anywhere on a pending row to edit it. The
+// dashboard pending table is read in a hurry on phones, where the pencil icon
+// is a tiny target. We skip when the tap is on an interactive control
+// (switches, chevron, the edit button itself) so toggling Paid/Delivered or
+// expanding a group still works as expected.
+function wirePendingMobileRowEdit(body) {
+  body.addEventListener('click', (e) => {
+    if (window.innerWidth > 640) return;
+    if (e.target.closest('label.switch, button, input, .pill, [data-toggle-group], .chevron')) return;
+    const tr = e.target.closest('tr');
+    if (!tr || tr.parentElement !== body) return;
+
+    // Direct edit ID on this row (single-order or single-multi-item parent).
+    let btn = tr.querySelector('[data-edit-order]');
+
+    // Multi-item child rows of a single order have no edit button — defer to
+    // the parent group-row's order id so tapping any item edits the parent.
+    if (!btn && tr.classList.contains('child-row') && tr.dataset.parent) {
+      const parentRow = body.querySelector(`[data-toggle-group="${tr.dataset.parent}"]`)?.closest('tr');
+      if (parentRow) btn = parentRow.querySelector('[data-edit-order]');
+    }
+    if (!btn) return;
+    const o = state.orders.find(x => x.id === btn.dataset.editOrder);
+    if (o) orderModal(o);
+  });
+}
+
 function wireOrderInteractions(body) {
   body.querySelectorAll('[data-toggle-paid]').forEach(el => el.addEventListener('change', e => {
     const o = state.orders.find(x => x.id === e.target.dataset.togglePaid);
