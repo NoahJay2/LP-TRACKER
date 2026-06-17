@@ -659,13 +659,36 @@ body.discount-popup-open { overflow: hidden; }
   color: var(--muted-2); text-decoration: line-through;
 }
 @media (max-width: 480px) {
-  .discount-exclude-cols,
+  /* On narrow phones, split each item into two rows so the product name has
+     full width to read. Row 1: checkbox · name · line total. Row 2: discount
+     type + amount, right-aligned under the name. Column headers are hidden
+     since they no longer line up with the stacked rows. */
+  .discount-exclude-cols { display: none; }
   .discount-exclude-item {
-    grid-template-columns: 28px 1fr 60px 108px;
-    gap: 6px;
+    grid-template-columns: 28px 1fr auto;
+    grid-template-areas:
+      "check name amt"
+      ".     disc disc";
+    row-gap: 6px;
+    column-gap: 8px;
+    padding: 8px 4px;
+    border-bottom: 1px solid var(--border);
   }
+  .discount-exclude-item:last-child { border-bottom: none; }
+  .discount-exclude-item .dx-include { grid-area: check; }
+  .discount-exclude-item .dx-name {
+    grid-area: name;
+    white-space: normal;             /* let long names wrap if needed */
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    overflow: visible;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+  .discount-exclude-item .dx-amt { grid-area: amt; align-self: start; }
+  .discount-exclude-item .dx-line-disc { grid-area: disc; justify-self: end; }
   .discount-exclude-item .dx-line-disc select { font-size: 14px; padding: 6px 7px; }
-  .discount-exclude-item .dx-line-disc input { width: 52px; font-size: 14px; padding: 7px 8px; }
+  .discount-exclude-item .dx-line-disc input { width: 64px; font-size: 14px; padding: 7px 8px; }
 }
 /* Invoice discount line reads in green like a credit */
 .invoice-discount-row span:last-child { color: #047857; font-weight: 600; }
