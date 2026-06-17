@@ -1210,6 +1210,84 @@ button.cal-week-total:active { transform: scale(0.97); }
   font-weight: 700;
 }
 .cal-cell-today.cal-cell-active { border-color: var(--primary); }
+/* Pending (Potential) filter — amber tint everywhere so the user always knows
+   they're looking at potential income, not realized cash. */
+.cal-pending-mode .cal-cell-active {
+  background: linear-gradient(160deg, rgba(245, 158, 11, 0.14), rgba(245, 158, 11, 0.03) 75%);
+  border-color: rgba(245, 158, 11, 0.32);
+}
+/* Pending mode — gross stays amber (pending revenue), profit gets a distinct
+   teal so the two numbers don't blur into one color. */
+.cal-pending-mode .cal-cell-gross { color: #c2810f; }
+.cal-pending-mode .cal-cell-net { color: #0e7490; }
+.cal-pending-mode .cal-month-active {
+  background: linear-gradient(160deg, rgba(245, 158, 11, 0.16), rgba(245, 158, 11, 0.03) 72%);
+  border-color: rgba(245, 158, 11, 0.32);
+}
+.cal-pending-mode .cal-month-gross { color: #c2810f; }
+.cal-pending-mode .cal-month-net { color: #0e7490; }
+.cal-pending-mode .cal-sum-stat.cal-sum-gross.cal-sum-pending b { color: #c2810f; }
+.cal-pending-mode .cal-sum-stat.cal-sum-net.cal-sum-pending b { color: #0e7490; }
+.cal-pending-mode .cal-sum-stat.cal-sum-gross.cal-sum-pending::before { background: #f59e0b; }
+.cal-pending-mode .cal-sum-stat.cal-sum-net.cal-sum-pending::before { background: #0e7490; }
+/* Day-detail modal mirrors the pending tint when opened from a pending day. */
+.day-detail-pending .dd-stat-gross b { color: #c2810f; }
+.day-detail-pending .dd-stat-net b { color: #0e7490; }
+.day-detail-pending .dd-stat-gross::before { background: #f59e0b; }
+.day-detail-pending .dd-stat-net::before { background: #0e7490; }
+/* All Orders view — pending hint lines sit faintly under realized totals so
+   the user sees forecast next to booked cash without confusing the two. */
+.cal-cell-pending {
+  font-size: 10px; font-weight: 600;
+  color: #c2810f; font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.cal-month-pending {
+  font-size: 10.5px; font-weight: 600;
+  color: #c2810f; font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+/* "Pending Orders" section in the day-detail modal (All Orders view). */
+.dd-section-head-pending { color: #c2810f; }
+.dd-customer-pending { border-color: rgba(245, 158, 11, 0.32); background: rgba(245, 158, 11, 0.04); }
+.dd-pending-amt { color: #c2810f; font-weight: 700; }
+/* All Orders summary strip — extra Potential tiles when there's pending. */
+.cal-sum-pot-gross b { color: #c2810f; }
+.cal-sum-pot-net b { color: #0e7490; }
+.cal-sum-pot-gross::before { background: #f59e0b; }
+.cal-sum-pot-net::before { background: #0e7490; }
+/* Day-detail Potential tiles match the summary strip. */
+.dd-stat-pot-gross b { color: #c2810f; }
+.dd-stat-pot-net b { color: #0e7490; }
+.dd-stat-pot-gross::before { background: #f59e0b; }
+.dd-stat-pot-net::before { background: #0e7490; }
+/* Inline pending numbers — sit next to the realized gross/net, distinguished
+   by color only (amber for pending gross, teal for pending profit). No labels,
+   no extra lines, on day cells, month tiles, and weekly totals. */
+.cal-cell-pending-inline,
+.cal-month-pending-inline,
+.cal-week-pending-inline {
+  color: #c2810f;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  margin-left: 4px;
+}
+.cal-cell-pending-net-inline,
+.cal-month-pending-net-inline,
+.cal-week-pending-net-inline {
+  color: #0e7490;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  margin-left: 4px;
+}
+/* Slightly smaller than the realized number so the eye reads them as a pair
+   without the pending portion overpowering the booked total. */
+.cal-cell-pending-inline,
+.cal-cell-pending-net-inline { font-size: 0.82em; }
+.cal-month-pending-inline,
+.cal-month-pending-net-inline { font-size: 0.82em; }
+.cal-week-pending-inline,
+.cal-week-pending-net-inline { font-size: 0.82em; }
 
 /* Day-detail modal (tapping a calendar day) */
 .day-detail { display: flex; flex-direction: column; gap: 14px; }

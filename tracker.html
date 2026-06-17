@@ -19,7 +19,7 @@
      fresh JS/CSS instead of serving the cached copy. iOS standalone mode
      caches scripts indefinitely once installed; a query-string change is the
      only thing that reliably busts it without removing/re-adding the bookmark. -->
-<link rel="stylesheet" href="styles.css?v=20260617-1" />
+<link rel="stylesheet" href="styles.css?v=20260617-11" />
 </head>
 <body class="app-booting">
 <div id="loginOverlay" class="login-overlay">
@@ -379,7 +379,7 @@
         <select id="monthlyFilter">
           <option value="paid">Paid Only</option>
           <option value="all">All Orders</option>
-          <option value="unpaid">Unpaid Only</option>
+          <option value="pending">Pending (Potential)</option>
         </select>
         <button type="button" class="btn ghost btn-reset" id="monthlyReset">Reset</button>
       </div>
@@ -460,8 +460,8 @@
 <div id="toast" class="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="config.js?v=20260617-1"></script>
-<script src="seed.js?v=20260617-1"></script>
-<script src="app.js?v=20260617-1"></script>
+<script src="config.js?v=20260617-11"></script>
+<script src="seed.js?v=20260617-11"></script>
+<script src="app.js?v=20260617-11"></script>
 </body>
 </html>

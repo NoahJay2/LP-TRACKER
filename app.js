@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-06-17.1';
+const BUILD_VERSION = '2026-06-17.11';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -1184,10 +1184,11 @@ function renderDashboard() {
   for (const o of todayOrders) {
     const key = (o.customer || '').toLowerCase().trim();
     if (!todayCustomers.has(key)) {
-      todayCustomers.set(key, { name: o.customer || '', total: 0, allPaid: true, allDelivered: true });
+      todayCustomers.set(key, { name: o.customer || '', total: 0, paid: 0, allPaid: true, allDelivered: true });
     }
     const bucket = todayCustomers.get(key);
     bucket.total += orderTotal(o);
+    bucket.paid += orderPaidRevenue(o);   // cap each at orderTotal in case of overpay
     if (!o.paid) bucket.allPaid = false;
     if (!o.delivered) bucket.allDelivered = false;
   }
@@ -1210,11 +1211,12 @@ function renderDashboard() {
     if (!overdueGroupsMap.has(key)) {
       overdueGroupsMap.set(key, {
         name: o.customer || '', custKey: ck, date: o.date,
-        total: 0, allPaid: true, allDelivered: true,
+        total: 0, paid: 0, allPaid: true, allDelivered: true,
       });
     }
     const bucket = overdueGroupsMap.get(key);
     bucket.total += orderTotal(o);
+    bucket.paid += orderPaidRevenue(o);
     if (!o.paid) bucket.allPaid = false;
     if (!o.delivered) bucket.allDelivered = false;
   }
@@ -1230,9 +1232,17 @@ function renderDashboard() {
   // amber flags it as still owed. "Send" covers both shipments and in-person
   // deliveries since either way it leaves the user's hands.
   const statusTags = (c) => {
-    const pay = c.allPaid
-      ? `<span class="pill green">Paid</span>`
-      : `<span class="pill amber">Pay</span>`;
+    const paid = Math.max(0, Number(c.paid) || 0);
+    const total = Math.max(0, Number(c.total) || 0);
+    const balance = Math.max(0, total - paid);
+    let pay;
+    if (c.allPaid || balance <= 0.005) {
+      pay = `<span class="pill green">Paid</span>`;
+    } else if (paid > 0.005) {
+      pay = `<span class="pill partial" title="${fmt$(round2(paid))} of ${fmt$(round2(total))} paid · ${fmt$(round2(balance))} due">Partial ${fmt$(round2(paid))}</span>`;
+    } else {
+      pay = `<span class="pill amber">Pay</span>`;
+    }
     const send = c.allDelivered
       ? `<span class="pill green">Sent</span>`
       : `<span class="pill amber">Send</span>`;
@@ -1691,7 +1701,7 @@ function openTodayOrderDetail(customerKey, dateKey) {
     saveState();
     cloudUpsertMany('orders', updated);
     if (stockTouched && stockTouched.size) cloudUpsertMany('stock', [...stockTouched]);
-    renderOrders(); renderInventory(); renderDashboard();
+    renderOrders(); renderInventory(); renderDashboard(); renderMonthly();
   }
 
   // Combined notes from all orders in the group. If they all share the same
@@ -2038,7 +2048,7 @@ function wireOrderInteractions(body) {
     saveState();
     cloudUpsert('orders', o);
     if (stockTouched.length) cloudUpsertMany('stock', stockTouched);
-    renderOrders(); renderInventory(); renderDashboard();
+    renderOrders(); renderInventory(); renderDashboard(); renderMonthly();
   }));
   body.querySelectorAll('[data-toggle-delivered]').forEach(el => el.addEventListener('change', e => {
     const o = state.orders.find(x => x.id === e.target.dataset.toggleDelivered);
@@ -2048,7 +2058,7 @@ function wireOrderInteractions(body) {
     saveState();
     cloudUpsert('orders', o);
     if (stockTouched.length) cloudUpsertMany('stock', stockTouched);
-    renderOrders(); renderInventory(); renderDashboard();
+    renderOrders(); renderInventory(); renderDashboard(); renderMonthly();
   }));
   body.querySelectorAll('[data-edit-order]').forEach(el => el.addEventListener('click', () => {
     const o = state.orders.find(x => x.id === el.dataset.editOrder);
@@ -2066,6 +2076,7 @@ function wireOrderInteractions(body) {
     renderOrders();
     renderInventory();
     renderDashboard();
+    renderMonthly();
     toast('Order deleted.');
   }));
   // Open the partial-payment editor straight from a row pill, so the user
@@ -2089,7 +2100,7 @@ function wireOrderInteractions(body) {
     saveState();
     cloudUpsertMany('orders', updated);
     if (stockTouched.size) cloudUpsertMany('stock', [...stockTouched]);
-    renderOrders(); renderInventory(); renderDashboard();
+    renderOrders(); renderInventory(); renderDashboard(); renderMonthly();
   }));
   body.querySelectorAll('[data-group-delivered]').forEach(el => el.addEventListener('change', () => {
     const updated = [];
@@ -2104,7 +2115,7 @@ function wireOrderInteractions(body) {
     saveState();
     cloudUpsertMany('orders', updated);
     if (stockTouched.size) cloudUpsertMany('stock', [...stockTouched]);
-    renderOrders(); renderInventory(); renderDashboard();
+    renderOrders(); renderInventory(); renderDashboard(); renderMonthly();
   }));
 }
 
@@ -2491,22 +2502,41 @@ function orderModal(existing, draft) {
   function buildPaymentRow(p) {
     const row = document.createElement('div');
     row.className = 'payment-row';
+    // IMPORTANT: don't set `value="..."` in the HTML for the date input. On
+    // iOS Safari (and some other WebKit builds) a date input rendered with a
+    // pre-set `value` attribute can get "anchored" to that attribute — the
+    // wheel picker visibly updates the input, but `el.value` keeps reporting
+    // the original date. Setting the value via the JS property after creation
+    // sidesteps the bug. Same treatment for the amount input for consistency.
     row.innerHTML = `
       <div class="payment-amount-wrap">
         <span class="payment-prefix">$</span>
-        <input type="number" inputmode="numeric" min="0" step="1" data-pfield="amount" value="${p.amount ?? ''}" placeholder="0" />
+        <input type="number" inputmode="numeric" min="0" step="1" data-pfield="amount" placeholder="0" />
       </div>
-      <input type="date" data-pfield="date" value="${escapeHtml(p.date || '')}" />
+      <input type="date" data-pfield="date" />
       <button type="button" class="icon-btn danger" data-premove title="Remove payment">×</button>
     `;
+    const amountInput = row.querySelector('[data-pfield="amount"]');
+    const dateInput = row.querySelector('[data-pfield="date"]');
+    if (amountInput) amountInput.value = (p.amount ?? '') === '' ? '' : String(p.amount);
+    if (dateInput) dateInput.value = p.date || '';
     row.querySelectorAll('[data-pfield]').forEach(el => {
-      el.addEventListener('input', () => {
+      // `<input type="date">` on iOS Safari (especially in standalone PWA mode)
+      // is finicky about which event commits the value: sometimes only `change`
+      // fires when the wheel picker closes, sometimes only `blur` fires when
+      // focus moves. Listening to all three guarantees the in-memory p.date
+      // tracks whatever the input is showing. The save handler also re-reads
+      // the DOM directly as a final safety net.
+      const sync = () => {
         const field = el.dataset.pfield;
         let val = el.value;
         if (field === 'amount') val = val === '' ? 0 : Number(val);
         p[field] = val;
         updatePaymentsSummary();
-      });
+      };
+      el.addEventListener('input', sync);
+      el.addEventListener('change', sync);
+      el.addEventListener('blur', sync);
     });
     row.querySelector('[data-premove]').addEventListener('click', (e) => {
       e.preventDefault();
@@ -2702,6 +2732,26 @@ function orderModal(existing, draft) {
       if (!it.product) { alert('Each item needs a product.'); return; }
       if (!it.qty || it.qty <= 0) { alert('Each item needs a quantity > 0.'); return; }
     }
+    // Safety net: read the payment row inputs directly from the DOM right
+    // before reading data.payments. `<input type="date">` on some platforms
+    // (notably iOS standalone PWAs) doesn't always fire `input`/`change`
+    // before the Save button's click handler runs, so the in-memory p.date
+    // can be stale even though the input visibly shows the new date. Pulling
+    // straight from the DOM here guarantees what the user sees is what saves.
+    const paymentsList = form.querySelector('#paymentsList');
+    if (paymentsList) {
+      const rows = paymentsList.querySelectorAll('.payment-row');
+      rows.forEach((row, i) => {
+        const p = data.payments[i];
+        if (!p) return;
+        const dateInput = row.querySelector('[data-pfield="date"]');
+        const amountInput = row.querySelector('[data-pfield="amount"]');
+        const methodInput = row.querySelector('[data-pfield="method"]');
+        if (dateInput && dateInput.value) p.date = dateInput.value;
+        if (amountInput) p.amount = amountInput.value === '' ? 0 : Number(amountInput.value);
+        if (methodInput) p.method = methodInput.value;
+      });
+    }
     // Sanitize payments — snap amounts to whole cents (no FP drift surviving
     // a round trip) and drop entries the user added but never filled in.
     const cleanPayments = data.payments
@@ -2754,6 +2804,7 @@ function orderModal(existing, draft) {
     renderOrders();
     renderInventory();
     renderDashboard();
+    renderMonthly();
     closeModal();
   };
 
@@ -2799,6 +2850,7 @@ function orderModal(existing, draft) {
       renderOrders();
       renderInventory();
       renderDashboard();
+      renderMonthly();
       toast('Order deleted.');
       closeModal();
     });
@@ -4335,6 +4387,10 @@ let calMonth = null;
 // Buckets from the most recent renderMonthly run so the drill-down views and
 // the day-detail modal can look up totals without recomputing.
 let __monthlyDayBuckets = {};
+// True when the Monthly view is showing the Pending (Potential) filter — used
+// by the calendar / summary / day-detail to relabel "Gross" → "Pending" so the
+// user always knows whether they're looking at cash received or potential.
+let __monthlyPending = false;
 let __monthlyMonthBuckets = {};
 
 // Persist the drill-down state so closing/reopening the app lands you back on
@@ -4512,59 +4568,109 @@ function renderTopProducts() {
 }
 
 function renderMonthly() {
-  const filter = $('#monthlyFilter').value;
+  // Normalize legacy 'unpaid' filter value (now superseded by 'pending').
+  const rawFilter = $('#monthlyFilter').value;
+  const filter = rawFilter === 'unpaid' ? 'pending' : rawFilter;
   const q = monthlySearch.value.toLowerCase().trim();
   let orders = state.orders;
   if (filter === 'paid') orders = orders.filter(o => o.paid);
-  if (filter === 'unpaid') orders = orders.filter(o => !o.paid);
   if (q) orders = orders.filter(o => {
     if ((o.customer || '').toLowerCase().includes(q)) return true;
     return orderItems(o).some(it => (it.product || '').toLowerCase().includes(q));
   });
 
-  // Cash-basis bucketing — every payment lands on its OWN date as gross
-  // revenue (so a partial $200 received June 5 shows on June 5, the $210
-  // balance paid June 20 shows on June 20). Profit + item count land on the
-  // day the order became fully paid (all-or-nothing). An unpaid order
-  // contributes nothing to the calendar; its balance still appears in the
-  // Dashboard's Pending Net.
+  // Two bucketing modes:
+  //   Cash mode (default / Paid Only): payments land on their own date as gross,
+  //     profit + items land on the day the order closed (last payment).
+  //   Pending mode (Pending filter): unpaid BALANCES are bucketed on the order's
+  //     date so the user can see potential income laid out by when each order
+  //     was placed. Net = unpaid profit (all-or-nothing). Qty = order qty.
   const dayBuckets = {};
   const monthBuckets = {};
   const ensureDay = (dk) => {
-    if (!dayBuckets[dk]) dayBuckets[dk] = { gross: 0, net: 0, qty: 0, orders: [], payments: [] };
+    if (!dayBuckets[dk]) dayBuckets[dk] = {
+      gross: 0, net: 0, qty: 0, orders: [], payments: [],
+      pendingGross: 0, pendingNet: 0, pendingQty: 0, pendingOrders: [],
+    };
     return dayBuckets[dk];
   };
   const ensureMonth = (mk) => {
-    if (!monthBuckets[mk]) monthBuckets[mk] = { gross: 0, net: 0, qty: 0 };
+    if (!monthBuckets[mk]) monthBuckets[mk] = {
+      gross: 0, net: 0, qty: 0,
+      pendingGross: 0, pendingNet: 0, pendingQty: 0,
+    };
     return monthBuckets[mk];
   };
-  orders.forEach(o => {
-    // 1) Every payment counts as gross on its own date.
-    for (const p of orderPayments(o)) {
-      const pd = p && p.date;
-      const amt = Number(p && p.amount) || 0;
-      if (!pd || amt <= 0) continue;
-      const day = ensureDay(pd);
-      day.gross += amt;
-      day.payments.push({ order: o, payment: p });
-      ensureMonth(monthKey(pd)).gross += amt;
-    }
-    // 2) Profit + qty land on the day the order closed (last payment date).
-    const completed = orderCompletionDate(o);
-    if (completed) {
-      const profit = orderProfit(o);
-      const qty = orderQty(o);
-      const day = ensureDay(completed);
-      day.net += profit;
-      day.qty += qty;
+  if (filter === 'pending') {
+    orders.forEach(o => {
+      const balance = orderBalance(o);
+      if (balance <= 0.005) return;          // nothing pending — skip
+      const dk = o.date;
+      if (!dk) return;
+      const day = ensureDay(dk);
+      day.gross += balance;
+      day.net += orderUnpaidProfit(o);
+      day.qty += orderQty(o);
       day.orders.push(o);
-      const mb = ensureMonth(monthKey(completed));
-      mb.net += profit;
-      mb.qty += qty;
+      const mb = ensureMonth(monthKey(dk));
+      mb.gross += balance;
+      mb.net += orderUnpaidProfit(o);
+      mb.qty += orderQty(o);
+    });
+  } else {
+    orders.forEach(o => {
+      // 1) Every payment counts as gross on its own date.
+      for (const p of orderPayments(o)) {
+        const pd = p && p.date;
+        const amt = Number(p && p.amount) || 0;
+        if (!pd || amt <= 0) continue;
+        const day = ensureDay(pd);
+        day.gross += amt;
+        day.payments.push({ order: o, payment: p });
+        ensureMonth(monthKey(pd)).gross += amt;
+      }
+      // 2) Profit + qty land on the day the order closed (last payment date).
+      const completed = orderCompletionDate(o);
+      if (completed) {
+        const profit = orderProfit(o);
+        const qty = orderQty(o);
+        const day = ensureDay(completed);
+        day.net += profit;
+        day.qty += qty;
+        day.orders.push(o);
+        const mb = ensureMonth(monthKey(completed));
+        mb.net += profit;
+        mb.qty += qty;
+      }
+    });
+    // "All Orders" also layers the still-unpaid balance of each order onto its
+    // order date so the user sees realized cash AND potential income side by
+    // side. "Paid Only" stays cash-only.
+    if (filter === 'all') {
+      orders.forEach(o => {
+        const balance = orderBalance(o);
+        if (balance <= 0.005) return;
+        const dk = o.date;
+        if (!dk) return;
+        const day = ensureDay(dk);
+        day.pendingGross += balance;
+        day.pendingNet += orderUnpaidProfit(o);
+        day.pendingQty += orderQty(o);
+        day.pendingOrders.push(o);
+        const mb = ensureMonth(monthKey(dk));
+        mb.pendingGross += balance;
+        mb.pendingNet += orderUnpaidProfit(o);
+        mb.pendingQty += orderQty(o);
+      });
     }
-  });
+  }
+  __monthlyPending = filter === 'pending';
   __monthlyDayBuckets = dayBuckets;
   __monthlyMonthBuckets = monthBuckets;
+  // Tint the calendar so the Pending filter looks visibly different from the
+  // cash-flow view — prevents mistaking potential income for realized cash.
+  const calCard = $('#calCard');
+  if (calCard) calCard.classList.toggle('cal-pending-mode', __monthlyPending);
 
   // Defaults: land on the most recent year / month that has cash activity.
   if (calYear == null) {
@@ -4583,12 +4689,30 @@ function renderMonthly() {
   renderTopProducts();
 }
 
-// Reusable 3-stat summary strip (Total Gross / Net Profit / Total Items).
-function calSummaryHtml(gross, net, qty) {
+// Reusable summary strip — relabels itself under the Pending filter, and in
+// "All Orders" combines paid + pending into a single number per stat (like the
+// weekly total cells). Tooltip breaks down the paid/pending split on hover.
+function calSummaryHtml(gross, net, qty, pendingGross, pendingNet, pendingQty) {
+  const labels = __monthlyPending
+    ? { gross: 'Pending', net: 'Potential Profit', qty: 'Items Pending' }
+    : { gross: 'Total Gross', net: 'Net Profit', qty: 'Total Items' };
+  const g = Number(gross) || 0;
+  const n = Number(net) || 0;
+  const q = Number(qty) || 0;
+  const pg = Number(pendingGross) || 0;
+  const pn = Number(pendingNet) || 0;
+  const pq = Number(pendingQty) || 0;
+  const hasPending = !__monthlyPending && (pg > 0.005 || pq > 0);
+  const totalG = g + pg;
+  const totalN = n + pn;
+  const totalQty = q + pq;
+  const grossTip = hasPending ? ` title="${fmt$(round2(g))} paid + ${fmt$(round2(pg))} pending"` : '';
+  const netTip = hasPending ? ` title="${fmt$(round2(n))} paid + ${fmt$(round2(pn))} pending"` : '';
+  const qtyTip = hasPending ? ` title="${fmtN(q)} delivered + ${fmtN(pq)} pending"` : '';
   return `
-    <div class="cal-sum-stat cal-sum-gross"><span class="cal-sum-label">Total Gross</span><b>${fmt$(round2(gross))}</b></div>
-    <div class="cal-sum-stat cal-sum-net"><span class="cal-sum-label">Net Profit</span><b>${fmt$(round2(net))}</b></div>
-    <div class="cal-sum-stat cal-sum-qty"><span class="cal-sum-label">Total Items</span><b>${fmtN(qty)}</b></div>
+    <div class="cal-sum-stat cal-sum-gross${__monthlyPending ? ' cal-sum-pending' : ''}"${grossTip}><span class="cal-sum-label">${labels.gross}</span><b>${fmt$(round2(totalG))}</b></div>
+    <div class="cal-sum-stat cal-sum-net${__monthlyPending ? ' cal-sum-pending' : ''}"${netTip}><span class="cal-sum-label">${labels.net}</span><b>${fmt$(round2(totalN))}</b></div>
+    <div class="cal-sum-stat cal-sum-qty"${qtyTip}><span class="cal-sum-label">${labels.qty}</span><b>${fmtN(totalQty)}</b></div>
   `;
 }
 
@@ -4620,13 +4744,15 @@ function renderYearView(year, monthBuckets) {
     <button type="button" class="cal-nav" data-cal-next aria-label="Next year">›</button>
   `;
 
-  let yg = 0, yn = 0, yq = 0;
+  let yg = 0, yn = 0, yq = 0, ypg = 0, ypn = 0, ypq = 0;
   for (const mk of Object.keys(monthBuckets)) {
     if (mk.slice(0, 4) === String(year)) {
-      yg += monthBuckets[mk].gross; yn += monthBuckets[mk].net; yq += monthBuckets[mk].qty;
+      const b = monthBuckets[mk];
+      yg += b.gross; yn += b.net; yq += b.qty;
+      ypg += b.pendingGross || 0; ypn += b.pendingNet || 0; ypq += b.pendingQty || 0;
     }
   }
-  summary.innerHTML = calSummaryHtml(yg, yn, yq);
+  summary.innerHTML = calSummaryHtml(yg, yn, yq, ypg, ypn, ypq);
 
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const proj = computeMonthlyProjection(monthBuckets);
@@ -4635,7 +4761,9 @@ function renderYearView(year, monthBuckets) {
   for (let m = 1; m <= 12; m++) {
     const mk = `${year}-${String(m).padStart(2, '0')}`;
     const b = monthBuckets[mk];
-    const has = b && (b.gross || b.net || b.qty);
+    const hasRealized = b && (b.gross || b.net || b.qty);
+    const hasPending = b && b.pendingGross > 0.005;
+    const has = hasRealized || hasPending;
     // Only the single upcoming month gets a faint projection from recent months.
     // The moment a real order lands there, `has` flips true and the actual
     // numbers replace it. Every other empty month reads "No sales".
@@ -4646,10 +4774,17 @@ function renderYearView(year, monthBuckets) {
 
     let inner;
     if (has) {
+      const pendingGrossSpan = hasPending
+        ? ` <span class="cal-month-pending-inline" title="${fmt$(round2(b.pendingGross))} potential">+${fmt$(round2(b.pendingGross))}</span>`
+        : '';
+      const pendingNetSpan = hasPending
+        ? ` <span class="cal-month-pending-net-inline" title="${fmt$(round2(b.pendingNet))} potential profit">+${fmt$(round2(b.pendingNet))}</span>`
+        : '';
+      const totalQty = (b.qty || 0) + (b.pendingQty || 0);
       inner = `
-        <span class="cal-month-gross">${fmt$(round2(b.gross))}</span>
-        <span class="cal-month-net">${fmt$(round2(b.net))}</span>
-        <span class="cal-month-qty">${fmtN(b.qty)} item${b.qty === 1 ? '' : 's'}</span>`;
+        <span class="cal-month-gross">${fmt$(round2(b.gross))}${pendingGrossSpan}</span>
+        <span class="cal-month-net">${fmt$(round2(b.net))}${pendingNetSpan}</span>
+        <span class="cal-month-qty">${fmtN(totalQty)} item${totalQty === 1 ? '' : 's'}</span>`;
     } else if (projectable) {
       const pq = Math.round(proj.qty);
       inner = `
@@ -4686,11 +4821,15 @@ function renderCalendar(mk, dayBuckets) {
     </div>
   `;
 
-  let mg = 0, mn = 0, mq = 0;
+  let mg = 0, mn = 0, mq = 0, mpg = 0, mpn = 0, mpq = 0;
   for (const dk of Object.keys(dayBuckets)) {
-    if (monthKey(dk) === mk) { mg += dayBuckets[dk].gross; mn += dayBuckets[dk].net; mq += dayBuckets[dk].qty; }
+    if (monthKey(dk) === mk) {
+      const b = dayBuckets[dk];
+      mg += b.gross; mn += b.net; mq += b.qty;
+      mpg += b.pendingGross || 0; mpn += b.pendingNet || 0; mpq += b.pendingQty || 0;
+    }
   }
-  summary.innerHTML = calSummaryHtml(mg, mn, mq);
+  summary.innerHTML = calSummaryHtml(mg, mn, mq, mpg, mpn, mpq);
 
   const firstDow = new Date(yr, mo - 1, 1).getDay();   // 0=Sun … 6=Sat
   const daysInMonth = new Date(yr, mo, 0).getDate();
@@ -4713,33 +4852,53 @@ function renderCalendar(mk, dayBuckets) {
     if (d == null) return `<div class="cal-cell cal-cell-empty"></div>`;
     const dk = `${mk}-${String(d).padStart(2, '0')}`;
     const b = dayBuckets[dk];
-    // A day is "active" if cash came in OR an order completed — either should
-    // make the cell tappable so the user can drill into the day's activity.
-    const has = b && (b.gross > 0 || b.net !== 0 || b.qty > 0 || (b.orders && b.orders.length) || (b.payments && b.payments.length));
+    // A day is "active" if cash came in OR an order completed OR there's a
+    // pending balance on an order placed that day (All Orders view) — any of
+    // those should make the cell tappable.
+    const has = b && (
+      b.gross > 0 || b.net !== 0 || b.qty > 0 ||
+      (b.orders && b.orders.length) || (b.payments && b.payments.length) ||
+      b.pendingGross > 0
+    );
     const cls = ['cal-cell'];
     if (has) cls.push('cal-cell-active');
     if (dk === todayKey) cls.push('cal-cell-today');
     if (has) {
+      // Pending in "All Orders" sits inline next to the realized totals — no
+      // extra rows, distinguished by color only (amber gross / teal profit).
+      const showPending = b.pendingGross > 0.005;
+      const pendingGrossSpan = showPending
+        ? ` <span class="cal-cell-pending-inline" title="${fmt$(round2(b.pendingGross))} potential">+${fmt$(round2(b.pendingGross))}</span>`
+        : '';
+      const pendingNetSpan = showPending
+        ? ` <span class="cal-cell-pending-net-inline" title="${fmt$(round2(b.pendingNet))} potential profit">+${fmt$(round2(b.pendingNet))}</span>`
+        : '';
+      // Items count includes pending qty so the day reflects ALL items in play
+      // (realized + still-owed), not just orders that have closed.
+      const totalQty = (b.qty || 0) + (b.pendingQty || 0);
       return `
         <button type="button" class="${cls.join(' ')}" data-cal-day="${dk}">
           <span class="cal-cell-day">${d}</span>
-          <span class="cal-cell-gross">${fmt$(round2(b.gross))}</span>
-          <span class="cal-cell-net">${fmt$(round2(b.net))}</span>
-          <span class="cal-cell-qty">${fmtN(b.qty)} item${b.qty === 1 ? '' : 's'}</span>
+          <span class="cal-cell-gross">${fmt$(round2(b.gross))}${pendingGrossSpan}</span>
+          <span class="cal-cell-net">${fmt$(round2(b.net))}${pendingNetSpan}</span>
+          <span class="cal-cell-qty">${fmtN(totalQty)} item${totalQty === 1 ? '' : 's'}</span>
         </button>`;
     }
     return `<div class="${cls.join(' ')}"><span class="cal-cell-day">${d}</span></div>`;
   };
 
   const rowTotal = (r) => {
-    let g = 0, n = 0, q = 0;
+    let g = 0, n = 0, q = 0, pg = 0, pn = 0, pq = 0;
     for (let c = 0; c < 7; c++) {
       const d = cells[r * 7 + c];
       if (d == null) continue;
       const b = dayBuckets[`${mk}-${String(d).padStart(2, '0')}`];
-      if (b) { g += b.gross; n += b.net; q += b.qty; }
+      if (b) {
+        g += b.gross; n += b.net; q += b.qty;
+        pg += b.pendingGross || 0; pn += b.pendingNet || 0; pq += b.pendingQty || 0;
+      }
     }
-    return { g, n, q };
+    return { g, n, q, pg, pn, pq };
   };
 
   // First/last day-of-month in a given visual row (skips leading/trailing pad).
@@ -4752,18 +4911,27 @@ function renderCalendar(mk, dayBuckets) {
     return { start, end };
   };
 
-  const renderWeekCell = (weekNum, startDay, endDay, g, n, q, spanRows) => {
+  const renderWeekCell = (weekNum, startDay, endDay, g, n, q, pg, pn, pq, spanRows) => {
     const spanClass = spanRows ? ' cal-week-total-span2' : '';
     const label = `Week ${weekNum}`;
-    const had = g || n || q;
+    const had = g || n || q || pg > 0.005 || pn > 0.005 || pq > 0;
     if (had) {
       const ds = `${mk}:${weekNum}:${startDay}:${endDay}`;
+      // Week total = realized + pending in a single combined number per stat.
+      // Tooltip breaks down the two parts in case the user wants to see them.
+      const totalG = (Number(g) || 0) + (Number(pg) || 0);
+      const totalN = (Number(n) || 0) + (Number(pn) || 0);
+      const totalQ = (Number(q) || 0) + (Number(pq) || 0);
+      const hasPending = pg > 0.005 || pq > 0;
+      const grossTip = hasPending ? ` title="${fmt$(round2(g))} paid + ${fmt$(round2(pg))} pending"` : '';
+      const netTip = hasPending ? ` title="${fmt$(round2(n))} paid + ${fmt$(round2(pn))} pending"` : '';
+      const qtyTip = hasPending ? ` title="${fmtN(q)} delivered + ${fmtN(pq)} pending"` : '';
       return `
         <button type="button" class="cal-week-total cal-week-total-active${spanClass}" data-cal-week="${ds}">
           <span class="cal-week-label">${label}</span>
-          <span class="cal-week-gross">${fmt$(round2(g))}</span>
-          <span class="cal-week-net">${fmt$(round2(n))}</span>
-          <span class="cal-week-qty">${fmtN(q)} item${q === 1 ? '' : 's'}</span>
+          <span class="cal-week-gross"${grossTip}>${fmt$(round2(totalG))}</span>
+          <span class="cal-week-net"${netTip}>${fmt$(round2(totalN))}</span>
+          <span class="cal-week-qty"${qtyTip}>${fmtN(totalQ)} item${totalQ === 1 ? '' : 's'}</span>
         </button>`;
     }
     return `<div class="cal-week-total${spanClass}"><span class="cal-week-label">${label}</span><span class="cal-week-empty">—</span></div>`;
@@ -4774,15 +4942,16 @@ function renderCalendar(mk, dayBuckets) {
   for (let r = 0; r < totalRows; r++) {
     for (let c = 0; c < 7; c++) grid += renderDayCell(cells[r * 7 + c]);
     if (foldRow6 && r === 5) continue;                 // row 6's totals already counted in Week 5
-    let { g, n, q } = rowTotal(r);
+    let { g, n, q, pg, pn, pq } = rowTotal(r);
     let { start, end } = rowDayRange(r);
     if (foldRow6 && r === 4) {                         // Week 5 absorbs row 6
       const t6 = rowTotal(5);
       g += t6.g; n += t6.n; q += t6.q;
+      pg += t6.pg; pn += t6.pn; pq += t6.pq;
       const r6 = rowDayRange(5);
       if (r6.end != null) end = r6.end;
     }
-    grid += renderWeekCell(weekNum, start, end, g, n, q, foldRow6 && r === 4);
+    grid += renderWeekCell(weekNum, start, end, g, n, q, pg, pn, pq, foldRow6 && r === 4);
     weekNum++;
   }
 
@@ -4797,13 +4966,15 @@ function renderCalendar(mk, dayBuckets) {
 // Read-only modal showing every sale on a given day, grouped by customer.
 function openDayDetail(dateKey) {
   const b = __monthlyDayBuckets[dateKey];
-  if (!b || (!b.orders.length && !b.payments.length)) return;
+  const pendingOrdersList = Array.isArray(b && b.pendingOrders) ? b.pendingOrders : [];
+  if (!b || (!b.orders.length && !b.payments.length && !pendingOrdersList.length)) return;
 
-  // Distinct customers (across both payments received today and orders that
-  // closed today) feed the header counter.
+  // Distinct customers across payments received, orders closed, AND unpaid
+  // orders placed that day (All Orders view).
   const customerSet = new Set();
   for (const pe of b.payments) customerSet.add((pe.order.customer || '').toLowerCase().trim());
   for (const o of b.orders) customerSet.add((o.customer || '').toLowerCase().trim());
+  for (const o of pendingOrdersList) customerSet.add((o.customer || '').toLowerCase().trim());
 
   // Each completed order contributes its full subtotal/profit/items to the
   // "Orders completed today" section.
@@ -4813,15 +4984,30 @@ function openDayDetail(dateKey) {
     profit: orderProfit(o),
     items: orderItems(o),
   }));
+  // Pending orders for "All Orders" view — show remaining balance + potential
+  // profit, since those are the actionable numbers.
+  const pendingList = pendingOrdersList.map(o => ({
+    name: o.customer || 'Customer',
+    balance: orderBalance(o),
+    profit: orderUnpaidProfit(o),
+    items: orderItems(o),
+  }));
 
-  $('#modalTitle').textContent = fmtDateLong(dateKey);
+  $('#modalTitle').textContent = fmtDateLong(dateKey) + (__monthlyPending ? ' · Pending' : '');
   const form = $('#modalForm');
+  const labels = __monthlyPending
+    ? { gross: 'Pending', net: 'Potential Profit', qty: 'Items Pending', sectionOrders: 'Pending Orders' }
+    : { gross: 'Total Gross', net: 'Net Profit', qty: 'Total Items', sectionOrders: 'Orders Completed' };
+  const ddTotalQty = (b.qty || 0) + (b.pendingQty || 0);
+  const ddQtyTip = (!__monthlyPending && (b.pendingQty || 0) > 0)
+    ? ` title="${fmtN(b.qty)} delivered + ${fmtN(b.pendingQty)} pending"`
+    : '';
   form.innerHTML = `
-    <div class="day-detail">
+    <div class="day-detail${__monthlyPending ? ' day-detail-pending' : ''}">
       <div class="day-detail-summary">
-        <div class="dd-stat dd-stat-gross"><span>Total Gross</span><b>${fmt$(round2(b.gross))}</b></div>
-        <div class="dd-stat dd-stat-net"><span>Net Profit</span><b>${fmt$(round2(b.net))}</b></div>
-        <div class="dd-stat dd-stat-qty"><span>Total Items</span><b>${fmtN(b.qty)}</b></div>
+        <div class="dd-stat dd-stat-gross"><span>${labels.gross}</span><b>${fmt$(round2(b.gross))}</b></div>
+        <div class="dd-stat dd-stat-net"><span>${labels.net}</span><b>${fmt$(round2(b.net))}</b></div>
+        <div class="dd-stat dd-stat-qty"${ddQtyTip}><span>${labels.qty}</span><b>${fmtN(ddTotalQty)}</b></div>
         <div class="dd-stat"><span>Customers</span><b>${fmtN(customerSet.size)}</b></div>
       </div>
       ${b.payments.length ? `
@@ -4847,13 +5033,38 @@ function openDayDetail(dateKey) {
       ` : ''}
       ${completed.length ? `
         <div class="dd-section">
-          <div class="dd-section-head">Orders Completed</div>
+          <div class="dd-section-head">${labels.sectionOrders}</div>
           <div class="day-detail-list">
             ${completed.map(c => `
               <div class="dd-customer">
                 <div class="dd-customer-head">
                   <b class="dd-customer-name">${escapeHtml(c.name)}</b>
                   <span class="dd-customer-totals">${fmt$(round2(c.total))} <span class="muted">· ${fmt$(round2(c.profit))} profit</span></span>
+                </div>
+                <div class="dd-items">
+                  ${c.items.map(it => {
+                    const qty = Number(it.qty) || 0, price = Number(it.price) || 0;
+                    return `<div class="dd-item">
+                      <span class="dd-item-name">${escapeHtml(it.product || '')}</span>
+                      <span class="dd-item-qty muted">×${fmtN(qty)}</span>
+                      <span class="dd-item-total">${fmt$(round2(qty * price))}</span>
+                    </div>`;
+                  }).join('')}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+      ${pendingList.length ? `
+        <div class="dd-section dd-section-pending">
+          <div class="dd-section-head dd-section-head-pending">Pending Orders</div>
+          <div class="day-detail-list">
+            ${pendingList.map(c => `
+              <div class="dd-customer dd-customer-pending">
+                <div class="dd-customer-head">
+                  <b class="dd-customer-name">${escapeHtml(c.name)}</b>
+                  <span class="dd-customer-totals"><span class="dd-pending-amt">${fmt$(round2(c.balance))} due</span> <span class="muted">· ${fmt$(round2(c.profit))} potential</span></span>
                 </div>
                 <div class="dd-items">
                   ${c.items.map(it => {
@@ -4884,18 +5095,21 @@ function openDayDetail(dateKey) {
 function openWeekDetail(mk, weekNum, startDay, endDay) {
   const allOrders = [];
   const allPayments = [];
-  let gross = 0, net = 0, qty = 0;
+  const allPendingOrders = [];
+  let gross = 0, net = 0, qty = 0, pendingGross = 0, pendingNet = 0, pendingQty = 0;
   for (let d = startDay; d <= endDay; d++) {
     const dk = `${mk}-${String(d).padStart(2, '0')}`;
     const b = __monthlyDayBuckets[dk];
     if (!b) continue;
     allOrders.push(...(b.orders || []));
     allPayments.push(...(b.payments || []));
+    allPendingOrders.push(...(b.pendingOrders || []));
     gross += b.gross; net += b.net; qty += b.qty;
+    pendingGross += b.pendingGross || 0; pendingNet += b.pendingNet || 0; pendingQty += b.pendingQty || 0;
   }
   // Open even if no order completed in the week — partial-payment activity
-  // alone is still worth showing.
-  if (!allOrders.length && !allPayments.length) return;
+  // OR a pending balance alone is still worth showing.
+  if (!allOrders.length && !allPayments.length && !allPendingOrders.length) return;
 
   const byCustomer = new Map();
   for (const o of allOrders) {
@@ -4912,35 +5126,79 @@ function openWeekDetail(mk, weekNum, startDay, endDay) {
   const rangeLabel = startDay === endDay ? fmtDateLong(startDk) : `${fmtDateLong(startDk)} – ${fmtDateLong(endDk)}`;
   $('#modalTitle').textContent = `Week ${weekNum} · ${rangeLabel}`;
 
+  const hasPending = pendingGross > 0.005 || pendingQty > 0;
+  // Week detail mirrors the calendar's week-total cells: one combined number
+  // for gross and profit (paid + pending), with the breakdown surfacing as a
+  // tooltip. Items count rolls realized + pending together too.
+  const totalG = gross + pendingGross;
+  const totalN = net + pendingNet;
+  const totalQ = qty + pendingQty;
+  const grossTip = hasPending ? ` title="${fmt$(round2(gross))} paid + ${fmt$(round2(pendingGross))} pending"` : '';
+  const netTip = hasPending ? ` title="${fmt$(round2(net))} paid + ${fmt$(round2(pendingNet))} pending"` : '';
+  const qtyTip = hasPending ? ` title="${fmtN(qty)} delivered + ${fmtN(pendingQty)} pending"` : '';
+
   const form = $('#modalForm');
   form.innerHTML = `
     <div class="day-detail">
       <div class="day-detail-summary">
-        <div class="dd-stat dd-stat-gross"><span>Total Gross</span><b>${fmt$(round2(gross))}</b></div>
-        <div class="dd-stat dd-stat-net"><span>Net Profit</span><b>${fmt$(round2(net))}</b></div>
-        <div class="dd-stat dd-stat-qty"><span>Total Items</span><b>${fmtN(qty)}</b></div>
+        <div class="dd-stat dd-stat-gross"${grossTip}><span>Total Gross</span><b>${fmt$(round2(totalG))}</b></div>
+        <div class="dd-stat dd-stat-net"${netTip}><span>Net Profit</span><b>${fmt$(round2(totalN))}</b></div>
+        <div class="dd-stat dd-stat-qty"${qtyTip}><span>Total Items</span><b>${fmtN(totalQ)}</b></div>
         <div class="dd-stat"><span>Customers</span><b>${fmtN(byCustomer.size)}</b></div>
       </div>
-      <div class="day-detail-list">
-        ${[...byCustomer.values()].map(c => `
-          <div class="dd-customer">
-            <div class="dd-customer-head">
-              <b class="dd-customer-name">${escapeHtml(c.name || 'Customer')}</b>
-              <span class="dd-customer-totals">${fmt$(round2(c.total))} <span class="muted">· ${fmt$(round2(c.profit))} profit</span></span>
-            </div>
-            <div class="dd-items">
-              ${c.items.map(it => {
-                const qN = Number(it.qty) || 0, price = Number(it.price) || 0;
-                return `<div class="dd-item">
-                  <span class="dd-item-name">${escapeHtml(it.product || '')}</span>
-                  <span class="dd-item-qty muted">×${fmtN(qN)}</span>
-                  <span class="dd-item-total">${fmt$(round2(qN * price))}</span>
-                </div>`;
-              }).join('')}
-            </div>
+      ${byCustomer.size ? `
+        <div class="dd-section">
+          <div class="dd-section-head">Orders Completed</div>
+          <div class="day-detail-list">
+            ${[...byCustomer.values()].map(c => `
+              <div class="dd-customer">
+                <div class="dd-customer-head">
+                  <b class="dd-customer-name">${escapeHtml(c.name || 'Customer')}</b>
+                  <span class="dd-customer-totals">${fmt$(round2(c.total))} <span class="muted">· ${fmt$(round2(c.profit))} profit</span></span>
+                </div>
+                <div class="dd-items">
+                  ${c.items.map(it => {
+                    const qN = Number(it.qty) || 0, price = Number(it.price) || 0;
+                    return `<div class="dd-item">
+                      <span class="dd-item-name">${escapeHtml(it.product || '')}</span>
+                      <span class="dd-item-qty muted">×${fmtN(qN)}</span>
+                      <span class="dd-item-total">${fmt$(round2(qN * price))}</span>
+                    </div>`;
+                  }).join('')}
+                </div>
+              </div>
+            `).join('')}
           </div>
-        `).join('')}
-      </div>
+        </div>
+      ` : ''}
+      ${allPendingOrders.length ? `
+        <div class="dd-section dd-section-pending">
+          <div class="dd-section-head dd-section-head-pending">Pending Orders</div>
+          <div class="day-detail-list">
+            ${allPendingOrders.map(o => {
+              const bal = orderBalance(o);
+              const prof = orderUnpaidProfit(o);
+              const its = orderItems(o);
+              return `<div class="dd-customer dd-customer-pending">
+                <div class="dd-customer-head">
+                  <b class="dd-customer-name">${escapeHtml(o.customer || 'Customer')}</b>
+                  <span class="dd-customer-totals"><span class="dd-pending-amt">${fmt$(round2(bal))} due</span> <span class="muted">· ${fmt$(round2(prof))} potential</span></span>
+                </div>
+                <div class="dd-items">
+                  ${its.map(it => {
+                    const qN = Number(it.qty) || 0, price = Number(it.price) || 0;
+                    return `<div class="dd-item">
+                      <span class="dd-item-name">${escapeHtml(it.product || '')}</span>
+                      <span class="dd-item-qty muted">×${fmtN(qN)}</span>
+                      <span class="dd-item-total">${fmt$(round2(qN * price))}</span>
+                    </div>`;
+                  }).join('')}
+                </div>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>
+      ` : ''}
     </div>
   `;
 
