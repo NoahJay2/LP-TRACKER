@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-05-26.3';
+const BUILD_VERSION = '2026-06-17.1';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -680,6 +680,19 @@ function orderPaidRevenue(o) {
 //     unpaid profit = $207    (full profit still pending)
 function orderHasLandedProfit(o) {
   return !!o && (o.paid === true || orderIsFullyPaid(o));
+}
+// The day an order became fully paid — the latest non-zero payment date once
+// payments have caught up to the total. Used by the monthly calendar to attribute
+// profit / item count to the day the order actually closed (so partial-payment
+// orders only "land" their profit when the last dollar comes in). Returns null
+// for orders that are still partially or fully unpaid.
+function orderCompletionDate(o) {
+  if (!orderHasLandedProfit(o)) return null;
+  const dates = orderPayments(o)
+    .filter(p => p && p.date && (Number(p.amount) || 0) > 0.005)
+    .map(p => p.date)
+    .sort();
+  return dates.length ? dates[dates.length - 1] : (o.date || null);
 }
 function orderPaidProfit(o) {
   return orderHasLandedProfit(o) ? Math.round(orderProfit(o)) : 0;
@@ -4509,29 +4522,57 @@ function renderMonthly() {
     return orderItems(o).some(it => (it.product || '').toLowerCase().includes(q));
   });
 
-  // Per-day (YYYY-MM-DD) and per-month (YYYY-MM) buckets across filtered orders.
+  // Cash-basis bucketing — every payment lands on its OWN date as gross
+  // revenue (so a partial $200 received June 5 shows on June 5, the $210
+  // balance paid June 20 shows on June 20). Profit + item count land on the
+  // day the order became fully paid (all-or-nothing). An unpaid order
+  // contributes nothing to the calendar; its balance still appears in the
+  // Dashboard's Pending Net.
   const dayBuckets = {};
   const monthBuckets = {};
-  orders.forEach(o => {
-    const dk = o.date;
-    if (!dk) return;
-    const mk = monthKey(dk);
-    if (!dayBuckets[dk]) dayBuckets[dk] = { gross: 0, net: 0, qty: 0, orders: [] };
+  const ensureDay = (dk) => {
+    if (!dayBuckets[dk]) dayBuckets[dk] = { gross: 0, net: 0, qty: 0, orders: [], payments: [] };
+    return dayBuckets[dk];
+  };
+  const ensureMonth = (mk) => {
     if (!monthBuckets[mk]) monthBuckets[mk] = { gross: 0, net: 0, qty: 0 };
-    const g = orderTotal(o), n = orderProfit(o), qd = orderQty(o);
-    dayBuckets[dk].gross += g; dayBuckets[dk].net += n; dayBuckets[dk].qty += qd; dayBuckets[dk].orders.push(o);
-    monthBuckets[mk].gross += g; monthBuckets[mk].net += n; monthBuckets[mk].qty += qd;
+    return monthBuckets[mk];
+  };
+  orders.forEach(o => {
+    // 1) Every payment counts as gross on its own date.
+    for (const p of orderPayments(o)) {
+      const pd = p && p.date;
+      const amt = Number(p && p.amount) || 0;
+      if (!pd || amt <= 0) continue;
+      const day = ensureDay(pd);
+      day.gross += amt;
+      day.payments.push({ order: o, payment: p });
+      ensureMonth(monthKey(pd)).gross += amt;
+    }
+    // 2) Profit + qty land on the day the order closed (last payment date).
+    const completed = orderCompletionDate(o);
+    if (completed) {
+      const profit = orderProfit(o);
+      const qty = orderQty(o);
+      const day = ensureDay(completed);
+      day.net += profit;
+      day.qty += qty;
+      day.orders.push(o);
+      const mb = ensureMonth(monthKey(completed));
+      mb.net += profit;
+      mb.qty += qty;
+    }
   });
   __monthlyDayBuckets = dayBuckets;
   __monthlyMonthBuckets = monthBuckets;
 
-  // Defaults: land on the most recent year / month that has data.
+  // Defaults: land on the most recent year / month that has cash activity.
   if (calYear == null) {
-    const years = Array.from(new Set(orders.map(o => (o.date || '').slice(0, 4)).filter(Boolean))).map(Number).sort((a, b) => a - b);
-    calYear = years[years.length - 1] || new Date().getFullYear();
+    const years = Array.from(new Set(Object.keys(monthBuckets).map(mk => mk.slice(0, 4)))).sort();
+    calYear = Number(years[years.length - 1]) || new Date().getFullYear();
   }
   if (!calMonth) {
-    const months = Array.from(new Set(orders.map(o => monthKey(o.date)).filter(Boolean))).sort();
+    const months = Object.keys(monthBuckets).sort();
     calMonth = months[months.length - 1] || monthKey(todayISO());
   }
 
@@ -4672,7 +4713,9 @@ function renderCalendar(mk, dayBuckets) {
     if (d == null) return `<div class="cal-cell cal-cell-empty"></div>`;
     const dk = `${mk}-${String(d).padStart(2, '0')}`;
     const b = dayBuckets[dk];
-    const has = b && b.orders.length;
+    // A day is "active" if cash came in OR an order completed — either should
+    // make the cell tappable so the user can drill into the day's activity.
+    const has = b && (b.gross > 0 || b.net !== 0 || b.qty > 0 || (b.orders && b.orders.length) || (b.payments && b.payments.length));
     const cls = ['cal-cell'];
     if (has) cls.push('cal-cell-active');
     if (dk === todayKey) cls.push('cal-cell-today');
@@ -4754,17 +4797,22 @@ function renderCalendar(mk, dayBuckets) {
 // Read-only modal showing every sale on a given day, grouped by customer.
 function openDayDetail(dateKey) {
   const b = __monthlyDayBuckets[dateKey];
-  if (!b || !b.orders.length) return;
+  if (!b || (!b.orders.length && !b.payments.length)) return;
 
-  const byCustomer = new Map();
-  for (const o of b.orders) {
-    const key = (o.customer || '').toLowerCase().trim();
-    if (!byCustomer.has(key)) byCustomer.set(key, { name: o.customer || '', total: 0, profit: 0, items: [] });
-    const c = byCustomer.get(key);
-    c.total += orderTotal(o);
-    c.profit += orderProfit(o);
-    c.items.push(...orderItems(o));
-  }
+  // Distinct customers (across both payments received today and orders that
+  // closed today) feed the header counter.
+  const customerSet = new Set();
+  for (const pe of b.payments) customerSet.add((pe.order.customer || '').toLowerCase().trim());
+  for (const o of b.orders) customerSet.add((o.customer || '').toLowerCase().trim());
+
+  // Each completed order contributes its full subtotal/profit/items to the
+  // "Orders completed today" section.
+  const completed = b.orders.map(o => ({
+    name: o.customer || 'Customer',
+    total: orderTotal(o),
+    profit: orderProfit(o),
+    items: orderItems(o),
+  }));
 
   $('#modalTitle').textContent = fmtDateLong(dateKey);
   const form = $('#modalForm');
@@ -4774,28 +4822,54 @@ function openDayDetail(dateKey) {
         <div class="dd-stat dd-stat-gross"><span>Total Gross</span><b>${fmt$(round2(b.gross))}</b></div>
         <div class="dd-stat dd-stat-net"><span>Net Profit</span><b>${fmt$(round2(b.net))}</b></div>
         <div class="dd-stat dd-stat-qty"><span>Total Items</span><b>${fmtN(b.qty)}</b></div>
-        <div class="dd-stat"><span>Customers</span><b>${fmtN(byCustomer.size)}</b></div>
+        <div class="dd-stat"><span>Customers</span><b>${fmtN(customerSet.size)}</b></div>
       </div>
-      <div class="day-detail-list">
-        ${[...byCustomer.values()].map(c => `
-          <div class="dd-customer">
-            <div class="dd-customer-head">
-              <b class="dd-customer-name">${escapeHtml(c.name || 'Customer')}</b>
-              <span class="dd-customer-totals">${fmt$(round2(c.total))} <span class="muted">· ${fmt$(round2(c.profit))} profit</span></span>
-            </div>
-            <div class="dd-items">
-              ${c.items.map(it => {
-                const qty = Number(it.qty) || 0, price = Number(it.price) || 0;
-                return `<div class="dd-item">
-                  <span class="dd-item-name">${escapeHtml(it.product || '')}</span>
-                  <span class="dd-item-qty muted">×${fmtN(qty)}</span>
-                  <span class="dd-item-total">${fmt$(round2(qty * price))}</span>
-                </div>`;
-              }).join('')}
-            </div>
+      ${b.payments.length ? `
+        <div class="dd-section">
+          <div class="dd-section-head">Payments Received</div>
+          <div class="dd-payments">
+            ${b.payments.map(pe => {
+              const amt = Number(pe.payment && pe.payment.amount) || 0;
+              const method = (pe.payment && pe.payment.method) || '';
+              const bal = orderBalance(pe.order);
+              const fullPaid = orderHasLandedProfit(pe.order);
+              const tag = fullPaid
+                ? `<span class="dd-pay-tag dd-pay-tag-final">Paid in full</span>`
+                : `<span class="dd-pay-tag dd-pay-tag-partial">Partial · ${fmt$(round2(bal))} still owed</span>`;
+              return `<div class="dd-payment">
+                <span class="dd-pay-name"><b>${escapeHtml(pe.order.customer || 'Customer')}</b>${method ? ` <span class="muted">· ${escapeHtml(method)}</span>` : ''}</span>
+                <span class="dd-pay-amount">${fmt$(round2(amt))}</span>
+                ${tag}
+              </div>`;
+            }).join('')}
           </div>
-        `).join('')}
-      </div>
+        </div>
+      ` : ''}
+      ${completed.length ? `
+        <div class="dd-section">
+          <div class="dd-section-head">Orders Completed</div>
+          <div class="day-detail-list">
+            ${completed.map(c => `
+              <div class="dd-customer">
+                <div class="dd-customer-head">
+                  <b class="dd-customer-name">${escapeHtml(c.name)}</b>
+                  <span class="dd-customer-totals">${fmt$(round2(c.total))} <span class="muted">· ${fmt$(round2(c.profit))} profit</span></span>
+                </div>
+                <div class="dd-items">
+                  ${c.items.map(it => {
+                    const qty = Number(it.qty) || 0, price = Number(it.price) || 0;
+                    return `<div class="dd-item">
+                      <span class="dd-item-name">${escapeHtml(it.product || '')}</span>
+                      <span class="dd-item-qty muted">×${fmtN(qty)}</span>
+                      <span class="dd-item-total">${fmt$(round2(qty * price))}</span>
+                    </div>`;
+                  }).join('')}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
     </div>
   `;
 
@@ -4809,15 +4883,19 @@ function openDayDetail(dateKey) {
 // for 6-row months, Week 5's range extends through the folded row-6 days.
 function openWeekDetail(mk, weekNum, startDay, endDay) {
   const allOrders = [];
+  const allPayments = [];
   let gross = 0, net = 0, qty = 0;
   for (let d = startDay; d <= endDay; d++) {
     const dk = `${mk}-${String(d).padStart(2, '0')}`;
     const b = __monthlyDayBuckets[dk];
     if (!b) continue;
-    allOrders.push(...b.orders);
+    allOrders.push(...(b.orders || []));
+    allPayments.push(...(b.payments || []));
     gross += b.gross; net += b.net; qty += b.qty;
   }
-  if (!allOrders.length) return;
+  // Open even if no order completed in the week — partial-payment activity
+  // alone is still worth showing.
+  if (!allOrders.length && !allPayments.length) return;
 
   const byCustomer = new Map();
   for (const o of allOrders) {

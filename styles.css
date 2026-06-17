@@ -1268,6 +1268,36 @@ button.cal-week-total:active { transform: scale(0.97); }
 }
 .dd-item-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dd-item-total { font-weight: 600; font-variant-numeric: tabular-nums; }
+/* Day-detail sections: "Payments Received" + "Orders Completed" */
+.dd-section { display: flex; flex-direction: column; gap: 8px; }
+.dd-section-head {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: -2px;
+}
+.dd-payments { display: flex; flex-direction: column; gap: 6px; }
+.dd-payment {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-size: 13px;
+}
+.dd-pay-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dd-pay-amount { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--primary); }
+.dd-pay-tag {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em;
+  padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+}
+.dd-pay-tag-final { background: rgba(34, 197, 94, 0.12); color: var(--success, #22c55e); }
+.dd-pay-tag-partial { background: rgba(245, 158, 11, 0.14); color: #c2810f; }
+@media (max-width: 520px) {
+  .dd-payment { grid-template-columns: 1fr auto; }
+  .dd-pay-tag { grid-column: 1 / -1; justify-self: start; }
+}
 
 /* Expandable Monthly page (month rows → day rows → order details) */
 tr.month-row { cursor: pointer; }
