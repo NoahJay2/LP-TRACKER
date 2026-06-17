@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-06-17.11';
+const BUILD_VERSION = '2026-06-17.18';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -67,11 +67,25 @@ function migrateOrders(orders) {
     // gets cleaned up the next time the file is saved. Cheap and idempotent.
     r.shipping = round2(r.shipping);
     if (Array.isArray(r.items)) {
-      r.items = r.items.map(it => ({
-        ...it,
-        price: round2(it && it.price),
-        cogs: round2(it && it.cogs),
-      }));
+      r.items = r.items.map(it => {
+        // Normalize per-line discount to { type, value } | null. Legacy bare
+        // numbers (older saves) get promoted to {type:'amount', value:N}.
+        let discount = null;
+        const raw = it && it.discount;
+        if (typeof raw === 'number' && raw > 0) {
+          discount = { type: 'amount', value: Math.ceil(raw - 1e-9) };
+        } else if (raw && typeof raw === 'object' && Number(raw.value) > 0) {
+          const type = raw.type === 'percent' ? 'percent' : 'amount';
+          const value = Number(raw.value);
+          discount = { type, value: type === 'percent' ? value : Math.ceil(value - 1e-9) };
+        }
+        return {
+          ...it,
+          price: round2(it && it.price),
+          cogs: round2(it && it.cogs),
+          discount,
+        };
+      });
     }
     // Discount: normalize to { type:'percent'|'amount', value } or null.
     if (r.discount && (r.discount.type === 'percent' || r.discount.type === 'amount') && Number(r.discount.value) > 0) {
@@ -602,12 +616,43 @@ function orderShipping(o) { return Number(o && o.shipping) || 0; }
 function orderItemsTotal(o) {
   return orderItems(o).reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.price) || 0), 0);
 }
-// Subtotal of the items eligible for a discount. Items flagged
-// `excludeDiscount` (e.g. a product the user doesn't want marked down) are
-// left out of the base the discount is computed against.
+// Per-line gross (qty × price) before any line or order discount.
+function itemLineSubtotal(it) {
+  return (Number(it && it.qty) || 0) * (Number(it && it.price) || 0);
+}
+// Per-line discount — either a flat dollar amount OR a percent of the line
+// subtotal, depending on the user's pick. Schema is { type, value } | null.
+// Legacy entries stored a bare number — treat those as dollars. Always rounds
+// UP to whole dollars (whole-dollar policy) and is capped at the line subtotal.
+function itemDiscountAmount(it) {
+  if (!it) return 0;
+  const d = it.discount;
+  let type = 'amount', value = 0;
+  if (typeof d === 'number') {
+    value = d;
+  } else if (d && typeof d === 'object') {
+    type = d.type === 'percent' ? 'percent' : 'amount';
+    value = Number(d.value) || 0;
+  }
+  if (value <= 0) return 0;
+  const base = itemLineSubtotal(it);
+  const raw = type === 'percent' ? (base * value / 100) : value;
+  return Math.min(base, Math.max(0, Math.ceil(raw - 1e-9)));
+}
+// Per-line net (qty × price − line discount) — used everywhere the customer-
+// facing line total appears, including the invoice and order summary.
+function itemLineTotal(it) {
+  return itemLineSubtotal(it) - itemDiscountAmount(it);
+}
+function orderItemDiscountsTotal(o) {
+  return orderItems(o).reduce((s, it) => s + itemDiscountAmount(it), 0);
+}
+// Subtotal of the items eligible for the order-level discount. Items flagged
+// `excludeDiscount` are left out of the base. Per-line discounts are subtracted
+// FIRST so the order-level discount stacks on top of any line-level discount.
 function orderDiscountableSubtotal(o) {
   return orderItems(o).reduce(
-    (s, it) => (it && it.excludeDiscount ? s : s + (Number(it.qty) || 0) * (Number(it.price) || 0)),
+    (s, it) => (it && it.excludeDiscount ? s : s + itemLineTotal(it)),
     0
   );
 }
@@ -626,16 +671,16 @@ function orderDiscountAmount(o) {
   const amt = Math.ceil(raw - 1e-9);
   return Math.min(base, Math.max(0, amt));
 }
-// Total amount the customer pays (items − discount + shipping). Shipping is
-// collected from the customer so it counts as revenue everywhere.
+// Total the customer pays = items gross − line discounts − order discount +
+// shipping. Shipping is collected so it counts as revenue everywhere.
 function orderTotal(o) {
-  return orderItemsTotal(o) - orderDiscountAmount(o) + orderShipping(o);
+  return orderItemsTotal(o) - orderItemDiscountsTotal(o) - orderDiscountAmount(o) + orderShipping(o);
 }
-// Profit = items profit − discount + shipping. The discount comes straight off
-// the bottom line (COGS is fixed); shipping is treated as pass-through.
+// Profit = item profit − line discounts − order discount + shipping. Discounts
+// come straight off the bottom line (COGS is fixed); shipping is pass-through.
 function orderProfit(o) {
   const itemsProfit = orderItems(o).reduce((s, it) => s + ((Number(it.price) || 0) - (Number(it.cogs) || 0)) * (Number(it.qty) || 0), 0);
-  return itemsProfit - orderDiscountAmount(o) + orderShipping(o);
+  return itemsProfit - orderItemDiscountsTotal(o) - orderDiscountAmount(o) + orderShipping(o);
 }
 function orderQty(o) {
   return orderItems(o).reduce((s, it) => s + (Number(it.qty) || 0), 0);
@@ -1362,7 +1407,8 @@ function renderDashboard() {
   restoreGroupExpansion(pendingBody, pendingExpanded);
   wireGroupExpand(pendingBody);
   wireOrderInteractions(pendingBody);
-  wirePendingMobileRowEdit(pendingBody);
+  // Edit now requires explicitly tapping the pencil icon — the tap-anywhere
+  // helper was too easy to trigger by accident while scrolling on mobile.
   // Pending header total/profit = outstanding balance only. Paid-but-undelivered
   // orders contribute $0 here (cash already collected); partial orders contribute
   // just the unpaid portion.
@@ -1481,39 +1527,38 @@ function renderInvoiceView({ formEl, orders, customerName, dateKey, onBack, allo
   // its eligible lines so a discounted line can show its reduced price with the
   // original struck through. The remainder is applied to the last eligible line
   // so the per-line discounts sum exactly to the order's discount.
-  const lineItems = orders.flatMap(o => {
-    const base = orderDiscountableSubtotal(o);
-    const totalDisc = orderDiscountAmount(o);
-    const rows = orderItems(o).map(it => {
-      const qty = Number(it.qty) || 0;
-      const price = Number(it.price) || 0;
-      return { product: it.product || '', qty, price, lineTotal: qty * price, excluded: !!it.excludeDiscount, disc: 0 };
-    });
-    if (totalDisc > 0 && base > 0) {
-      // Allocate the whole-dollar discount across eligible lines in WHOLE
-      // dollars (remainder on the last line) so every discounted line total
-      // stays a clean whole number — no cents on the invoice.
-      const incl = rows.filter(r => !r.excluded && r.lineTotal > 0);
-      let allocated = 0;
-      incl.forEach((r, i) => {
-        if (i === incl.length - 1) { r.disc = Math.round(totalDisc - allocated); }
-        else { r.disc = Math.round(totalDisc * r.lineTotal / base); allocated += r.disc; }
-      });
-    }
-    return rows;
-  });
+  // Per-line discount only ends up in `disc` so a line strikethrough means
+  // "this specific line was marked down." The overall (order-level) discount is
+  // shown as a single line at the BOTTOM of the invoice, not allocated into
+  // each line. Customers see one familiar "You saved" total instead of a bunch
+  // of tiny per-line markdowns that don't tie back to anything they did.
+  const lineItems = orders.flatMap(o => orderItems(o).map(it => {
+    const qty = Number(it.qty) || 0;
+    const price = Number(it.price) || 0;
+    return {
+      product: it.product || '',
+      qty, price,
+      lineTotal: qty * price,
+      excluded: !!it.excludeDiscount,
+      disc: itemDiscountAmount(it),
+    };
+  }));
   const itemsSubtotal = round2(orders.reduce((s, o) => s + orderItemsTotal(o), 0));
   const shipping = round2(orders.reduce((s, o) => s + orderShipping(o), 0));
-  const discountAmt = round2(orders.reduce((s, o) => s + orderDiscountAmount(o), 0));
-  const discountedSubtotal = round2(itemsSubtotal - discountAmt);
-  // Discount line label — include the percentage when the invoice has a single
-  // percentage discount and no flat-dollar discount mixed in.
+  const lineDiscTotal = round2(orders.reduce((s, o) => s + orderItemDiscountsTotal(o), 0));
+  const orderDiscTotal = round2(orders.reduce((s, o) => s + orderDiscountAmount(o), 0));
+  // Total savings = every dollar the customer didn't pay (per-line + overall
+  // discounts). Subtotal stays at the gross figure so the math reads cleanly:
+  // Subtotal − You saved + Shipping = Total Due.
+  const totalSavings = round2(lineDiscTotal + orderDiscTotal);
+  // Discount line label — show "(X% off)" only when ALL the savings came from
+  // a single overall percent discount with no per-line discounts mixed in.
   const discountPcts = new Set(
     orders.filter(o => orderDiscountAmount(o) > 0 && o.discount && o.discount.type === 'percent')
           .map(o => Number(o.discount.value))
   );
   const anyFlatDiscount = orders.some(o => orderDiscountAmount(o) > 0 && (!o.discount || o.discount.type !== 'percent'));
-  const discountLabel = (discountPcts.size === 1 && !anyFlatDiscount)
+  const discountLabel = (discountPcts.size === 1 && !anyFlatDiscount && lineDiscTotal <= 0.005)
     ? `You saved (${[...discountPcts][0]}% off)`
     : 'You saved';
   const total = round2(orders.reduce((s, o) => s + orderTotal(o), 0));
@@ -1569,10 +1614,10 @@ function renderInvoiceView({ formEl, orders, customerName, dateKey, onBack, allo
             `;
           }).join('') : `<div class="invoice-item-row" style="opacity:.5"><span>(no items)</span><span></span><span></span><span></span></div>`}
         </div>
-        ${(shipping > 0 || discountAmt > 0) ? `
+        ${(shipping > 0 || totalSavings > 0) ? `
           <div class="invoice-subtotal-rows">
-            <div class="invoice-subtotal-row"><span>Subtotal</span><span>${fmt$(discountAmt > 0 ? discountedSubtotal : itemsSubtotal)}</span></div>
-            ${discountAmt > 0 ? `<div class="invoice-subtotal-row invoice-discount-row"><span>${discountLabel}</span><span>${fmt$(discountAmt)}</span></div>` : ''}
+            <div class="invoice-subtotal-row"><span>Subtotal</span><span>${fmt$(itemsSubtotal)}</span></div>
+            ${totalSavings > 0 ? `<div class="invoice-subtotal-row invoice-discount-row"><span>${discountLabel}</span><span>−${fmt$(totalSavings)}</span></div>` : ''}
             ${shipping > 0 ? `<div class="invoice-subtotal-row"><span>Shipping</span><span>${fmt$(shipping)}</span></div>` : ''}
           </div>
         ` : ''}
@@ -1608,7 +1653,7 @@ function renderInvoiceView({ formEl, orders, customerName, dateKey, onBack, allo
           <div class="invoice-payment-list">
             <div class="invoice-payment-row">
               <span class="invoice-payment-method">Zelle</span>
-              <a class="invoice-payment-value" href="tel:5125731342">512-573-1342</a>
+              <a class="invoice-payment-value" href="Email:lumenresearchllc@gmail.com">LumenResearchLLC@gmail.com</a>
             </div>
             <div class="invoice-payment-row">
               <span class="invoice-payment-method">Apple Pay</span>
@@ -1616,7 +1661,7 @@ function renderInvoiceView({ formEl, orders, customerName, dateKey, onBack, allo
             </div>
             <div class="invoice-payment-row">
               <span class="invoice-payment-method">CashApp</span>
-              <span class="invoice-payment-value">$NoahJx2</span>
+              <span class="invoice-payment-value">$LumenResearch</span>
             </div>
             <div class="invoice-payment-row">
               <span class="invoice-payment-method">Cash</span>
@@ -1624,8 +1669,9 @@ function renderInvoiceView({ formEl, orders, customerName, dateKey, onBack, allo
             </div>
           </div>
           <div class="invoice-payment-note">
-            <b>Heads up — CashApp is strict.</b> If sending via CashApp, please put
-            <b>"for food"</b> or just a <b>"."</b> in the memo so the payment isn't flagged.
+            <b>Heads up: Zelle and CashApp are strict about memos.</b>
+            Please leave the note/memo blank, or just enter a <b>"."</b> or
+            <b>"food"</b> if one is required.
           </div>
         </div>
         `}
@@ -2299,23 +2345,41 @@ function orderModal(existing, draft) {
       </div>
     </div>
     <div class="discount-section">
-      <button type="button" class="btn ghost discount-toggle-btn" id="discountToggleBtn"${data.discount ? ' hidden' : ''}>+ Add Discount</button>
-      <div class="discount-field"${data.discount ? '' : ' hidden'}>
-        <label>
-          <span>Discount</span>
-          <div class="discount-input-wrap">
-            <select id="discountType" name="discountType">
-              <option value="amount"${(!data.discount || data.discount.type === 'amount') ? ' selected' : ''}>$ Off</option>
-              <option value="percent"${(data.discount && data.discount.type === 'percent') ? ' selected' : ''}>% Off</option>
-            </select>
-            <input type="number" inputmode="numeric" id="discountValue" min="0" step="1" value="${data.discount ? data.discount.value : ''}" placeholder="0" />
-            <span class="discount-applied" id="discountApplied"></span>
-            <button type="button" class="icon-btn danger discount-remove" id="discountRemoveBtn" title="Remove discount">×</button>
+      <button type="button" class="btn ghost discount-toggle-btn" id="discountToggleBtn">+ Add Discount</button>
+    </div>
+    <div class="discount-popup" id="discountPopup" hidden>
+      <div class="discount-popup-backdrop" id="discountPopupBackdrop"></div>
+      <div class="discount-popup-card" role="dialog" aria-modal="true" aria-label="Discount">
+        <div class="discount-popup-head">
+          <h4>Discount</h4>
+          <button type="button" class="icon-btn" id="discountPopupClose" title="Close">×</button>
+        </div>
+        <div class="discount-popup-body">
+          <label class="discount-popup-overall">
+            <span>Overall Discount</span>
+            <div class="discount-input-wrap">
+              <select id="discountType" name="discountType">
+                <option value="amount">$ Off</option>
+                <option value="percent">% Off</option>
+              </select>
+              <input type="number" inputmode="numeric" id="discountValue" min="0" step="1" placeholder="0" />
+              <span class="discount-applied" id="discountApplied"></span>
+              <button type="button" class="icon-btn danger discount-remove" id="discountRemoveBtn" title="Remove overall discount">×</button>
+            </div>
+          </label>
+          <div class="discount-exclude" id="discountExclude">
+            <div class="discount-exclude-head">
+              <div class="discount-exclude-label">Line Items</div>
+              <div class="discount-exclude-sub muted">Uncheck to skip the overall discount · type a dollar amount to discount just that line</div>
+            </div>
+            <div class="discount-exclude-cols muted">
+              <span>Include</span><span>Item</span><span>Line</span><span>Off</span>
+            </div>
+            <div id="discountExcludeList"></div>
           </div>
-        </label>
-        <div class="discount-exclude" id="discountExclude" hidden>
-          <div class="discount-exclude-label">Apply discount to</div>
-          <div id="discountExcludeList"></div>
+        </div>
+        <div class="discount-popup-foot">
+          <button type="button" class="btn primary" id="discountPopupDone">Done</button>
         </div>
       </div>
     </div>
@@ -2367,7 +2431,7 @@ function orderModal(existing, draft) {
   `;
 
   function blankItem() {
-    return { product: '', qty: 1, price: 0, cogs: 0 };
+    return { product: '', qty: 1, price: 0, cogs: 0, discount: null };
   }
 
   // Build a single item row. Handlers close over the item reference (not an
@@ -2403,6 +2467,7 @@ function orderModal(existing, draft) {
           }
         }
         updateSummary();
+        renderDiscountExclusions();
       });
     });
     row.querySelector('[data-remove]').addEventListener('click', (e) => {
@@ -2424,6 +2489,7 @@ function orderModal(existing, draft) {
         row.remove();
       }
       updateSummary();
+      renderDiscountExclusions();
     });
     return row;
   }
@@ -2455,33 +2521,91 @@ function orderModal(existing, draft) {
   // excludeDiscount flag so the discount skips it. Rebuilt from data each time
   // so product names stay current; checkbox state is read back from the item.
   function renderDiscountExclusions() {
-    const wrap = form.querySelector('#discountExclude');
     const list = form.querySelector('#discountExcludeList');
-    if (!wrap || !list) return;
-    const field = form.querySelector('.discount-field');
-    // Show the per-item checklist whenever the discount section is open and
-    // there's more than one item — even before a value is typed — so it's
-    // discoverable. Each item defaults to included; uncheck to exclude.
-    const show = field && !field.hidden && data.items.length >= 2;
-    wrap.hidden = !show;
-    if (!show) return;
+    if (!list) return;
+    // Don't rip the list out while the user is typing in one of its inputs —
+    // that would steal focus mid-edit and drop the next keystroke. The line
+    // input handlers update their own row's display in-place, so skipping the
+    // rebuild here is safe.
+    if (list.contains(document.activeElement)) return;
     list.innerHTML = '';
     data.items.forEach((it, idx) => {
-      const row = document.createElement('label');
+      const row = document.createElement('div');
       row.className = 'discount-exclude-item';
       const name = (it.product || '').trim() || `Item ${idx + 1}`;
-      const lineTotal = (Number(it.qty) || 0) * (Number(it.price) || 0);
+      const lineSub = itemLineSubtotal(it);
+      const lineTotal = lineSub - itemDiscountAmount(it);
+      // Discount schema is { type:'amount'|'percent', value:number } | null.
+      // Legacy entries stored a bare number — treat those as a dollar amount.
+      const d = it.discount;
+      let curType = 'amount';
+      let curValue = '';
+      if (typeof d === 'number' && d > 0) { curType = 'amount'; curValue = String(d); }
+      else if (d && typeof d === 'object' && Number(d.value) > 0) {
+        curType = d.type === 'percent' ? 'percent' : 'amount';
+        curValue = String(d.value);
+      }
       row.innerHTML = `
-        <input type="checkbox" ${it.excludeDiscount ? '' : 'checked'} />
+        <label class="dx-include" title="Include in overall discount">
+          <input type="checkbox" data-dx-include ${it.excludeDiscount ? '' : 'checked'} />
+        </label>
         <span class="dx-name">${escapeHtml(name)}</span>
         <span class="dx-amt muted">${fmt$(round2(lineTotal))}</span>
+        <span class="dx-line-disc">
+          <select data-dx-type aria-label="Line discount type">
+            <option value="amount"${curType === 'amount' ? ' selected' : ''}>$</option>
+            <option value="percent"${curType === 'percent' ? ' selected' : ''}>%</option>
+          </select>
+          <input type="number" inputmode="numeric" min="0" step="1" data-dx-line value="${escapeHtml(curValue)}" placeholder="0" aria-label="Line discount value" />
+        </span>
       `;
-      row.querySelector('input').addEventListener('change', (e) => {
+      const typeSel = row.querySelector('[data-dx-type]');
+      const lineInput = row.querySelector('[data-dx-line]');
+      // Pull a fresh {type, value} from the row and write it into it.discount,
+      // then update just THIS row's displayed line total + the order summary.
+      // No full list rebuild — keeps the input focused so typing flows.
+      function syncLineDiscount() {
+        const v = Number(lineInput.value) || 0;
+        if (v > 0) {
+          it.discount = {
+            type: typeSel.value === 'percent' ? 'percent' : 'amount',
+            value: v,
+          };
+        } else {
+          it.discount = null;
+        }
+        const newLineTotal = itemLineSubtotal(it) - itemDiscountAmount(it);
+        row.querySelector('.dx-amt').textContent = fmt$(round2(newLineTotal));
+        // Update just the form summary numbers — do NOT call updateSummary()
+        // here because that would invoke renderDiscountExclusions again and
+        // (apart from the focus guard) ripple back into this row.
+        refreshOrderSummaryNumbers();
+      }
+      row.querySelector('[data-dx-include]').addEventListener('change', (e) => {
         it.excludeDiscount = !e.target.checked;
-        updateSummary();
+        refreshOrderSummaryNumbers();
       });
+      typeSel.addEventListener('change', syncLineDiscount);
+      lineInput.addEventListener('input', syncLineDiscount);
+      lineInput.addEventListener('change', syncLineDiscount);
+      lineInput.addEventListener('blur', syncLineDiscount);
       list.appendChild(row);
     });
+  }
+  // Lightweight refresh: just updates the four summary numbers + applied
+  // discount badge + payments summary. Used while typing in the discount panel
+  // so we don't trigger a full discount-list rebuild on every keystroke.
+  function refreshOrderSummaryNumbers() {
+    form.querySelector('#sumCount').textContent = data.items.length;
+    form.querySelector('#sumQty').textContent = fmtN(orderQty(data));
+    form.querySelector('#sumTotal').textContent = fmt$(orderTotal(data));
+    form.querySelector('#sumProfit').textContent = fmt$(orderProfit(data));
+    const applied = form.querySelector('#discountApplied');
+    if (applied) {
+      const amt = orderDiscountAmount(data);
+      applied.textContent = amt > 0 ? `−${fmt$(amt)}` : '';
+    }
+    updatePaymentsSummary();
   }
 
   form.querySelector('#addItemBtn').addEventListener('click', () => {
@@ -2685,34 +2809,62 @@ function orderModal(existing, draft) {
     updateSummary();
   });
 
-  // Discount — same toggle pattern. The type selector ($ off / % off) and value
-  // both write back to data.discount; the × clears it. updateSummary() shows
-  // the resolved amount (percentages round up to a whole dollar).
+  // Discount — single button opens a popup overlay that lets the user set both
+  // the overall discount AND any per-line discounts in one place. Changes are
+  // applied live (no Save button on the popup); Done just dismisses it.
   const discountBtn = form.querySelector('#discountToggleBtn');
-  const discountField = form.querySelector('.discount-field');
+  const discountPopup = form.querySelector('#discountPopup');
+  const discountPopupCloseBtn = form.querySelector('#discountPopupClose');
+  const discountPopupBackdrop = form.querySelector('#discountPopupBackdrop');
+  const discountPopupDoneBtn = form.querySelector('#discountPopupDone');
   const discountType = form.querySelector('#discountType');
   const discountValue = form.querySelector('#discountValue');
   const discountRemoveBtn = form.querySelector('#discountRemoveBtn');
+  // Hydrate inputs from existing data.discount on first build.
+  if (data.discount) {
+    discountType.value = data.discount.type === 'percent' ? 'percent' : 'amount';
+    discountValue.value = data.discount.value;
+  }
   function syncDiscountFromInputs() {
     const v = Number(discountValue.value) || 0;
     data.discount = v > 0 ? { type: discountType.value === 'percent' ? 'percent' : 'amount', value: v } : null;
     updateSummary();
+    updateDiscountBtnLabel();
   }
-  discountBtn.addEventListener('click', () => {
-    discountBtn.hidden = true;
-    discountField.hidden = false;
-    updateSummary(); // render the "Apply discount to" checklist immediately
-    focusForKeyboard(discountValue);
-  });
+  function updateDiscountBtnLabel() {
+    const total = orderItemDiscountsTotal(data) + orderDiscountAmount(data);
+    discountBtn.textContent = total > 0
+      ? `Edit Discount · −${fmt$(round2(total))}`
+      : '+ Add Discount';
+  }
+  function openDiscountPopup() {
+    discountPopup.hidden = false;
+    document.body.classList.add('discount-popup-open');
+    // Re-render the line items list so it reflects the latest items, then
+    // focus the value input so the user can start typing right away.
+    renderDiscountExclusions();
+    setTimeout(() => focusForKeyboard(discountValue), 50);
+  }
+  function closeDiscountPopup() {
+    discountPopup.hidden = true;
+    document.body.classList.remove('discount-popup-open');
+    updateDiscountBtnLabel();
+    updateSummary();
+  }
+  discountBtn.addEventListener('click', openDiscountPopup);
+  discountPopupCloseBtn.addEventListener('click', closeDiscountPopup);
+  discountPopupBackdrop.addEventListener('click', closeDiscountPopup);
+  discountPopupDoneBtn.addEventListener('click', closeDiscountPopup);
   discountRemoveBtn.addEventListener('click', () => {
     discountValue.value = '';
     data.discount = null;
-    discountField.hidden = true;
-    discountBtn.hidden = false;
     updateSummary();
+    updateDiscountBtnLabel();
   });
   discountType.addEventListener('change', syncDiscountFromInputs);
   discountValue.addEventListener('input', syncDiscountFromInputs);
+  // Reflect any existing discount in the button label on first paint.
+  updateDiscountBtnLabel();
 
   renderItems();
   renderPayments();

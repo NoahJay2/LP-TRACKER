@@ -509,27 +509,164 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
   background: var(--surface-2);
   padding: 8px 10px;
 }
+/* Discount popup — a separate overlay that opens on top of the order modal so
+   the discount form has dedicated screen real estate without crowding the
+   main order form. */
+.discount-popup {
+  position: fixed;
+  inset: 0;
+  z-index: 200;          /* above the main modal (z-index: 100) */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.discount-popup[hidden] { display: none; }
+.discount-popup-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.discount-popup-card {
+  position: relative;
+  width: min(520px, 92vw);
+  max-height: 88vh;
+  background: var(--surface);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: modal-pop .25s var(--ease);
+}
+.discount-popup-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 14px 14px 22px;
+  border-bottom: 1px solid var(--border);
+}
+.discount-popup-head h4 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+.discount-popup-head .icon-btn {
+  width: 38px; height: 38px;
+  font-size: 22px; line-height: 1;
+  border-radius: 10px;
+  -webkit-tap-highlight-color: transparent;
+}
+.discount-popup-body {
+  padding: 18px 22px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  touch-action: pan-y;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.discount-popup-overall {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+.discount-popup-foot {
+  padding: 12px 22px 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+}
+.discount-popup-foot .btn { min-width: 96px; }
+/* Lock body scroll while the popup is open so iOS doesn't bounce the order
+   form underneath. */
+body.discount-popup-open { overflow: hidden; }
 .discount-exclude-label {
   font-size: 10.5px;
   text-transform: uppercase;
   letter-spacing: .05em;
   color: var(--muted);
   font-weight: 600;
+}
+.discount-exclude-head { margin-bottom: 6px; }
+.discount-exclude-sub { font-size: 11px; line-height: 1.35; margin-top: 2px; }
+/* Column headers + each item row share the same 4-column grid so the
+   checkbox, name, line total, and discount input all line up cleanly. */
+.discount-exclude-cols,
+.discount-exclude-item {
+  display: grid;
+  grid-template-columns: 32px 1fr 70px 116px;
+  align-items: center;
+  gap: 8px;
+}
+.discount-exclude-cols {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  padding: 2px 2px 4px;
+  border-bottom: 1px dashed var(--border);
   margin-bottom: 4px;
 }
+.discount-exclude-cols > :nth-child(3),
+.discount-exclude-cols > :nth-child(4) { text-align: right; }
 .discount-exclude-item {
-  display: flex;
-  align-items: center;
-  gap: 9px;
   padding: 6px 2px;
   font-size: 13px;
+}
+.discount-exclude-item .dx-include {
+  display: flex; align-items: center; justify-content: center; margin: 0;
+}
+.discount-exclude-item input[type="checkbox"] {
+  width: 18px; height: 18px; accent-color: var(--primary); margin: 0;
+}
+.discount-exclude-item .dx-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.discount-exclude-item .dx-amt { font-variant-numeric: tabular-nums; text-align: right; }
+.discount-exclude-item .dx-line-disc {
+  display: inline-flex; align-items: center; gap: 4px;
+  justify-content: flex-end;
+}
+.discount-exclude-item .dx-line-disc select {
+  padding: 4px 6px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  outline: none;
   cursor: pointer;
 }
-.discount-exclude-item input { width: 18px; height: 18px; flex: 0 0 auto; accent-color: var(--primary); margin: 0; }
-.discount-exclude-item .dx-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.discount-exclude-item .dx-amt { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+.discount-exclude-item .dx-line-disc select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.12);
+}
+.discount-exclude-item .dx-line-disc input {
+  width: 56px;
+  padding: 5px 7px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  text-align: right;
+  outline: none;
+}
+.discount-exclude-item .dx-line-disc input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.12);
+}
 /* A de-selected (excluded) item dims so it's clear it won't be discounted */
-.discount-exclude-item:has(input:not(:checked)) .dx-name { color: var(--muted-2); text-decoration: line-through; }
+.discount-exclude-item:has(input[data-dx-include]:not(:checked)) .dx-name {
+  color: var(--muted-2); text-decoration: line-through;
+}
+@media (max-width: 480px) {
+  .discount-exclude-cols,
+  .discount-exclude-item {
+    grid-template-columns: 28px 1fr 60px 108px;
+    gap: 6px;
+  }
+  .discount-exclude-item .dx-line-disc select { font-size: 14px; padding: 6px 7px; }
+  .discount-exclude-item .dx-line-disc input { width: 52px; font-size: 14px; padding: 7px 8px; }
+}
 /* Invoice discount line reads in green like a credit */
 .invoice-discount-row span:last-child { color: #047857; font-weight: 600; }
 
@@ -1829,9 +1966,16 @@ tr.month-row td:first-child { display: flex; align-items: center; gap: 4px; }
 .modal-body {
   padding: 20px 22px;
   overflow-y: auto;
+  overflow-x: hidden;
+  /* Lock touch panning to the vertical axis so horizontal drag gestures
+     (e.g. inadvertent swipes while filling the order form on mobile) don't
+     drift the form around or trigger any horizontal scroll/bounce. */
+  touch-action: pan-y;
+  overscroll-behavior-x: contain;
   display: grid;
   gap: 14px;
 }
+.modal-card { overflow-x: hidden; }
 .modal-body label {
   display: flex;
   flex-direction: column;
