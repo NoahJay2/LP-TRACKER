@@ -848,7 +848,7 @@ body.discount-popup-open { overflow: hidden; }
   text-transform: uppercase;
   color: #6b7280;
 }
-.invoice-payment-list { display: flex; flex-direction: column; gap: 4px; }
+.invoice-payment-list { display: flex; flex-direction: column; gap: 6px; }
 .invoice-payment-row {
   display: flex;
   justify-content: space-between;
@@ -856,14 +856,56 @@ body.discount-popup-open { overflow: hidden; }
   font-size: 13.5px;
   gap: 12px;
 }
+/* Rows with a QR code use a 3-column grid so the QR has a fixed slot and the
+   email / cashtag in the middle column gets the rest of the width. */
+.invoice-payment-row.invoice-payment-row-qr {
+  display: grid;
+  grid-template-columns: 80px 1fr 70px;
+  align-items: center;
+}
 .invoice-payment-method { font-weight: 600; color: #111827; }
 .invoice-payment-value {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   color: #111827;
   text-decoration: none;
+  min-width: 0;
+  /* Wrap long values (e.g. the Zelle email) onto a second line on mobile
+     instead of truncating with an ellipsis. `overflow-wrap: anywhere` lets
+     the break happen mid-string for a long unbroken email like
+     LumenResearchLLC@gmail.com so the whole address stays visible. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.3;
 }
+.invoice-payment-amount { color: #047857; font-weight: 700; }
 a.invoice-payment-value { color: #1d4ed8; }
+/* QR code — white background + small padding so scanners read it cleanly even
+   after the screenshot has been resized / compressed through iMessage. The
+   inline SVG sizes itself to the container. */
+.invoice-payment-qr {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  padding: 3px;
+  background: #ffffff;
+  border-radius: 5px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
+  justify-self: end;
+}
+.invoice-payment-qr svg,
+.invoice-payment-qr img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+/* Static QR variant (your real bank-issued Zelle code) — same chrome as
+   generated QRs, just rendering an <img> instead of an inline SVG. */
+.invoice-payment-qr-static { padding: 2px; }
 .invoice-payment-note {
   font-size: 12.5px;
   line-height: 1.5;

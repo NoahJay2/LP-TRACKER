@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-06-17.18';
+const BUILD_VERSION = '2026-06-17.23';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -1510,6 +1510,25 @@ function partialPaidPill(o) {
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
+// Inline SVG QR for any URI — used by the invoice for the Zelle and CashApp
+// payment rows. Synchronous render so screenshots always capture the code.
+// Returns '' if the qrcode-generator library failed to load (CDN blocked /
+// offline) — the invoice still renders, just without QRs.
+function qrSvg(data, opts) {
+  if (typeof qrcode !== 'function') return '';
+  try {
+    const cellSize = (opts && opts.cellSize) || 4;
+    const margin = (opts && opts.margin) || 2;
+    const ec = (opts && opts.ec) || 'M';
+    const qr = qrcode(0, ec);
+    qr.addData(String(data || ''));
+    qr.make();
+    return qr.createSvgTag({ cellSize, margin, scalable: true });
+  } catch (e) {
+    console.warn('qrSvg failed for', data, e);
+    return '';
+  }
+}
 
 // Renders the invoice template into the modal form. Reusable from both the
 // Today popup (multi-order group, editable notes) and the order edit/new form
@@ -1647,21 +1666,35 @@ function renderInvoiceView({ formEl, orders, customerName, dateKey, onBack, allo
             <span class="invoice-total-amount">${fmt$(0)}</span>
           </div>
         ` : ''}
-        ${isFullyPaid ? '' : `
+        ${isFullyPaid ? '' : (() => {
+          // Build deep links for the QR codes. Zelle has no universal link
+          // scheme — `mailto:` is what every phone recognizes when scanning
+          // a QR. CashApp's URL accepts an optional /AMOUNT suffix, so we
+          // pre-fill the customer's still-owed balance and they don't have
+          // to type it. Both QRs render as inline SVG so screenshots always
+          // capture them in full crispness.
+          const zelleEmail = 'LumenResearchLLC@gmail.com';
+          const cashappTag = 'LumenResearch';
+          const zelleUri = `mailto:${zelleEmail}`;
+          const cashappAmt = Math.max(0, Math.round(balanceDue));
+          const cashappUri = `https://cash.app/$${cashappTag}` + (cashappAmt > 0 ? `/${cashappAmt}` : '');
+          return `
         <div class="invoice-payment-block">
           <div class="invoice-payment-label">Payment Methods</div>
           <div class="invoice-payment-list">
-            <div class="invoice-payment-row">
+            <div class="invoice-payment-row invoice-payment-row-qr">
               <span class="invoice-payment-method">Zelle</span>
-              <a class="invoice-payment-value" href="Email:lumenresearchllc@gmail.com">LumenResearchLLC@gmail.com</a>
+              <span class="invoice-payment-value">${zelleEmail}</span>
+              <span class="invoice-payment-qr invoice-payment-qr-static" title="Scan to pay via Zelle"><img src="public/zelle-qr.png" alt="Zelle QR" loading="eager" decoding="sync" /></span>
+            </div>
+            <div class="invoice-payment-row invoice-payment-row-qr">
+              <span class="invoice-payment-method">CashApp</span>
+              <a class="invoice-payment-value" href="${cashappUri}">$${cashappTag}${cashappAmt > 0 ? ` <span class="invoice-payment-amount">· ${fmt$(cashappAmt)}</span>` : ''}</a>
+              <a class="invoice-payment-qr" href="${cashappUri}" title="Scan to open CashApp">${qrSvg(cashappUri)}</a>
             </div>
             <div class="invoice-payment-row">
               <span class="invoice-payment-method">Apple Pay</span>
               <span class="invoice-payment-value">512-573-1342</span>
-            </div>
-            <div class="invoice-payment-row">
-              <span class="invoice-payment-method">CashApp</span>
-              <span class="invoice-payment-value">$LumenResearch</span>
             </div>
             <div class="invoice-payment-row">
               <span class="invoice-payment-method">Cash</span>
@@ -1674,7 +1707,8 @@ function renderInvoiceView({ formEl, orders, customerName, dateKey, onBack, allo
             <b>"food"</b> if one is required.
           </div>
         </div>
-        `}
+        `;
+        })()}
         <div class="invoice-notes-block" id="invoiceNotesBlock"></div>
       </div>
       <div class="invoice-actions">
