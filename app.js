@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-06-17.39';
+const BUILD_VERSION = '2026-06-17.40';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -5332,7 +5332,10 @@ function renderMonthly() {
   const filter = rawFilter === 'unpaid' ? 'pending' : rawFilter;
   const q = monthlySearch.value.toLowerCase().trim();
   let orders = state.orders;
-  if (filter === 'paid') orders = orders.filter(o => o.paid);
+  // "Paid Only" includes partially-paid orders too — their partial payments
+  // are real cash received and should still land on the calendar. Anything
+  // with at least one payment qualifies; completely unpaid orders drop out.
+  if (filter === 'paid') orders = orders.filter(o => orderPaymentsTotal(o) > 0.005);
   if (q) orders = orders.filter(o => {
     if ((o.customer || '').toLowerCase().includes(q)) return true;
     return orderItems(o).some(it => (it.product || '').toLowerCase().includes(q));
