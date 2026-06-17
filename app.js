@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-06-17.23';
+const BUILD_VERSION = '2026-06-17.39';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -27,7 +27,51 @@ function loadState() {
   s.orders = migrateOrders(s.orders || []);
   s.expenses = migrateExpenses(s.expenses || []);
   s.shipments = migrateShipments(s.shipments || []);
+  if (!Array.isArray(s.customers)) s.customers = [];
+  s.customers = migrateCustomers(s.customers);
+  // Auto-create stub customer profiles for any name on an order that doesn't
+  // have one yet — so the Customers tab is useful immediately with existing
+  // data, no manual setup required.
+  s.customers = ensureCustomersFromOrders(s.customers, s.orders);
   return s;
+}
+// Normalize customer records and snap fields to consistent shapes.
+function migrateCustomers(customers) {
+  return (customers || []).map(c => ({
+    id: c && c.id ? c.id : 'c-' + Math.random().toString(36).slice(2, 10),
+    name: (c && c.name) || '',
+    phone: (c && c.phone) || '',
+    email: (c && c.email) || '',
+    address: (c && c.address) || '',
+    notes: (c && c.notes) || '',
+    createdAt: (c && c.createdAt) || null,
+  })).filter(c => (c.name || '').trim());
+}
+// Match customers to orders by lower-cased trimmed name so a customer record
+// and the customer field on orders stay linked even if capitalization varies.
+function customerKey(name) { return (name || '').toLowerCase().trim(); }
+function ensureCustomersFromOrders(customers, orders) {
+  const existing = new Set((customers || []).map(c => customerKey(c.name)));
+  const out = [...customers];
+  for (const o of (orders || [])) {
+    const name = (o.customer || '').trim();
+    if (!name) continue;
+    const key = customerKey(name);
+    if (existing.has(key)) continue;
+    existing.add(key);
+    out.push({
+      id: 'c-' + Math.random().toString(36).slice(2, 10),
+      name, phone: '', email: '', address: '', notes: '',
+      createdAt: o.date || null,
+    });
+  }
+  return out;
+}
+// Look up a customer profile by case-insensitive name match.
+function findCustomerByName(name) {
+  const key = customerKey(name);
+  if (!key) return null;
+  return (state.customers || []).find(c => customerKey(c.name) === key) || null;
 }
 
 // Default existing shipments to unit='kits' so the legacy 1:1 behavior is
@@ -158,6 +202,26 @@ const sb = (window.SUPABASE_CONFIG && window.supabase)
 
 // Map between local JS shape and Postgres column names
 const Adapters = {
+  customers: {
+    toRow: (c) => ({
+      id: c.id,
+      name: c.name || '',
+      phone: c.phone || '',
+      email: c.email || '',
+      address: c.address || '',
+      notes: c.notes || '',
+      created_at: c.createdAt || null,
+    }),
+    fromRow: (r) => ({
+      id: r.id,
+      name: r.name || '',
+      phone: r.phone || '',
+      email: r.email || '',
+      address: r.address || '',
+      notes: r.notes || '',
+      createdAt: r.created_at || null,
+    }),
+  },
   stock: {
     toRow: (s) => {
       const row = {
@@ -165,9 +229,12 @@ const Adapters = {
         cost: numOrNull(s.cost), price: numOrNull(s.price),
         qty: intOrNull(s.qty), status: s.status,
       };
-      // Optional column — only send it if Supabase is known to have it, so an
-      // older schema without `reorder` doesn't reject the whole row.
+      // Optional columns — only send if Supabase is known to have them, so an
+      // older schema without `reorder` / `original_price` doesn't reject the
+      // whole row. (Original price is the "was" / list price; `price` is the
+      // active selling price. When original > price, the item is on sale.)
       if (orderColumnAvailable('reorder')) row.reorder = intOrNull(s.reorder);
+      if (orderColumnAvailable('original_price')) row.original_price = numOrNull(s.originalPrice);
       return row;
     },
     fromRow: (r) => ({
@@ -175,6 +242,7 @@ const Adapters = {
       cost: r.cost ?? 0, price: r.price ?? 0,
       qty: r.qty ?? 0, status: r.status || 'ACTIVE',
       reorder: r.reorder == null ? null : (Number(r.reorder) || 0),
+      originalPrice: r.original_price == null ? null : (Number(r.original_price) || 0),
     }),
   },
   orders: {
@@ -297,7 +365,7 @@ function intOrNull(v) { return v == null || v === '' ? null : parseInt(v, 10); }
 // data stays in the local cache and repopulates cloud the moment the column is
 // added (run the ALTER TABLE noted in the tooltip).
 const OPTIONAL_ORDER_COLUMNS = ['payments', 'discount', 'inventory_applied'];
-const OPTIONAL_STOCK_COLUMNS = ['reorder'];
+const OPTIONAL_STOCK_COLUMNS = ['reorder', 'original_price'];
 // Every optional column across tables, so the missing-column detector and the
 // upsert retry loop work for stock as well as orders. Column names are unique
 // across our tables, so a single localStorage flag per name is unambiguous.
@@ -342,20 +410,29 @@ function setCloudStatus(kind, text) {
 
 async function cloudFetchAll() {
   if (!sb) throw new Error('Supabase not configured');
-  const [stock, orders, shipments, expenses] = await Promise.all([
+  const [stock, orders, shipments, expenses, customers] = await Promise.all([
     sb.from('stock').select('*'),
     sb.from('orders').select('*'),
     sb.from('shipments').select('*'),
     sb.from('expenses').select('*'),
+    // Customers is optional — if the table doesn't exist yet we just ignore
+    // the error and treat it as an empty set. The app still functions; the
+    // user just won't get cross-device sync of customer profiles until they
+    // run the `create table customers …` SQL.
+    sb.from('customers').select('*').then(r => r, err => ({ data: [], error: err })),
   ]);
   for (const r of [stock, orders, shipments, expenses]) {
     if (r.error) throw r.error;
   }
+  const customerRows = (customers && !customers.error && Array.isArray(customers.data))
+    ? customers.data
+    : [];
   return {
     stock: stock.data.map(Adapters.stock.fromRow),
     orders: migrateOrders(orders.data.map(Adapters.orders.fromRow)),
     shipments: migrateShipments(shipments.data.map(Adapters.shipments.fromRow)),
     expenses: migrateExpenses(expenses.data.map(Adapters.expenses.fromRow)),
+    customers: migrateCustomers(customerRows.map(Adapters.customers.fromRow)),
   };
 }
 
@@ -366,6 +443,7 @@ async function cloudPushAll(s) {
     ['orders', s.orders],
     ['shipments', s.shipments],
     ['expenses', s.expenses],
+    ['customers', s.customers],
   ];
   for (const [t, items] of tables) {
     for (let i = 0; i < (items || []).length; i += 200) {
@@ -376,6 +454,14 @@ async function cloudPushAll(s) {
       while (attempts-- > 0) {
         const { error } = await sb.from(t).upsert(slice.map(Adapters[t].toRow));
         if (!error) break;
+        // If the customers TABLE doesn't exist yet, skip silently — the app
+        // still works locally; user can add the table when ready.
+        if (t === 'customers' && error && (
+              /relation .* does not exist/i.test(String(error.message || '')) ||
+              error.code === '42P01'
+            )) {
+          break;
+        }
         const col = missingOptionalOrderColumn(error);
         if (col && attempts > 0) { markOrderColumnMissing(col); continue; }
         throw error;
@@ -398,6 +484,15 @@ function upsertWithColumnRetry(table, items, attemptsLeft, cb) {
         upsertWithColumnRetry(table, items, attemptsLeft - 1, cb);
         return;
       }
+    }
+    // Tolerate the customers TABLE not existing yet — local cache still works
+    // and the app should keep functioning without scary errors.
+    if (error && table === 'customers' && (
+          /relation .* does not exist/i.test(String(error.message || '')) ||
+          error.code === '42P01'
+        )) {
+      cb(null);
+      return;
     }
     cb(error || null);
   });
@@ -539,9 +634,12 @@ function resetState() {
 }
 
 // ---------- Helpers ----------
+// Whole dollars everywhere — totals, KPIs, invoice lines, exports. The user
+// works in whole dollars (no cents) so the display rounds at format time so a
+// stray fractional cent from floating-point math never surfaces.
 const fmt$ = (n) => {
-  const v = Number(n) || 0;
-  return (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 2 });
+  const v = Math.round(Number(n) || 0);
+  return (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString('en-US');
 };
 const fmtN = (n) => Number(n || 0).toLocaleString('en-US');
 const uid = (p) => p + '-' + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-3);
@@ -731,6 +829,13 @@ function orderHasLandedProfit(o) {
 // profit / item count to the day the order actually closed (so partial-payment
 // orders only "land" their profit when the last dollar comes in). Returns null
 // for orders that are still partially or fully unpaid.
+// Short customer-facing invoice number for an order — same derivation the
+// invoice itself uses (last 6 chars of the order id, uppercase). Searching
+// for this in the orders page populates the exact order it came from.
+function invoiceNumberForOrder(o) {
+  if (!o || !o.id) return '';
+  return String(o.id).replace(/^o-/i, '').slice(-6).toUpperCase();
+}
 function orderCompletionDate(o) {
   if (!orderHasLandedProfit(o)) return null;
   const dates = orderPayments(o)
@@ -863,7 +968,7 @@ function focusForKeyboard(targetInput) {
 }
 
 const VIEW_STORAGE_KEY = 'lumen-tracker-view';
-const VALID_VIEWS = ['dashboard', 'orders', 'inventory', 'shipments', 'expenses', 'income', 'monthly'];
+const VALID_VIEWS = ['dashboard', 'orders', 'customers', 'inventory', 'shipments', 'expenses', 'income', 'monthly'];
 
 function switchView(name) {
   if (!VALID_VIEWS.includes(name)) name = 'dashboard';
@@ -874,6 +979,7 @@ function switchView(name) {
   try { localStorage.setItem(VIEW_STORAGE_KEY, name); } catch (e) {}
   if (name === 'dashboard') renderDashboard();
   if (name === 'orders') renderOrders();
+  if (name === 'customers') renderCustomers();
   if (name === 'inventory') renderInventory();
   if (name === 'shipments') renderShipments();
   if (name === 'expenses') renderExpenses();
@@ -1554,9 +1660,15 @@ function renderInvoiceView({ formEl, orders, customerName, dateKey, onBack, allo
   const lineItems = orders.flatMap(o => orderItems(o).map(it => {
     const qty = Number(it.qty) || 0;
     const price = Number(it.price) || 0;
+    const orig = Number(it.originalPrice) || 0;
+    // wasUnit = the customer-visible "original" price per unit when the item
+    // is on sale; 0 otherwise (no strikethrough). Per-line discounts are still
+    // tracked separately in `disc`.
+    const wasUnit = orig > price ? orig : 0;
     return {
       product: it.product || '',
       qty, price,
+      wasUnit,
       lineTotal: qty * price,
       excluded: !!it.excludeDiscount,
       disc: itemDiscountAmount(it),
@@ -1566,18 +1678,29 @@ function renderInvoiceView({ formEl, orders, customerName, dateKey, onBack, allo
   const shipping = round2(orders.reduce((s, o) => s + orderShipping(o), 0));
   const lineDiscTotal = round2(orders.reduce((s, o) => s + orderItemDiscountsTotal(o), 0));
   const orderDiscTotal = round2(orders.reduce((s, o) => s + orderDiscountAmount(o), 0));
-  // Total savings = every dollar the customer didn't pay (per-line + overall
-  // discounts). Subtotal stays at the gross figure so the math reads cleanly:
-  // Subtotal − You saved + Shipping = Total Due.
-  const totalSavings = round2(lineDiscTotal + orderDiscTotal);
+  // Original subtotal at MSRP (sum of qty × original-price-or-current). When
+  // items are on sale, this is the "before" number; subtracting the combined
+  // savings then matches the actual total the customer pays.
+  const itemsOriginalSubtotal = round2(orders.reduce((s, o) => s + orderItems(o).reduce((ss, it) => {
+    const qty = Number(it.qty) || 0;
+    const price = Number(it.price) || 0;
+    const orig = Number(it.originalPrice) || 0;
+    const unit = orig > price ? orig : price;
+    return ss + qty * unit;
+  }, 0), 0));
+  const saleSavings = Math.max(0, round2(itemsOriginalSubtotal - itemsSubtotal));
+  // Total savings = sale markdowns + per-line discounts + overall discount.
+  // Customer reads one neutral "You saved" line for the combined dollars off.
+  const totalSavings = round2(saleSavings + lineDiscTotal + orderDiscTotal);
   // Discount line label — show "(X% off)" only when ALL the savings came from
-  // a single overall percent discount with no per-line discounts mixed in.
+  // a single overall percent discount with no sale items / per-line discounts
+  // mixed in. Otherwise just plain "You saved".
   const discountPcts = new Set(
     orders.filter(o => orderDiscountAmount(o) > 0 && o.discount && o.discount.type === 'percent')
           .map(o => Number(o.discount.value))
   );
   const anyFlatDiscount = orders.some(o => orderDiscountAmount(o) > 0 && (!o.discount || o.discount.type !== 'percent'));
-  const discountLabel = (discountPcts.size === 1 && !anyFlatDiscount && lineDiscTotal <= 0.005)
+  const discountLabel = (discountPcts.size === 1 && !anyFlatDiscount && lineDiscTotal <= 0.005 && saleSavings <= 0.005)
     ? `You saved (${[...discountPcts][0]}% off)`
     : 'You saved';
   const total = round2(orders.reduce((s, o) => s + orderTotal(o), 0));
@@ -1596,14 +1719,20 @@ function renderInvoiceView({ formEl, orders, customerName, dateKey, onBack, allo
     const all = orders.map(o => (o.notes || '').trim()).filter(Boolean);
     return [...new Set(all)].join('\n');
   };
+  // Short, customer-friendly invoice number derived from the first order's
+  // ID. Same number every time you reopen this invoice, and the orders page
+  // search box matches against it too — so the customer can quote the number
+  // back and it'll surface the exact order they're asking about.
+  const invoiceNumber = invoiceNumberForOrder(orders[0]) || 'XXXXXX';
 
   formEl.innerHTML = `
     <div class="invoice-view">
       <div class="invoice-paper">
-        <img class="invoice-watermark" src="public/lplogo.png" alt="" />
+        <img class="invoice-watermark" src="public/lplogo.png" alt="" crossorigin="anonymous" />
         <div class="invoice-header">
           <div class="invoice-title">Order Invoice</div>
           <div class="invoice-meta">
+            <div class="invoice-meta-row"><span class="invoice-meta-label">Invoice</span><span class="invoice-ref">${escapeHtml(invoiceNumber)}</span></div>
             <div class="invoice-meta-row"><span class="invoice-meta-label">Date</span><span>${fmtDateLong(dateKey)}</span></div>
             ${isFullyPaid ? `<div class="invoice-meta-row"><span class="invoice-paid-stamp">PAID</span></div>` : ''}
           </div>
@@ -1614,17 +1743,24 @@ function renderInvoiceView({ formEl, orders, customerName, dateKey, onBack, allo
           </div>
           ${lineItems.length ? lineItems.map(r => {
             const isDisc = r.disc > 0.005;
+            const onSale = r.wasUnit > r.price + 0.005;
             // Whole dollars only on the invoice — no cents on price or total.
             const dTotal = Math.round(r.lineTotal - r.disc);
             const dUnit = r.qty > 0 ? Math.round((r.lineTotal - r.disc) / r.qty) : r.price;
-            const priceCell = isDisc
-              ? `<span class="invoice-price-was">${fmt$(r.price)}</span><span class="invoice-price-now">${fmt$(dUnit)}</span>`
+            // "Was" reference price per unit = inventory original price when on
+            // sale; otherwise just the current selling price (only used when a
+            // per-line discount calls for a strikethrough).
+            const wasUnit = onSale ? r.wasUnit : r.price;
+            const wasLineTotal = r.qty * wasUnit;
+            const showStrike = onSale || isDisc;
+            const priceCell = showStrike
+              ? `<span class="invoice-price-was">${fmt$(wasUnit)}</span><span class="invoice-price-now">${fmt$(dUnit)}</span>${onSale ? '<span class="invoice-sale-pill">Sale</span>' : ''}`
               : fmt$(r.price);
-            const totalCell = isDisc
-              ? `<span class="invoice-price-was">${fmt$(r.lineTotal)}</span><span class="invoice-price-now">${fmt$(dTotal)}</span>`
+            const totalCell = showStrike
+              ? `<span class="invoice-price-was">${fmt$(wasLineTotal)}</span><span class="invoice-price-now">${fmt$(dTotal)}</span>`
               : fmt$(r.lineTotal);
             return `
-              <div class="invoice-item-row">
+              <div class="invoice-item-row${onSale ? ' invoice-item-row-sale' : ''}">
                 <span class="invoice-item-name">${escapeHtml(r.product)}</span>
                 <span>${fmtN(r.qty)}</span>
                 <span>${priceCell}</span>
@@ -1635,7 +1771,7 @@ function renderInvoiceView({ formEl, orders, customerName, dateKey, onBack, allo
         </div>
         ${(shipping > 0 || totalSavings > 0) ? `
           <div class="invoice-subtotal-rows">
-            <div class="invoice-subtotal-row"><span>Subtotal</span><span>${fmt$(itemsSubtotal)}</span></div>
+            <div class="invoice-subtotal-row"><span>Subtotal</span><span>${fmt$(itemsOriginalSubtotal)}</span></div>
             ${totalSavings > 0 ? `<div class="invoice-subtotal-row invoice-discount-row"><span>${discountLabel}</span><span>−${fmt$(totalSavings)}</span></div>` : ''}
             ${shipping > 0 ? `<div class="invoice-subtotal-row"><span>Shipping</span><span>${fmt$(shipping)}</span></div>` : ''}
           </div>
@@ -1681,11 +1817,12 @@ function renderInvoiceView({ formEl, orders, customerName, dateKey, onBack, allo
           return `
         <div class="invoice-payment-block">
           <div class="invoice-payment-label">Payment Methods</div>
+          <div class="invoice-payment-qr-tip">Tip: <b>Tap &amp; Hold</b> on a QR code to scan it directly.</div>
           <div class="invoice-payment-list">
             <div class="invoice-payment-row invoice-payment-row-qr">
               <span class="invoice-payment-method">Zelle</span>
-              <span class="invoice-payment-value">${zelleEmail}</span>
-              <span class="invoice-payment-qr invoice-payment-qr-static" title="Scan to pay via Zelle"><img src="public/zelle-qr.png" alt="Zelle QR" loading="eager" decoding="sync" /></span>
+              <span class="invoice-payment-value invoice-payment-value-email">${zelleEmail.replace('@', '@<wbr>')}</span>
+              <span class="invoice-payment-qr invoice-payment-qr-static" title="Scan to pay via Zelle"><img src="public/zelle-qr.png" alt="Zelle QR" loading="eager" decoding="sync" crossorigin="anonymous" /></span>
             </div>
             <div class="invoice-payment-row invoice-payment-row-qr">
               <span class="invoice-payment-method">CashApp</span>
@@ -1713,6 +1850,7 @@ function renderInvoiceView({ formEl, orders, customerName, dateKey, onBack, allo
       </div>
       <div class="invoice-actions">
         <button type="button" class="btn ghost" id="invoiceBackBtn">← Back</button>
+        <button type="button" class="btn primary" id="invoiceSendBtn">Send Invoice</button>
       </div>
     </div>
   `;
@@ -1729,8 +1867,8 @@ function renderInvoiceView({ formEl, orders, customerName, dateKey, onBack, allo
     if (editing) {
       block.innerHTML = `
         <div class="invoice-notes-label">Notes</div>
-        <textarea class="invoice-notes-input" rows="3" placeholder="Add a note (e.g. payment instructions)…">${escapeHtml(text)}</textarea>
-        <div class="invoice-notes-actions">
+        <textarea class="invoice-notes-input" rows="3" placeholder="Add a note (e.g. payment instructions)…" data-no-export>${escapeHtml(text)}</textarea>
+        <div class="invoice-notes-actions" data-no-export>
           <button type="button" class="btn ghost" id="invoiceNotesCancel">Cancel</button>
           <button type="button" class="btn primary" id="invoiceNotesSave">Save</button>
         </div>
@@ -1746,16 +1884,150 @@ function renderInvoiceView({ formEl, orders, customerName, dateKey, onBack, allo
       block.innerHTML = `
         <div class="invoice-notes-label">Notes</div>
         <div class="invoice-notes-text">${escapeHtml(text).replace(/\n/g, '<br>')}</div>
-        <button type="button" class="link invoice-notes-edit" id="invoiceNotesEdit">Edit notes</button>
+        <button type="button" class="link invoice-notes-edit" id="invoiceNotesEdit" data-no-export>Edit notes</button>
       `;
       block.querySelector('#invoiceNotesEdit').addEventListener('click', () => renderNotesView(true));
     } else {
-      block.innerHTML = `<button type="button" class="btn ghost invoice-notes-add" id="invoiceNotesAdd">+ Add Notes</button>`;
+      // Whole block (the "+ Add Notes" button) is author-only — hidden from
+      // the rasterized PNG the customer receives.
+      block.innerHTML = `<button type="button" class="btn ghost invoice-notes-add" id="invoiceNotesAdd" data-no-export>+ Add Notes</button>`;
       block.querySelector('#invoiceNotesAdd').addEventListener('click', () => renderNotesView(true));
     }
   }
   renderNotesView(false);
   formEl.querySelector('#invoiceBackBtn').addEventListener('click', onBack);
+
+  // Dynamic loader fallback — if the html2canvas <script> tag in the HTML
+  // didn't run (cached pre-script HTML, blocked CDN, slow network), try to
+  // fetch it on demand when the user clicks Send Invoice.
+  function loadHtml2Canvas() {
+    if (typeof html2canvas !== 'undefined') return Promise.resolve(true);
+    if (window.__html2canvasLoading) return window.__html2canvasLoading;
+    window.__html2canvasLoading = new Promise((resolve) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+      s.async = true;
+      s.onload = () => resolve(typeof html2canvas !== 'undefined');
+      s.onerror = () => resolve(false);
+      document.head.appendChild(s);
+    });
+    return window.__html2canvasLoading;
+  }
+  // Send Invoice — rasterizes the invoice paper into a PNG and either:
+  //   - On mobile: invokes the device share sheet with the PNG attached, so
+  //     the user can text/iMessage it in one tap without ever screenshotting.
+  //   - On desktop: downloads the PNG to the user's Downloads folder.
+  // Uses html2canvas (instead of html-to-image) because it's more reliable on
+  // iOS Safari — html-to-image renders via SVG foreignObject which WebKit
+  // handles inconsistently when there are any cross-origin or QR-style images.
+  const sendBtn = formEl.querySelector('#invoiceSendBtn');
+  if (sendBtn) {
+    sendBtn.addEventListener('click', async () => {
+      const paper = formEl.querySelector('.invoice-paper');
+      if (!paper) {
+        toast('No invoice to send.');
+        return;
+      }
+      const originalText = sendBtn.textContent;
+      sendBtn.disabled = true;
+      sendBtn.textContent = 'Preparing…';
+      try {
+        // Lazy-load the rasterization library if it didn't come down with the
+        // page (cached HTML, blocked CDN, etc.). One-shot, then cached.
+        if (typeof html2canvas === 'undefined') {
+          sendBtn.textContent = 'Loading…';
+          const ok = await loadHtml2Canvas();
+          if (!ok || typeof html2canvas === 'undefined') {
+            throw new Error('Image library failed to load — check your internet connection.');
+          }
+          sendBtn.textContent = 'Preparing…';
+        }
+        // Make sure every <img> inside the paper has finished loading before
+        // html2canvas walks the DOM — otherwise their natural size is 0 and
+        // they render blank in the captured image.
+        const imgs = paper.querySelectorAll('img');
+        await Promise.all(Array.from(imgs).map(img =>
+          (img.complete && img.naturalWidth > 0)
+            ? Promise.resolve()
+            : new Promise(res => { img.addEventListener('load', res, { once: true }); img.addEventListener('error', res, { once: true }); })
+        ));
+
+        // Hide author-only controls (the Add Notes / Edit notes buttons, the
+        // notes editor while open) for the duration of the capture so the
+        // customer's PNG doesn't include any of our editing chrome. Restored
+        // in the `finally` block below regardless of how we exit.
+        paper.querySelectorAll('[data-no-export]').forEach(el => { el.style.display = 'none'; });
+
+        // Adaptive scale — target an output that's at least ~1280 px wide so
+        // the PNG is crisp regardless of viewport. Mobile invoices are
+        // narrower (~340–400 px) so they need a higher scale than desktop
+        // (~500–540 px) to hit the same final resolution. Capped at 5× as a
+        // safety margin against canvas memory limits on older phones.
+        const paperWidth = paper.getBoundingClientRect().width || 400;
+        const TARGET_WIDTH = 1280;
+        const scale = Math.max(2, Math.min(5, Math.ceil(TARGET_WIDTH / paperWidth)));
+        const canvas = await html2canvas(paper, {
+          scale,
+          backgroundColor: '#ffffff',  // white background even outside the paper
+          useCORS: true,               // allow cross-origin images taint-free
+          allowTaint: false,
+          logging: false,
+          imageTimeout: 8000,
+        });
+        const blob = await new Promise((resolve, reject) => {
+          canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob returned null')), 'image/png');
+        });
+
+        const safeDate = (dateKey || todayISO()).replace(/[^0-9-]/g, '');
+        // Keep the shared title / filename anonymized — no customer name.
+        // "Invoice · YYYY-MM-DD · XXXXXX" so recipients see a neutral header
+        // in the share sheet and the saved filename is sortable by date.
+        const shareTitle = `Invoice · ${safeDate} · ${invoiceNumber}`;
+        const filename = `Invoice-${safeDate}-${invoiceNumber}.png`;
+        const file = new File([blob], filename, { type: 'image/png' });
+
+        // Try the native share sheet first (mobile). canShare confirms the
+        // browser actually supports file sharing — desktop Chrome/Firefox
+        // generally return false and we fall through to download.
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({
+              files: [file],
+              title: shareTitle,
+            });
+            return;            // user picked an app — done
+          } catch (err) {
+            if (err && err.name === 'AbortError') return;  // user cancelled
+            // Any other share error → fall through to download
+          }
+        }
+
+        // Download fallback (desktop, or browsers without file-share support).
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 100);
+        toast('Invoice saved to your downloads.');
+      } catch (err) {
+        console.error('Send Invoice failed', err);
+        // Surface a hint of the underlying error so we can debug from a
+        // screenshot if the rendering still fails on a particular device.
+        const detail = (err && err.message) ? `: ${String(err.message).slice(0, 80)}` : '';
+        toast(`Could not render the invoice${detail}`);
+      } finally {
+        // Restore any author-only controls we hid for the capture.
+        try {
+          const hiddenForExport = Array.from(paper.querySelectorAll('[data-no-export]'));
+          hiddenForExport.forEach(el => { el.style.display = ''; });
+        } catch {}
+        sendBtn.disabled = false;
+        sendBtn.textContent = originalText;
+      }
+    });
+  }
 }
 
 // Read-only popup invoked from the dashboard's Today card. Shows a quick summary
@@ -1861,7 +2133,10 @@ function openTodayOrderDetail(customerKey, dateKey) {
           </div>
         </div>
         ${anyPartial ? '<button type="button" class="btn ghost" id="editPaymentsBtn">Edit Payments</button>' : ''}
-        <button type="button" class="btn primary rd-invoice-btn" id="showInvoiceBtn">Show Invoice</button>
+        <div class="rd-invoice-actions">
+          <button type="button" class="btn ghost rd-invoice-btn" id="showInvoiceBtn">Show Invoice</button>
+          <button type="button" class="btn primary rd-invoice-btn" id="sendInvoiceDirectBtn">Send Invoice</button>
+        </div>
       </div>
     `;
 
@@ -1894,6 +2169,16 @@ function openTodayOrderDetail(customerKey, dateKey) {
       persistOrders(updated, stockTouched);
     });
     form.querySelector('#showInvoiceBtn').addEventListener('click', renderInvoice);
+    // "Send Invoice" shortcut on the detail view — renders the invoice and
+    // immediately triggers its share flow, so the user can go straight from
+    // the customer detail to the share sheet without an extra tap.
+    form.querySelector('#sendInvoiceDirectBtn').addEventListener('click', () => {
+      renderInvoice();
+      requestAnimationFrame(() => {
+        const sendBtn = form.querySelector('#invoiceSendBtn');
+        if (sendBtn) sendBtn.click();
+      });
+    });
     const editPaymentsBtn = form.querySelector('#editPaymentsBtn');
     if (editPaymentsBtn) {
       editPaymentsBtn.addEventListener('click', () => {
@@ -2040,10 +2325,20 @@ function renderOrders() {
   let rows = [...state.orders].sort((a, b) =>
     ordDir * ((a.date || '').localeCompare(b.date || ''))
   );
-  if (q) rows = rows.filter(o => {
-    if ((o.customer || '').toLowerCase().includes(q)) return true;
-    return orderItems(o).some(it => (it.product || '').toLowerCase().includes(q));
-  });
+  if (q) {
+    // Strip any "#" / "INV-" / whitespace and uppercase so a search like
+    // "#INV-A1B2C3", "inv-a1b2c3", or just "A1B2C3" all hit the same order's
+    // invoice number. Require at least 3 chars before matching as a number
+    // so a one-letter customer search isn't drowned by every "A…" order id.
+    const qInv = q.replace(/[\s#]/g, '').replace(/^inv[-_]?/i, '').toUpperCase();
+    const matchByInvoice = qInv.length >= 3;
+    rows = rows.filter(o => {
+      if ((o.customer || '').toLowerCase().includes(q)) return true;
+      if (orderItems(o).some(it => (it.product || '').toLowerCase().includes(q))) return true;
+      if (matchByInvoice && invoiceNumberForOrder(o).includes(qInv)) return true;
+      return false;
+    });
+  }
   if (mo !== 'all') rows = rows.filter(o => monthKey(o.date) === mo);
   if (dy !== 'all') rows = rows.filter(o => o.date === dy);
   if (f === 'unpaid') rows = rows.filter(o => !o.paid);
@@ -2328,6 +2623,11 @@ function orderModal(existing, draft) {
     : existing
       ? JSON.parse(JSON.stringify(existing))
       : { customer: '', date: todayISO(), paid: false, delivered: false, items: [], payments: [], notes: '', shipping: 0, discount: null };
+  // Lock in the order's id at modal open. Existing orders keep their real id.
+  // New orders get a fresh id NOW so the View Invoice preview shows the same
+  // invoice number that the order will have once the user hits Save — no
+  // more "XXXXXX" on the preview, and no number-change after save.
+  if (!data.id) data.id = (existing && existing.id) || uid('o');
   if (!Array.isArray(data.items)) data.items = [];
   if (data.items.length === 0) data.items.push(blankItem());
   if (!Array.isArray(data.payments)) data.payments = [];
@@ -2494,6 +2794,12 @@ function orderModal(existing, draft) {
           if (p) {
             it.price = Number(p.price) || 0;
             it.cogs = Number(p.cost) || 0;
+            // Carry the "Original Price" onto the line so the invoice can
+            // strike it through — but only when the product is actually on
+            // sale (original > current). Otherwise leave it null so no
+            // misleading "sale" indicator appears.
+            const orig = Number(p.originalPrice) || 0;
+            it.originalPrice = (orig > it.price) ? orig : null;
             if (priceInput) priceInput.value = it.price;
             // Dismiss the on-screen keyboard / datalist popover after a pick
             // so the user can scroll on to the next field without an extra tap.
@@ -2979,7 +3285,9 @@ function orderModal(existing, draft) {
       saved = existing;
       toast('Order updated.');
     } else {
-      saved = { id: uid('o'), inventoryApplied: false, ...payload };
+      // Use the id locked in at modal open so the preview invoice number and
+      // the saved order's invoice number stay identical.
+      saved = { id: data.id || uid('o'), inventoryApplied: false, ...payload };
       state.orders.push(saved);
       toast('Order added.');
     }
@@ -2999,6 +3307,7 @@ function orderModal(existing, draft) {
   // Back button preserves their unsaved edits.
   form.querySelector('#viewInvoiceBtn').addEventListener('click', () => {
     const draft = {
+      id: data.id,        // carry the order id so the preview invoice number matches
       customer: form.querySelector('[name="customer"]').value.trim(),
       date: form.querySelector('[name="date"]').value || todayISO(),
       paid: form.querySelector('[name="paid"]').checked,
@@ -3044,6 +3353,257 @@ function orderModal(existing, draft) {
 
   showModal();
   setTimeout(() => form.querySelector('[name="customer"]').focus(), 50);
+}
+
+// ---------- CUSTOMERS ----------
+// Aggregate one customer's order activity into stats the list + profile show.
+//   lifetime = total billed (sum of orderTotal across all of their orders).
+//   paid     = cash received from them so far (paid portion of every order).
+//   owed     = outstanding balance still owed.
+//   pendingCount = orders that are NOT (paid AND delivered) — covers both
+//     unpaid orders AND paid-but-undelivered orders so the Pending filter
+//     surfaces every customer who has anything still in flight.
+function customerStats(c) {
+  const orders = state.orders.filter(o => customerKey(o.customer) === customerKey(c.name));
+  const orderCount = orders.length;
+  const lifetimeRev = orders.reduce((s, o) => s + orderTotal(o), 0);
+  const paid = orders.reduce((s, o) => s + orderPaidRevenue(o), 0);
+  const owed = orders.reduce((s, o) => s + orderBalance(o), 0);
+  const lifetimeProfit = orders.reduce((s, o) => s + orderPaidProfit(o), 0);
+  const pendingCount = orders.filter(o => !(o.paid && o.delivered)).length;
+  const lastDate = orders.reduce((d, o) => (o.date && (!d || o.date > d)) ? o.date : d, '');
+  return { orders, orderCount, lifetimeRev, paid, owed, lifetimeProfit, pendingCount, lastDate };
+}
+
+const custSearch = $('#custSearch');
+const custFilter = $('#custFilter');
+const custSort = $('#custSort');
+persistFilter(custSearch, 'lumen.customers.search');
+persistFilter(custFilter, 'lumen.customers.filter');
+persistFilter(custSort, 'lumen.customers.sort');
+wireSearchClear(custSearch);
+[custSearch, custFilter, custSort].forEach(el => el.addEventListener('input', renderCustomers));
+$('#custReset').addEventListener('click', () => resetFilters([custSearch, custFilter, custSort]));
+$('#addCustomerBtn').addEventListener('click', () => customerModal());
+
+function renderCustomers() {
+  // Make sure every order has a matching profile so the user can always click
+  // through from an order's customer name to their profile — even for new
+  // names typed straight into an order without first creating a profile.
+  const before = state.customers.length;
+  state.customers = ensureCustomersFromOrders(state.customers, state.orders);
+  if (state.customers.length !== before) {
+    saveState();
+    if (sb) cloudUpsertMany('customers', state.customers.slice(before));
+  }
+
+  const q = (custSearch.value || '').toLowerCase().trim();
+  const filterKey = custFilter.value || 'all';
+  const sortKey = custSort.value || 'recent';
+  let rows = state.customers
+    .map(c => ({ ...c, ...customerStats(c) }))
+    .filter(c => {
+      // Pending = anything not yet (paid AND delivered) — includes both
+      // unpaid orders and paid-but-undelivered orders so the customer still
+      // surfaces while there's work to do.
+      if (filterKey === 'pending' && c.pendingCount === 0) return false;
+      if (!q) return true;
+      return [c.name, c.phone, c.email].some(v => (v || '').toLowerCase().includes(q));
+    });
+
+  if (sortKey === 'name') {
+    rows.sort((a, b) => (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase()));
+  } else if (sortKey === 'lifetime') {
+    rows.sort((a, b) => b.lifetimeRev - a.lifetimeRev);
+  } else if (sortKey === 'owed') {
+    // Pending Orders sort — customers with more incomplete orders bubble up;
+    // tiebreaker is the unpaid balance so the biggest debts surface first.
+    rows.sort((a, b) => (b.pendingCount - a.pendingCount) || (b.owed - a.owed));
+  } else {
+    // recent: most recent activity first; customers with no orders sink to the bottom.
+    rows.sort((a, b) => (b.lastDate || '').localeCompare(a.lastDate || ''));
+  }
+
+  // KPI tiles — totals across every customer (not the filtered view) so they
+  // stay stable while you scrub through filters / search.
+  const totals = state.customers.reduce((acc, c) => {
+    const s = customerStats(c);
+    acc.rev += s.lifetimeRev; acc.profit += s.lifetimeProfit; acc.owed += s.owed;
+    return acc;
+  }, { rev: 0, profit: 0, owed: 0 });
+  $('#custKpiCount').textContent = fmtN(state.customers.length);
+  $('#custKpiRevenue').textContent = fmt$(round2(totals.rev));
+  $('#custKpiProfit').textContent = fmt$(round2(totals.profit));
+  $('#custKpiOwed').textContent = fmt$(round2(totals.owed));
+
+  const body = $('#customersBody');
+  body.innerHTML = rows.length
+    ? rows.map(c => {
+        const last = c.lastDate ? fmtDateShort(c.lastDate) : '<span class="muted">—</span>';
+        const paidCell = c.paid > 0.005
+          ? `<b class="cust-paid">${fmt$(round2(c.paid))}</b>`
+          : `<span class="muted">—</span>`;
+        // Pending column dollar value = outstanding balance owed. Customers
+        // who only have paid-but-undelivered orders show "—" here (they owe
+        // nothing) but still surface in the Pending filter via pendingCount.
+        const pendingCell = c.owed > 0.005
+          ? `<b class="cust-owed">${fmt$(round2(c.owed))}</b>`
+          : `<span class="muted">—</span>`;
+        return `<tr data-edit-customer="${c.id}">
+          <td><b>${escapeHtml(c.name)}</b>${c.notes ? `<span class="customer-sub">${escapeHtml((c.notes || '').slice(0, 40))}${c.notes.length > 40 ? '…' : ''}</span>` : ''}</td>
+          <td class="num">${fmtN(c.orderCount)}</td>
+          <td class="num">${fmt$(round2(c.lifetimeRev))}</td>
+          <td class="num">${paidCell}</td>
+          <td class="num">${pendingCell}</td>
+          <td>${last}</td>
+          <td style="white-space:nowrap;text-align:right;"><button class="icon-btn" data-edit-customer-btn="${c.id}" title="Edit">✎</button></td>
+        </tr>`;
+      }).join('')
+    : `<tr><td colspan="7" class="muted" style="padding:24px;text-align:center;">No customers match.</td></tr>`;
+
+  // Tap anywhere on the row OR the pencil to open the profile. Keep both
+  // hooks since tapping the pencil should not bubble row-level click handlers.
+  body.querySelectorAll('[data-edit-customer-btn]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const c = state.customers.find(x => x.id === el.dataset.editCustomerBtn);
+      if (c) customerModal(c);
+    });
+  });
+  body.querySelectorAll('[data-edit-customer]').forEach(el => {
+    el.addEventListener('click', () => {
+      const c = state.customers.find(x => x.id === el.dataset.editCustomer);
+      if (c) customerModal(c);
+    });
+  });
+}
+
+function customerModal(existing) {
+  const isNew = !existing;
+  const initial = existing
+    ? { ...existing }
+    : { name: '', phone: '', email: '', address: '', notes: '' };
+
+  $('#modalTitle').textContent = isNew ? 'New Customer' : 'Customer Profile';
+  const form = $('#modalForm');
+  const stats = existing ? customerStats(existing) : { orders: [], orderCount: 0, lifetimeRev: 0, lifetimeProfit: 0, owed: 0, lastDate: '' };
+
+  form.innerHTML = `
+    <label><span class="req">Name</span><input type="text" name="name" required value="${escapeHtml(initial.name)}" placeholder="Customer name" autocomplete="off" /></label>
+    <div class="row-2">
+      <label><span>Phone</span><input type="tel" name="phone" value="${escapeHtml(initial.phone)}" placeholder="Optional" inputmode="tel" /></label>
+      <label><span>Email</span><input type="email" name="email" value="${escapeHtml(initial.email)}" placeholder="Optional" inputmode="email" /></label>
+    </div>
+    <label><span>Address</span><input type="text" name="address" value="${escapeHtml(initial.address)}" placeholder="Optional — pickup or delivery info" /></label>
+    <label><span>Notes</span><textarea name="notes" rows="3" placeholder="Anything useful: preferences, allergies, recurring orders, payment quirks…">${escapeHtml(initial.notes || '')}</textarea></label>
+    ${existing ? `
+      <div class="customer-stats">
+        <div class="cust-stat"><span class="cust-stat-label">Orders</span><b>${fmtN(stats.orderCount)}</b></div>
+        <div class="cust-stat"><span class="cust-stat-label">Lifetime Rev</span><b>${fmt$(round2(stats.lifetimeRev))}</b></div>
+        <div class="cust-stat"><span class="cust-stat-label">Lifetime Profit</span><b>${fmt$(round2(stats.lifetimeProfit))}</b></div>
+        <div class="cust-stat${stats.owed > 0.005 ? ' cust-stat-owed' : ''}"><span class="cust-stat-label">Owed Now</span><b>${fmt$(round2(stats.owed))}</b></div>
+      </div>
+      <div class="customer-orders">
+        <div class="customer-orders-head">Order History</div>
+        ${stats.orderCount ? `
+          <div class="customer-orders-list">
+            ${stats.orders.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(o => {
+              const status = orderIsFullyPaid(o)
+                ? `<span class="pill green">Paid</span>`
+                : orderIsPartiallyPaid(o)
+                  ? `<span class="pill partial">Partial · ${fmt$(round2(orderBalance(o)))} due</span>`
+                  : `<span class="pill amber">Unpaid</span>`;
+              const inv = invoiceNumberForOrder(o);
+              const items = orderItems(o).map(it => `${it.product || ''}${Number(it.qty)>0 ? ` ×${fmtN(it.qty)}` : ''}`).filter(Boolean).join(', ');
+              return `<div class="customer-order-row" data-open-order="${o.id}">
+                <div class="cor-head">
+                  <span class="cor-date">${fmtDateShort(o.date)}</span>
+                  <span class="cor-inv muted">${inv}</span>
+                  <span class="cor-status">${status}</span>
+                </div>
+                <div class="cor-items muted">${escapeHtml(items) || '(no items)'}</div>
+                <div class="cor-foot">
+                  <span class="muted">Total</span><b>${fmt$(round2(orderTotal(o)))}</b>
+                  <span class="muted">Profit</span><b>${fmt$(round2(orderProfit(o)))}</b>
+                </div>
+              </div>`;
+            }).join('')}
+          </div>
+        ` : '<div class="muted" style="padding:6px 2px;">No orders yet.</div>'}
+      </div>
+      <button type="button" class="btn danger-outline" id="customerDeleteBtn">Delete Customer</button>
+    ` : ''}
+  `;
+
+  // Open the order modal when the user taps an order in the history.
+  form.querySelectorAll('[data-open-order]').forEach(el => el.addEventListener('click', () => {
+    const o = state.orders.find(x => x.id === el.dataset.openOrder);
+    if (o) orderModal(o);
+  }));
+
+  if (existing) {
+    form.querySelector('#customerDeleteBtn').addEventListener('click', () => {
+      const hasOrders = stats.orderCount > 0;
+      const warn = hasOrders
+        ? `Delete ${existing.name}? They have ${stats.orderCount} order${stats.orderCount === 1 ? '' : 's'} on record — those orders stay; only the profile (contact info + notes) is removed.`
+        : `Delete ${existing.name}?`;
+      if (!confirm(warn)) return;
+      state.customers = state.customers.filter(x => x.id !== existing.id);
+      saveState();
+      cloudDelete('customers', existing.id);
+      renderCustomers();
+      toast('Customer deleted.');
+      closeModal();
+    });
+  }
+
+  modalOnSave = () => {
+    const name = form.querySelector('[name="name"]').value.trim();
+    const phone = form.querySelector('[name="phone"]').value.trim();
+    const email = form.querySelector('[name="email"]').value.trim();
+    const address = form.querySelector('[name="address"]').value.trim();
+    const notes = form.querySelector('[name="notes"]').value.trim();
+    if (!name) { alert('Name is required.'); return; }
+
+    let saved;
+    let renamedFrom = null;
+    if (existing) {
+      // Cascade rename — if the user changed the customer's name, propagate
+      // it to every order they have so the link stays intact.
+      const oldKey = customerKey(existing.name);
+      const newKey = customerKey(name);
+      if (oldKey && newKey && oldKey !== newKey) {
+        const matching = state.orders.filter(o => customerKey(o.customer) === oldKey);
+        if (matching.length) {
+          const ok = confirm(`Rename "${existing.name}" → "${name}"?\n\n${matching.length} order${matching.length === 1 ? '' : 's'} reference this customer — they'll be updated to the new name.`);
+          if (!ok) return;
+          matching.forEach(o => { o.customer = name; });
+          renamedFrom = { from: existing.name, to: name, orders: matching };
+        }
+      }
+      Object.assign(existing, { name, phone, email, address, notes });
+      saved = existing;
+    } else {
+      saved = {
+        id: 'c-' + Math.random().toString(36).slice(2, 10),
+        name, phone, email, address, notes,
+        createdAt: todayISO(),
+      };
+      state.customers.push(saved);
+    }
+    saveState();
+    cloudUpsert('customers', saved);
+    if (renamedFrom && renamedFrom.orders.length) {
+      cloudUpsertMany('orders', renamedFrom.orders);
+      renderOrders(); renderDashboard(); renderMonthly();
+    }
+    renderCustomers();
+    toast(existing ? 'Customer updated.' : 'Customer added.');
+    closeModal();
+  };
+
+  showModal();
+  setTimeout(() => form.querySelector('[name="name"]')?.focus(), 50);
 }
 
 // ---------- INVENTORY ----------
@@ -3117,10 +3677,17 @@ function renderInventory() {
         : needs
           ? `<span class="pill amber">Reorder</span>`
           : `<span class="pill green">Active</span>`;
+    // On sale = original price set AND higher than the current selling price.
+    // When true, show the original struck through next to the sale price.
+    const origPrice = Number(p.originalPrice) || 0;
+    const onSale = origPrice > (Number(p.price) || 0);
+    const priceCell = onSale
+      ? `<span class="inv-price-was">${fmt$(origPrice)}</span><span class="inv-price-now">${fmt$(p.price)}</span><span class="pill amber inv-sale-pill">Sale</span>`
+      : fmt$(p.price);
     return `<tr${needs ? ' class="row-reorder"' : ''}>
       <td><b>${escapeHtml(p.name)}</b></td>
       <td class="num">${fmt$(p.cost)}</td>
-      <td class="num">${fmt$(p.price)}</td>
+      <td class="num">${priceCell}</td>
       <td class="num"><b>${fmtN(p.qty)}</b></td>
       <td class="num muted${customLvl ? ' reorder-custom' : ''}" title="${customLvl ? 'Custom reorder level' : 'Default reorder level'}">${fmtN(lvl)}</td>
       <td class="num">${fmt$(margin)}</td>
@@ -3157,7 +3724,10 @@ function renderInventory() {
 }
 
 function stockModal(existing) {
-  const initial = existing ? { ...existing } : { name: '', cost: 0, price: 0, qty: 0, status: 'ACTIVE', reorder: '' };
+  const initial = existing ? { ...existing } : { name: '', cost: 0, price: 0, originalPrice: '', qty: 0, status: 'ACTIVE', reorder: '' };
+  // Normalize originalPrice for the form: '' shows blank when there's no sale,
+  // and a number shows when one is set.
+  if (existing && (initial.originalPrice == null || Number(initial.originalPrice) <= 0)) initial.originalPrice = '';
   openModal(existing ? 'Edit Product' : 'New Product', [
     { name: 'name', label: 'Product Name', required: true },
     { type: 'row', fields: [
@@ -3165,12 +3735,15 @@ function stockModal(existing) {
       { name: 'price', label: 'Selling Price', type: 'number', min: 0 },
     ]},
     { type: 'row', fields: [
+      { name: 'originalPrice', label: 'Original Price (was)', type: 'number', min: 0, placeholder: 'Optional — leave blank if not on sale' },
       { name: 'qty', label: 'Quantity Available', type: 'number', min: 0 },
-      { name: 'reorder', label: 'Reorder At', type: 'number', min: 0, placeholder: `Alert level (default ${DEFAULT_REORDER_LEVEL})` },
     ]},
-    { name: 'status', label: 'Status', type: 'select', options: [
-      { value: 'ACTIVE', label: 'Active' },
-      { value: 'OUT OF STOCK', label: 'Out of Stock' },
+    { type: 'row', fields: [
+      { name: 'reorder', label: 'Reorder At', type: 'number', min: 0, placeholder: `Alert level (default ${DEFAULT_REORDER_LEVEL})` },
+      { name: 'status', label: 'Status', type: 'select', options: [
+        { value: 'ACTIVE', label: 'Active' },
+        { value: 'OUT OF STOCK', label: 'Out of Stock' },
+      ]},
     ]},
   ], (data) => {
     if (!data.name) { alert('Name is required.'); return false; }
@@ -5671,6 +6244,7 @@ document.addEventListener('keydown', (e) => {
 function renderAll() {
   renderDashboard();
   renderOrders();
+  renderCustomers();
   renderInventory();
   renderShipments();
   renderExpenses();

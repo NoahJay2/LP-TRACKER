@@ -694,6 +694,15 @@ body.discount-popup-open { overflow: hidden; }
   align-self: stretch;
   margin-top: 6px;
 }
+.readonly-detail .rd-invoice-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+.readonly-detail .rd-invoice-actions .rd-invoice-btn {
+  flex: 1 1 0;
+  margin-top: 0;
+}
 
 /* Invoice view (inside the Today popup). Designed to look like a real invoice
    when screenshotted — light "paper" panel against the modal background, with
@@ -848,6 +857,23 @@ body.discount-popup-open { overflow: hidden; }
   text-transform: uppercase;
   color: #6b7280;
 }
+.invoice-ref {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #1f2937;
+}
+.invoice-payment-qr-tip {
+  font-size: 11.5px;
+  color: #475569;
+  background: #f1f5f9;
+  border: 1px dashed #cbd5e1;
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+.invoice-payment-qr-tip b { color: #1f2937; font-weight: 700; }
 .invoice-payment-list { display: flex; flex-direction: column; gap: 6px; }
 .invoice-payment-row {
   display: flex;
@@ -857,11 +883,14 @@ body.discount-popup-open { overflow: hidden; }
   gap: 12px;
 }
 /* Rows with a QR code use a 3-column grid so the QR has a fixed slot and the
-   email / cashtag in the middle column gets the rest of the width. */
+   email / cashtag in the middle column gets the rest of the width. The
+   method column is narrower here than the non-QR rows since "Zelle" and
+   "CashApp" are short labels — that leaves more room for long values. */
 .invoice-payment-row.invoice-payment-row-qr {
   display: grid;
-  grid-template-columns: 80px 1fr 70px;
+  grid-template-columns: 60px 1fr 64px;
   align-items: center;
+  gap: 8px;
 }
 .invoice-payment-method { font-weight: 600; color: #111827; }
 .invoice-payment-value {
@@ -870,14 +899,18 @@ body.discount-popup-open { overflow: hidden; }
   color: #111827;
   text-decoration: none;
   min-width: 0;
-  /* Wrap long values (e.g. the Zelle email) onto a second line on mobile
-     instead of truncating with an ellipsis. `overflow-wrap: anywhere` lets
-     the break happen mid-string for a long unbroken email like
-     LumenResearchLLC@gmail.com so the whole address stays visible. */
+  /* Wrap long values onto a second line if needed but prefer to break at a
+     sensible point (a `<wbr>` is inserted right after the `@` for emails). */
   white-space: normal;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  overflow-wrap: break-word;
   line-height: 1.3;
+}
+/* The long-email variant — slightly tighter typography so the whole address
+   tends to fit on one line on phones too. */
+.invoice-payment-value-email {
+  font-size: 12.5px;
+  letter-spacing: -0.005em;
+  font-weight: 600;
 }
 .invoice-payment-amount { color: #047857; font-weight: 700; }
 a.invoice-payment-value { color: #1d4ed8; }
@@ -888,11 +921,11 @@ a.invoice-payment-value { color: #1d4ed8; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 64px;
-  height: 64px;
-  padding: 3px;
+  width: 58px;
+  height: 58px;
+  padding: 2px;
   background: #ffffff;
-  border-radius: 5px;
+  border-radius: 4px;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
   justify-self: end;
 }
@@ -955,7 +988,9 @@ a.invoice-payment-value { color: #1d4ed8; }
   font-weight: 500;
 }
 .invoice-notes-add { align-self: flex-start; }
-.invoice-actions { display: flex; justify-content: flex-start; }
+.invoice-actions { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.invoice-actions .btn { flex: 0 0 auto; }
+.invoice-actions .btn:disabled { opacity: .65; cursor: progress; }
 @media (max-width: 640px) {
   .invoice-paper { padding: 18px 16px 22px; }
   .invoice-items-head,
@@ -1229,6 +1264,109 @@ a.invoice-payment-value { color: #1d4ed8; }
 .row-reorder > td { background: rgba(245, 158, 11, 0.06); }
 .reorder-out { color: var(--danger, #ef4444); }
 .reorder-custom { font-weight: 700; color: var(--text); }
+/* Inventory price column — "was" / "now" stacked when an item is on sale,
+   plus a tiny amber pill so it's obvious at a glance which products are
+   currently marked down. */
+.inv-price-was {
+  text-decoration: line-through;
+  color: var(--muted-2);
+  font-variant-numeric: tabular-nums;
+  margin-right: 6px;
+  font-weight: 500;
+}
+.inv-price-now {
+  font-weight: 700;
+  color: var(--success, #22c55e);
+  font-variant-numeric: tabular-nums;
+}
+.inv-sale-pill {
+  font-size: 9px !important;
+  padding: 1px 5px !important;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+/* Invoice line — "Sale" pill next to a struck-through original price. The
+   customer sees the deal at a glance; matches the inventory display so the
+   experience is consistent. */
+.invoice-sale-pill {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: #fef3c7;
+  color: #92400e;
+}
+.invoice-item-row-sale .invoice-item-name::after {
+  content: '';
+}
+
+/* Customers page */
+.cust-kpi-grid { margin-bottom: 16px; }
+#customersBody tr { cursor: pointer; transition: background .1s var(--ease); }
+#customersBody tr:hover { background: var(--surface-2); }
+#customersBody .customer-sub {
+  display: block; font-size: 11.5px; color: var(--muted-2); font-weight: 400;
+  margin-top: 1px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cust-owed { color: #c2810f; font-variant-numeric: tabular-nums; }
+/* Customer profile (in modal) */
+.customer-stats {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+  margin-top: 6px; padding: 10px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px;
+}
+.cust-stat { display: flex; flex-direction: column; gap: 2px; }
+.cust-stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+.cust-stat b { font-size: 15px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.cust-stat-owed b { color: #c2810f; }
+.customer-orders { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.customer-orders-head { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+.customer-orders-list { display: flex; flex-direction: column; gap: 6px; max-height: 50vh; overflow-y: auto; padding-right: 2px; }
+.customer-order-row {
+  border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2);
+  padding: 8px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 4px;
+  transition: border-color .1s var(--ease), background .1s var(--ease);
+}
+.customer-order-row:hover { border-color: var(--border-strong); background: var(--surface); }
+.customer-order-row .cor-head {
+  display: flex; align-items: center; gap: 8px; font-size: 12.5px;
+}
+.customer-order-row .cor-date { font-weight: 700; color: var(--text); }
+.customer-order-row .cor-inv {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 600; font-size: 11px; letter-spacing: 0.02em;
+}
+.customer-order-row .cor-status { margin-left: auto; }
+.customer-order-row .cor-items {
+  font-size: 12px; line-height: 1.35;
+  overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
+  -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical;
+}
+.customer-order-row .cor-foot {
+  display: flex; align-items: center; gap: 6px; font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.customer-order-row .cor-foot b:nth-of-type(1) { margin-right: 8px; color: var(--primary); }
+.customer-order-row .cor-foot b:nth-of-type(2) { color: var(--success); }
+@media (max-width: 480px) {
+  .customer-stats { grid-template-columns: repeat(2, 1fr); }
+}
+/* Columns now: 1 Customer · 2 Orders · 3 Lifetime · 4 Paid · 5 Pending ·
+   6 Last Order · 7 Edit. On phones, hide Orders (2) and Last Order (6) so the
+   row keeps Customer · Lifetime · Paid · Pending · Edit — the most
+   actionable info first. */
+@media (max-width: 640px) {
+  #view-customers .table thead th:nth-child(2),
+  #view-customers .table thead th:nth-child(6),
+  #view-customers .table tbody td:nth-child(2),
+  #view-customers .table tbody td:nth-child(6) { display: none; }
+}
+.cust-paid { color: var(--success, #22c55e); font-variant-numeric: tabular-nums; }
+
 /* Export & Backup card */
 .export-note { font-size: 12.5px; margin: 2px 0 12px; line-height: 1.5; }
 .export-actions { display: flex; flex-wrap: wrap; gap: 8px; }
