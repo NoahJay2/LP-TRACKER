@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-06-17.41';
+const BUILD_VERSION = '2026-06-17.42';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -1321,8 +1321,19 @@ function renderDashboard() {
   ).size;
   // Today's tiles also follow cash basis: paid portion (incl. partials) on the
   // top row, outstanding balance on the bottom.
-  const todayPaidRev = round2(todayOrders.reduce((s, o) => s + orderPaidRevenue(o), 0));
-  const todayPaidNet = round2(todayOrders.reduce((s, o) => s + orderPaidProfit(o), 0));
+  // Cash basis — same model the Monthly calendar uses:
+  //   Total Paid    = every payment whose date is today, across every order
+  //                   (so a payment received today for an older order counts).
+  //   Net Profit    = full profit of every order that became fully paid today
+  //                   (all-or-nothing — profit lands on the day the last
+  //                   payment lands, matching the monthly view).
+  // The pending side stays scoped to orders DATED today since those are the
+  // ones whose follow-up work is still on today's plate.
+  const todayPaidRev = round2(orders.reduce((sum, o) =>
+    sum + orderPayments(o).reduce((s, p) =>
+      (p && p.date === todayKey) ? s + (Number(p.amount) || 0) : s, 0), 0));
+  const todayPaidNet = round2(orders.reduce((sum, o) =>
+    orderCompletionDate(o) === todayKey ? sum + orderProfit(o) : sum, 0));
   const todayPendingRev = round2(todayOrders.reduce((s, o) => s + orderBalance(o), 0));
   const todayPendingNet = round2(todayOrders.reduce((s, o) => s + orderUnpaidProfit(o), 0));
   const todayLabel = fmtDateShort(todayKey);
