@@ -3463,3 +3463,33 @@ body.app-booting .login-overlay { visibility: hidden; }
   margin: 2px 0 0;
   text-align: center;
 }
+
+/* Custom typeahead dropdown — anchored to its input via fixed positioning so
+   it floats above modals and isn't clipped by overflow:hidden containers. */
+.typeahead-dropdown {
+  position: fixed;
+  z-index: 300;
+  background: var(--surface, #14161c);
+  border: 1px solid var(--border, rgba(255,255,255,.1));
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  max-height: 240px;
+  overflow-y: auto;
+  font-size: 14px;
+  padding: 4px;
+}
+.typeahead-dropdown[hidden] { display: none; }
+.typeahead-item {
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text, #e8eaed);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.typeahead-item:hover,
+.typeahead-item.active {
+  background: var(--primary, #6366f1);
+  color: #fff;
+}

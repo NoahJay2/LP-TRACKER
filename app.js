@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-06-17.43';
+const BUILD_VERSION = '2026-06-17.45';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -967,6 +967,107 @@ function focusForKeyboard(targetInput) {
   }, 0);
 }
 
+// Custom typeahead — replaces native <datalist> on text inputs where Chromium's
+// "suggestions don't filter while typing until you click the field again" quirk
+// was breaking the flow. Renders a fixed-position dropdown anchored under the
+// input, filters on every keystroke, supports arrow-key navigation + Enter
+// to pick. getOptions() is called fresh each time so the list stays current
+// even if the underlying state changes mid-modal.
+function attachTypeahead(input, getOptions) {
+  if (!input) return;
+  // Strip any native datalist binding so the two suggestion UIs don't both fire.
+  input.removeAttribute('list');
+  input.setAttribute('autocomplete', 'off');
+  const dropdown = document.createElement('div');
+  dropdown.className = 'typeahead-dropdown';
+  dropdown.hidden = true;
+  document.body.appendChild(dropdown);
+  let activeIdx = -1;
+  let currentOpts = [];
+  const position = () => {
+    const r = input.getBoundingClientRect();
+    dropdown.style.left = r.left + 'px';
+    dropdown.style.top = (r.bottom + 2) + 'px';
+    dropdown.style.width = r.width + 'px';
+  };
+  const render = () => {
+    const q = input.value.trim().toLowerCase();
+    const all = (typeof getOptions === 'function' ? getOptions() : []) || [];
+    const seen = new Set();
+    const uniq = [];
+    for (const n of all) {
+      const key = String(n || '').trim();
+      if (!key) continue;
+      const lc = key.toLowerCase();
+      if (seen.has(lc)) continue;
+      seen.add(lc); uniq.push(key);
+    }
+    currentOpts = (q ? uniq.filter(n => n.toLowerCase().includes(q)) : uniq).slice(0, 8);
+    if (!currentOpts.length) { dropdown.hidden = true; return; }
+    dropdown.innerHTML = currentOpts.map((n, i) =>
+      `<div class="typeahead-item${i === activeIdx ? ' active' : ''}" data-i="${i}">${escapeHtml(n)}</div>`
+    ).join('');
+    position();
+    dropdown.hidden = false;
+  };
+  const pick = (i) => {
+    if (i < 0 || i >= currentOpts.length) return;
+    input.value = currentOpts[i];
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    dropdown.hidden = true;
+    activeIdx = -1;
+    input.blur();
+  };
+  input.addEventListener('input', () => { activeIdx = -1; render(); });
+  input.addEventListener('focus', () => { activeIdx = -1; render(); });
+  input.addEventListener('keydown', (e) => {
+    if (dropdown.hidden && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      render();
+      return;
+    }
+    if (dropdown.hidden) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      activeIdx = Math.min(currentOpts.length - 1, activeIdx + 1);
+      render();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      activeIdx = Math.max(-1, activeIdx - 1);
+      render();
+    } else if (e.key === 'Enter' && activeIdx >= 0) {
+      e.preventDefault();
+      pick(activeIdx);
+    } else if (e.key === 'Escape') {
+      dropdown.hidden = true;
+    }
+  });
+  input.addEventListener('blur', () => {
+    // Defer so a click on a dropdown item can fire before we hide.
+    setTimeout(() => { dropdown.hidden = true; }, 150);
+  });
+  // mousedown fires before blur, so preventDefault keeps focus on the input
+  // long enough for us to commit the pick.
+  dropdown.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    const item = e.target.closest('[data-i]');
+    if (item) pick(Number(item.dataset.i));
+  });
+  const onScroll = () => { if (!dropdown.hidden) position(); };
+  window.addEventListener('scroll', onScroll, true);
+  window.addEventListener('resize', onScroll);
+  // Self-clean when the input leaves the DOM (modal closed).
+  const observer = new MutationObserver(() => {
+    if (!document.body.contains(input)) {
+      dropdown.remove();
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onScroll);
+      observer.disconnect();
+    }
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+}
+
 const VIEW_STORAGE_KEY = 'lumen-tracker-view';
 const VALID_VIEWS = ['dashboard', 'orders', 'customers', 'inventory', 'shipments', 'expenses', 'income', 'monthly'];
 
@@ -1438,15 +1539,25 @@ function renderDashboard() {
 
   const tdCard = $('#todayCard');
   if (tdCard) {
+    // Show the stats block whenever there's any cash activity today OR any
+    // orders dated today — so a payment collected today for a future-dated
+    // order still surfaces under Total Paid / Net Profit Paid.
+    const hasCashToday = todayPaidRev > 0.005 || todayPaidNet > 0.005;
+    const headSuffix = todayOrders.length
+      ? `· ${fmtN(todayOrderCount)} order${todayOrderCount === 1 ? '' : 's'}`
+      : (hasCashToday ? `· Payments collected` : `· No orders today`);
+    const statsBlock = (todayOrders.length || hasCashToday) ? `
+      <div class="this-month-stats">
+        <div class="tm-stat tm-stat-revenue"><span class="tm-label">Total Paid</span><b>${fmt$(todayPaidRev)}</b></div>
+        <div class="tm-stat tm-stat-net"><span class="tm-label">Net Profit Paid</span><b>${fmt$(todayPaidNet)}</b></div>
+        <div class="tm-stat tm-stat-pending"><span class="tm-label">Total Pending</span><b>${fmt$(todayPendingRev)}</b></div>
+        <div class="tm-stat tm-stat-pending"><span class="tm-label">Profit Pending</span><b>${fmt$(todayPendingNet)}</b></div>
+      </div>
+    ` : '';
     if (todayOrders.length) {
       tdCard.innerHTML = `
-        <div class="this-month-head">${todayLabel} <span class="muted">· ${fmtN(todayOrderCount)} order${todayOrderCount === 1 ? '' : 's'}</span></div>
-        <div class="this-month-stats">
-          <div class="tm-stat tm-stat-revenue"><span class="tm-label">Total Paid</span><b>${fmt$(todayPaidRev)}</b></div>
-          <div class="tm-stat tm-stat-net"><span class="tm-label">Net Profit Paid</span><b>${fmt$(todayPaidNet)}</b></div>
-          <div class="tm-stat tm-stat-pending"><span class="tm-label">Total Pending</span><b>${fmt$(todayPendingRev)}</b></div>
-          <div class="tm-stat tm-stat-pending"><span class="tm-label">Profit Pending</span><b>${fmt$(todayPendingNet)}</b></div>
-        </div>
+        <div class="this-month-head">${todayLabel} <span class="muted">${headSuffix}</span></div>
+        ${statsBlock}
         ${overdueSectionHtml}
         <div class="today-section">
           <div class="today-section-head">To Do <span class="muted">(${todoList.length})</span></div>
@@ -1465,11 +1576,13 @@ function renderDashboard() {
           }</div>
         </div>
       `;
-    } else if (overdueList.length) {
-      // No orders today, but past orders still need attention — surface them
-      // so the dashboard doesn't read as "nothing to do" while work is overdue.
+    } else if (hasCashToday || overdueList.length) {
+      // No orders dated today, but either cash came in today or past orders
+      // still need attention — surface both so the dashboard doesn't read as
+      // "nothing happening" while real activity exists.
       tdCard.innerHTML = `
-        <div class="this-month-head">${todayLabel} <span class="muted">· No orders today</span></div>
+        <div class="this-month-head">${todayLabel} <span class="muted">${headSuffix}</span></div>
+        ${statsBlock}
         ${overdueSectionHtml}
       `;
     } else {
@@ -2794,6 +2907,10 @@ function orderModal(existing, draft) {
       <button type="button" class="icon-btn danger" data-remove title="Remove">×</button>
     `;
     const priceInput = row.querySelector('[data-field="price"]');
+    const productInput = row.querySelector('[data-field="product"]');
+    // Custom typeahead — Chromium's native <datalist> stops filtering as you
+    // keep typing unless you re-click the field, which broke desktop order entry.
+    attachTypeahead(productInput, () => state.stock.map(s => s.name || ''));
     row.querySelectorAll('[data-field]').forEach(el => {
       el.addEventListener('input', () => {
         const field = el.dataset.field;
@@ -2812,7 +2929,7 @@ function orderModal(existing, draft) {
             const orig = Number(p.originalPrice) || 0;
             it.originalPrice = (orig > it.price) ? orig : null;
             if (priceInput) priceInput.value = it.price;
-            // Dismiss the on-screen keyboard / datalist popover after a pick
+            // Dismiss the on-screen keyboard / dropdown after a pick
             // so the user can scroll on to the next field without an extra tap.
             el.blur();
           }
@@ -3363,6 +3480,12 @@ function orderModal(existing, draft) {
   }
 
   showModal();
+  // Custom typeahead on the customer field — native <datalist> stops filtering
+  // after the first keystroke on Chromium unless the user re-clicks the field.
+  attachTypeahead(form.querySelector('[name="customer"]'), () =>
+    [...new Set(state.orders.map(o => (o.customer || '').trim()).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b))
+  );
   setTimeout(() => form.querySelector('[name="customer"]').focus(), 50);
 }
 
