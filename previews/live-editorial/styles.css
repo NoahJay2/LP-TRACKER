@@ -1,57 +1,56 @@
-/* Lumen Peptides Tracker — Terminal Pro theme */
+/* Lumen Peptides Tracker — EDITORIAL PREVIEW */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&display=swap');
 
 :root {
-  /* ═══ TERMINAL PRO · pure black + subtle grid + neon accents ═══ */
-  --bg: #050608;
-  --bg-grad: #050608;
-  --surface: #0a0c10;
-  --surface-2: #10131a;
-  --surface-3: #171b24;
-  --border: #1c2028;
-  --border-strong: #2a2f3a;
-  --text: #ffffff;
-  --text-2: #d1d5db;
-  --muted: #6b7280;
-  --muted-2: #4b5563;
+  /* ═══ EDITORIAL · deep ink + cream + sage ═══ */
+  --bg: #0b0c10;
+  --bg-grad: #0b0c10;
+  --surface: #121319;
+  --surface-2: #191b23;
+  --surface-3: #22242c;
+  --border: #22242c;
+  --border-strong: #2f323c;
+  --text: #f5f0e6;
+  --text-2: #d6d3cd;
+  --muted: #a1a1a1;
+  --muted-2: #6b6b6b;
 
-  /* High-contrast trading palette — punchy greens/reds, glow-capable */
-  --primary: #22c55e;
-  --primary-hover: #34d16d;
-  --primary-soft: rgba(34, 197, 94, 0.10);
-  --primary-grad: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  /* Gold is the accent — used for primary CTA, warn, gentle emphasis.
+     Sage is success. Rose is partial/danger. */
+  --primary: #e5c07b;
+  --primary-hover: #f0d190;
+  --primary-soft: rgba(229, 192, 123, 0.10);
+  --primary-grad: linear-gradient(135deg, #e5c07b 0%, #d4a55a 100%);
 
-  --success: #22c55e;
-  --success-soft: rgba(34, 197, 94, 0.10);
-  --warn: #f59e0b;
-  --warn-soft: rgba(245, 158, 11, 0.10);
-  --danger: #ef4444;
-  --danger-soft: rgba(239, 68, 68, 0.10);
+  --success: #93b891;
+  --success-soft: rgba(147, 184, 145, 0.10);
+  --warn: #e5c07b;
+  --warn-soft: rgba(229, 192, 123, 0.10);
+  --danger: #d4a5a5;
+  --danger-soft: rgba(212, 165, 165, 0.10);
 
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 2px 6px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 4px 14px rgba(0, 0, 0, 0.5);
-  --shadow-xl: 0 8px 28px rgba(0, 0, 0, 0.6);
+  /* Softer shadows — editorial doesn't lean on drop shadows */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2), 0 1px 3px rgba(0, 0, 0, 0.18);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --shadow-xl: 0 8px 24px rgba(0, 0, 0, 0.45);
 
-  /* Small radii — precise, mechanical */
+  /* Small radii — editorial favors precision over softness */
   --radius-sm: 3px;
-  --radius: 4px;
-  --radius-lg: 6px;
-  --radius-xl: 8px;
+  --radius: 5px;
+  --radius-lg: 7px;
+  --radius-xl: 10px;
 
-  /* Terminal-specific tokens */
+  /* Editorial-specific tokens */
+  --font-display: 'Fraunces', Georgia, serif;
   --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
-  --up: #22c55e;
-  --up-glow: rgba(34, 197, 94, 0.35);
-  --down: #ef4444;
-  --down-glow: rgba(239, 68, 68, 0.35);
-  --cyan: #06b6d4;
-  --purple: #a855f7;
-  --amber: #f59e0b;
-  --grid-line: rgba(255, 255, 255, 0.02);
+  --cream: #f5f0e6;
+  --gold: #e5c07b;
+  --sage: #93b891;
+  --rose: #d4a5a5;
 
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
 
@@ -3513,92 +3512,127 @@ body.app-booting .login-overlay { visibility: hidden; }
 }
 .typeahead-item:hover,
 .typeahead-item.active {
-  background: var(--primary, #22c55e);
-  color: #050608;
+  background: var(--primary, #e5c07b);
+  color: #1c1d24;
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   TERMINAL PRO THEME OVERRIDES
-   Pure black canvas with subtle grid, JetBrains Mono for all
-   display type, punchy high-contrast accents, tight radii.
-   Reads like a trading terminal.
+   EDITORIAL THEME OVERRIDES
+   Everything below reshapes typography, headings, and key display
+   surfaces to match the Editorial preview. Layout / structural
+   rules from the base sheet still apply — this is a targeted
+   restyle, not a rewrite.
    ═══════════════════════════════════════════════════════════════ */
 
-/* Body — grid background over pure black */
+/* Body — keep Inter for reading, but a hair larger for editorial feel */
 html, body {
-  background: var(--bg);
-  background-image:
-    linear-gradient(var(--grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
-  background-size: 40px 40px, 40px 40px;
-  background-attachment: fixed;
-  letter-spacing: -0.005em;
+  font-family: var(--font-body);
+  letter-spacing: -0.011em;
+  background-image: none;
 }
+body {
+  background: var(--bg);
+}
+
+/* Turn OFF the gradient wash the base sheet paints on top */
 body::before, body::after { display: none !important; }
 
-/* All display type → JetBrains Mono, uppercase, tracked wide */
+/* All page/view section headings adopt Fraunces */
 .view h1,
 .view-header h1,
 .view-header .view-title,
 .dashboard-head h1,
 h1.page-title,
 #modalTitle,
+.modal-header h2,
 .login-card h1,
 .login-card h2 {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  text-transform: uppercase;
-  color: var(--text);
-}
-.view h1::before,
-.view-header h1::before,
-.dashboard-head h1::before {
-  content: '▸ ';
-  color: var(--up);
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  color: var(--cream);
 }
 
 .view h2,
 .view h3,
+.view-header h2,
 .section-title,
 .this-month-head,
 .today-section-head,
 .dd-section-head,
 .customer-block-head,
-.cust-profile-name {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text);
+.cust-profile-name,
+.inv-section-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--cream);
 }
 
-/* Small labels */
+/* Small caps section labels — use Fraunces with wide tracking */
+.section-label,
 .kpi-label,
 .cal-sum-label,
 .tm-label,
 .rd-total-label,
-.section-label {
-  font-family: var(--font-mono);
+.dd-stat span:first-child,
+.today-section-head {
+  font-family: var(--font-display);
   font-weight: 600;
-  text-transform: uppercase;
   letter-spacing: 0.12em;
+  text-transform: uppercase;
   color: var(--muted);
 }
 
-/* ── KPI CARDS — strip base rails, add subtle glow on hover ──── */
+/* ── KPI CARDS — proud serif numbers, no accents ─────────────── */
+.kpi {
+  padding: 22px 24px;
+}
+.kpi-label {
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+}
+.kpi-value {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 34px;
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+  color: var(--cream);
+  margin-top: 12px;
+}
+@media (max-width: 640px) {
+  .kpi { padding: 16px 18px; }
+  .kpi-value { font-size: 26px; }
+  .kpi-label { font-size: 10px; }
+}
+/* Number colors carry the KPI meaning — no bars, no dashed edges.
+     Revenue = warm gold. Profit / Net = sage green. Pending = pending amber.
+     Expenses = rose red. Inventory reads neutral cream. */
+.kpi-revenue .kpi-value { color: var(--gold); }
+.kpi-net .kpi-value { color: var(--sage); }
+.kpi-pending .kpi-value { color: #d99a4a; }
+.kpi-inventory .kpi-value { color: var(--cream); }
+.kpi-expenses .kpi-value { color: var(--rose); }
+.kpi-revenue .kpi-label,
+.kpi-net .kpi-label,
+.kpi-pending .kpi-label,
+.kpi-inventory .kpi-label,
+.kpi-expenses .kpi-label { color: var(--muted); }
+
+/* Nuke the base sheet's inset-shadow left rails and dashed borders — the
+   editorial look is clean: solid thin border, no colored accents, no
+   dashed edges. Type carries the hierarchy, not decoration. */
 .kpi,
 .kpi-revenue,
 .kpi-net,
 .kpi-pending,
 .kpi-inventory,
 .kpi-expenses {
-  background: var(--surface) !important;
+  box-shadow: none !important;
   border: 1px solid var(--border) !important;
   border-style: solid !important;
-  box-shadow: none !important;
-  border-radius: var(--radius-lg);
-  padding: 18px 20px;
+  background: var(--surface);
 }
 .kpi::before { display: none !important; }
 .kpi:hover {
@@ -3607,192 +3641,126 @@ h1.page-title,
   box-shadow: none !important;
 }
 
-.kpi-label {
-  font-size: 10px;
-  letter-spacing: 0.14em;
-}
-.kpi-value {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 28px;
-  letter-spacing: -0.02em;
-  color: var(--text);
-  margin-top: 10px;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Color code by meaning — punchy, high-contrast */
-.kpi-revenue .kpi-value { color: var(--cyan); }
-.kpi-net .kpi-value { color: var(--up); }
-.kpi-pending .kpi-value { color: var(--amber); }
-.kpi-inventory .kpi-value { color: var(--purple); }
-.kpi-expenses .kpi-value { color: var(--down); }
-.kpi-revenue .kpi-label,
-.kpi-net .kpi-label,
-.kpi-pending .kpi-label,
-.kpi-inventory .kpi-label,
-.kpi-expenses .kpi-label { color: var(--muted); }
-
-@media (max-width: 640px) {
-  .kpi { padding: 14px 14px; }
-  .kpi-value { font-size: 20px; }
-  .kpi-label { font-size: 9.5px; }
-}
-
-/* ── BIG DISPLAY NUMBERS elsewhere ──────────────────────────── */
+/* ── BIG DISPLAY NUMBERS in the Today / Monthly cards ─────────── */
 .this-month-stats b,
 .tm-stat b,
 .cal-sum-stat b,
 .dd-stat b,
 .rd-total-value {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  font-variant-numeric: tabular-nums;
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  color: var(--cream);
 }
 
-/* ── BUTTONS — sharp corners, mono, neon primary ────────────── */
-.btn {
+/* Calendar day cells — numeric */
+.cal-day-num, .cal-month-gross, .cal-month-net {
   font-family: var(--font-mono);
-  font-weight: 600;
-  font-size: 11.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  border-radius: var(--radius);
-  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
+  letter-spacing: 0;
+}
+.cal-month-cell b, .cal-month-cell strong {
+  font-family: var(--font-display);
+  font-weight: 500;
+}
+
+/* ── BUTTONS — pill-shaped, understated ───────────────────────── */
+.btn {
+  border-radius: 999px;
+  font-weight: 500;
+  letter-spacing: 0;
+  transition: background 0.15s, border-color 0.15s;
 }
 .btn.primary {
-  background: var(--up);
-  border: 1px solid var(--up);
-  color: #050608;
+  background: var(--cream);
+  border-color: var(--cream);
+  color: #1c1d24;
+  font-weight: 600;
   background-image: none;
-  box-shadow: 0 0 20px var(--up-glow);
+  box-shadow: none;
 }
 .btn.primary:hover {
-  background: var(--primary-hover);
-  border-color: var(--primary-hover);
-  filter: brightness(1.05);
+  background: #ffffff;
+  border-color: #ffffff;
+  color: #1c1d24;
 }
 .btn.ghost {
-  background: var(--surface-2);
+  background: transparent;
   border-color: var(--border-strong);
-  color: var(--text);
 }
 .btn.ghost:hover {
-  background: var(--surface-3);
+  background: var(--surface-2);
   border-color: var(--muted);
 }
-.btn.danger {
-  background: var(--down);
-  border-color: var(--down);
-  color: #050608;
-  box-shadow: 0 0 16px var(--down-glow);
-}
 
-/* ── PILLS ────────────────────────────────────────────────── */
+/* ── PILLS / STATUS TAGS ──────────────────────────────────────── */
 .pill {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  border-radius: var(--radius-sm);
-  padding: 2px 8px;
-  border: 1px solid transparent;
+  border-radius: 999px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
-.pill.green {
-  color: var(--up);
-  background: var(--success-soft);
-  border-color: rgba(34, 197, 94, 0.25);
-}
-.pill.amber {
-  color: var(--amber);
-  background: var(--warn-soft);
-  border-color: rgba(245, 158, 11, 0.25);
-}
-.pill.partial {
-  color: var(--cyan);
-  background: rgba(6, 182, 212, 0.10);
-  border-color: rgba(6, 182, 212, 0.25);
-}
-.pill.red, .pill.danger {
-  color: var(--down);
-  background: var(--danger-soft);
-  border-color: rgba(239, 68, 68, 0.25);
-}
+.pill.green { color: var(--sage); background: var(--success-soft); border: 1px solid transparent; }
+.pill.amber { color: var(--gold); background: var(--warn-soft); border: 1px solid transparent; }
+.pill.partial { color: var(--rose); background: var(--danger-soft); border: 1px solid transparent; }
 
-/* ── NAV / SIDEBAR ────────────────────────────────────────── */
+/* ── SIDEBAR / NAV ────────────────────────────────────────────── */
 .sidebar, .nav-sidebar {
   background: var(--surface);
   border-right: 1px solid var(--border);
 }
 .nav-item {
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
   font-weight: 500;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: -0.005em;
   border-radius: var(--radius);
 }
 .nav-item.active {
-  background: var(--surface-2);
-  color: var(--up);
-  border-left: 2px solid var(--up);
-  box-shadow: inset 0 0 20px rgba(34, 197, 94, 0.05);
+  background: var(--primary-soft);
+  color: var(--cream);
+  border-left: 2px solid var(--gold);
 }
 .brand, .brand-name, .sidebar-title {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text);
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--cream);
 }
 
-/* ── TABLES ───────────────────────────────────────────────── */
+/* ── TABLES ───────────────────────────────────────────────────── */
 table th {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 10.5px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
   color: var(--muted);
 }
 table td {
   font-family: var(--font-body);
-  font-size: 13px;
 }
 table td .amt,
 table td.amt,
 table td[class*="total"],
-table td[class*="price"],
-table td[class*="qty"] {
+table td[class*="price"] {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
-tr:hover td { background: var(--surface-2); }
 
-/* ── INVOICE ─────────────────────────────────────────────
-   The invoice card is intentionally LIGHT (white bg, dark
-   text) so screenshots read on any device. We only swap
-   the type family — colors inherit from the base sheet so
-   dark-on-light stays legible. */
+/* ── INVOICE ─────────────────────────────────────────────────── */
 .invoice-head h1,
 .invoice-head h2,
 .inv-brand,
 .invoice-title {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  color: var(--cream);
 }
 .invoice-total,
 .invoice-grand-total,
-.invoice-total-value,
-.invoice-total-amount {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
+.invoice-total-value {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  color: var(--cream);
 }
 .invoice-number,
 .invoice-date,
@@ -3800,60 +3768,39 @@ tr:hover td { background: var(--surface-2); }
   font-family: var(--font-mono);
   text-transform: uppercase;
   letter-spacing: 0.12em;
+  font-size: 11px;
+  color: var(--muted);
 }
 
-/* ── MODALS ──────────────────────────────────────────────── */
+/* ── MODAL / POPUP CARDS ─────────────────────────────────────── */
 .modal-card, .discount-popup-card {
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-strong);
-  background: var(--surface);
 }
 .modal-header h2,
 .discount-popup-head h4 {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text);
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--cream);
 }
 
-/* ── TODAY / ROWS ────────────────────────────────────────── */
-/* NOTE: .invoice-item-name is intentionally excluded — the invoice
-   is a light card and needs to inherit its dark text color, not
-   this theme's white. Base sheet rule at .invoice-item-name still
-   applies (font-weight: 600) and the color inherits from parent. */
-.today-name,
-.rd-item-name,
-.today-row {
-  font-family: var(--font-body);
-  letter-spacing: -0.005em;
-  color: var(--text);
+/* ── TODAY CARD ──────────────────────────────────────────────── */
+.today-name, .rd-item-name, .invoice-item-name {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  color: var(--cream);
 }
-.today-amount,
-.rd-item-total,
-.invoice-item-total,
-.today-row-amount {
+.today-amount, .rd-item-total, .invoice-item-total {
   font-family: var(--font-mono);
-  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
-.today-row, .today-list > * {
-  border-radius: var(--radius);
-  border-left: 2px solid transparent;
-  transition: background 0.12s, border-left-color 0.12s;
-}
-.today-row:hover, .today-list > *:hover {
-  background: var(--surface-2);
-  border-left-color: var(--up);
-}
 
-/* ── FORMS ───────────────────────────────────────────────── */
+/* ── FORMS ───────────────────────────────────────────────────── */
 label > span {
-  font-family: var(--font-mono);
-  font-weight: 600;
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
+  font-family: var(--font-body);
+  font-weight: 500;
   color: var(--muted);
 }
 input, textarea, select {
@@ -3861,21 +3808,19 @@ input, textarea, select {
   border: 1px solid var(--border-strong);
   background: var(--surface-2);
   font-family: var(--font-body);
-  color: var(--text);
 }
 input:focus, textarea:focus, select:focus {
-  border-color: var(--up);
-  box-shadow: 0 0 0 2px var(--up-glow);
-  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px rgba(229, 192, 123, 0.15);
 }
-input[type="number"], input[type="date"] {
-  font-family: var(--font-mono);
+
+/* ── NUMBER-FLAVORED CONTENT ─────────────────────────────────── */
+.fmt-money, .money, [data-money], [class*="amt"], [class*="total"] {
   font-variant-numeric: tabular-nums;
 }
 
-/* ── SUBTITLES / DATELINES ───────────────────────────────── */
-.dashboard-sub, .view-sub, .subtitle,
-.operating-pill, .dashboard-operating {
+/* Dateline pill under the h1 — small caps mono */
+.dashboard-sub, .view-sub, .subtitle {
   font-family: var(--font-mono);
   text-transform: uppercase;
   letter-spacing: 0.14em;
@@ -3883,819 +3828,21 @@ input[type="number"], input[type="date"] {
   color: var(--muted);
 }
 
-/* All numeric spans stay tabular */
-.fmt-money, .money, [data-money],
-.this-month-stats b, .tm-stat b, .cal-sum-stat b,
-.dd-stat b, .kpi-value, .rd-total-value {
-  font-variant-numeric: tabular-nums;
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   TERMINAL PRO · POLISH PASS
-   The beauty layer: atmosphere, hierarchy, and micro-detail.
-   ═══════════════════════════════════════════════════════════════ */
-
-/* ── ATMOSPHERE ──────────────────────────────────────────────
-   Pure black + faint green horizon glow at the top + fine grid.
-   The glow gives the page depth without reading as "gradient". */
-html, body {
-  background:
-    radial-gradient(1000px 520px at 50% -160px, rgba(34, 197, 94, 0.06), transparent 65%),
-    linear-gradient(var(--grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
-    var(--bg);
-  background-size: auto, 40px 40px, 40px 40px, auto;
-  background-attachment: fixed;
-}
-
-/* Terminal-green selection + focus ring, thin dark scrollbars */
-::selection { background: rgba(34, 197, 94, 0.28); color: #fff; }
-:focus-visible { outline: 1px solid var(--up); outline-offset: 2px; }
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb {
-  background: var(--surface-3);
-  border-radius: 5px;
-  border: 2px solid var(--bg);
-}
-::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
-
-/* ── PAGE HEADERS ────────────────────────────────────────────
-   Kill the base sheet's gradient text fill (it swallowed the ▸
-   prefix), go solid white, add a soft blinking cursor. */
-.view-head h1 {
-  background: none;
-  -webkit-background-clip: initial;
-  background-clip: initial;
-  -webkit-text-fill-color: var(--text);
-  color: var(--text);
-  font-size: 22px;
-}
-.view-head h1::before {
-  content: '▸ ';
-  color: var(--up);
-  -webkit-text-fill-color: var(--up);
-  text-shadow: 0 0 12px var(--up-glow);
-}
-.view-head h1::after {
-  content: '_';
-  color: var(--up);
-  -webkit-text-fill-color: var(--up);
-  margin-left: 2px;
-  font-weight: 700;
-  animation: term-cursor 1.15s steps(2, start) infinite;
-}
-@keyframes term-cursor { to { visibility: hidden; } }
-.view-head p, .view-head .muted {
+/* Operating-since pill on the dashboard */
+.operating-pill,
+.dashboard-operating {
   font-family: var(--font-mono);
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: var(--muted-2);
-}
-
-/* ── KPI CARDS ───────────────────────────────────────────────
-   Each card gets a color-matched hairline across the top, a
-   soft glow on its number, and a border that warms to its
-   accent on hover. Reads like a lit instrument panel. */
-.kpi {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 45%), var(--surface) !important;
-}
-.kpi::after {
-  content: '';
-  position: absolute;
-  top: 0; left: 14px; right: 14px;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--kpi-accent, var(--border-strong)), transparent);
-  opacity: 0.65;
-}
-.kpi-revenue { --kpi-accent: var(--cyan); }
-.kpi-net { --kpi-accent: var(--up); }
-.kpi-pending { --kpi-accent: var(--amber); }
-.kpi-inventory { --kpi-accent: var(--purple); }
-.kpi-expenses { --kpi-accent: var(--down); }
-
-.kpi-revenue:hover { border-color: rgba(6, 182, 212, 0.4) !important; }
-.kpi-net:hover { border-color: rgba(34, 197, 94, 0.4) !important; }
-.kpi-pending:hover { border-color: rgba(245, 158, 11, 0.4) !important; }
-.kpi-inventory:hover { border-color: rgba(168, 85, 247, 0.4) !important; }
-.kpi-expenses:hover { border-color: rgba(239, 68, 68, 0.4) !important; }
-
-.kpi-revenue .kpi-value { text-shadow: 0 0 22px rgba(6, 182, 212, 0.25); }
-.kpi-net .kpi-value { text-shadow: 0 0 22px rgba(34, 197, 94, 0.28); }
-.kpi-pending .kpi-value { text-shadow: 0 0 22px rgba(245, 158, 11, 0.22); }
-.kpi-inventory .kpi-value { text-shadow: 0 0 22px rgba(168, 85, 247, 0.22); }
-.kpi-expenses .kpi-value { text-shadow: 0 0 22px rgba(239, 68, 68, 0.22); }
-
-/* ── CARDS ───────────────────────────────────────────────────
-   Subtle inner top-light, tight radius, section titles read as
-   terminal panel headers with a green tab marker. */
-.card {
-  border-radius: var(--radius-xl);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent 36%), var(--surface);
-  box-shadow: none;
-  transition: border-color .15s var(--ease);
-}
-.card:hover { box-shadow: none; border-color: var(--border-strong); }
-.card-head h3 {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 11.5px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--text-2);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-}
-.card-head h3::before {
-  content: '';
-  width: 3px;
-  height: 12px;
-  border-radius: 1px;
-  background: var(--up);
-  box-shadow: 0 0 8px var(--up-glow);
-  flex: 0 0 auto;
-}
-.card .link {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--up);
-}
-.card .link:hover { color: var(--primary-hover); }
-
-/* ── TABLES ──────────────────────────────────────────────────
-   Transparent headers with a stronger underline; rows light a
-   green rail on hover. Numbers all mono. */
-.table th {
-  background: transparent;
-  border-bottom: 1px solid var(--border-strong);
-  font-family: var(--font-mono);
-  letter-spacing: 0.1em;
-}
-.table td { font-size: 13px; }
-.table td.num, .table .num, .table td[class*="amt"] {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-}
-.table tbody tr { transition: background 0.1s; }
-.table tbody tr:hover td { background: var(--surface-2); }
-.table tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--up); }
-
-/* ── SIDEBAR / NAV ───────────────────────────────────────────
-   Black glass, mono brand, icons that light up with the row. */
-.sidebar {
-  background: rgba(5, 6, 8, 0.82);
-  backdrop-filter: saturate(140%) blur(16px);
-  -webkit-backdrop-filter: saturate(140%) blur(16px);
-}
-.brand-title {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 12.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-}
-.brand-sub {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  color: var(--muted-2);
-}
-.nav-item { color: var(--muted); transition: color .12s, background .12s, border-color .12s; }
-.nav-item .ico { color: var(--muted-2); transition: color .12s; }
-.nav-item:hover { color: var(--text); background: var(--surface-2); }
-.nav-item:hover .ico { color: var(--text-2); }
-.nav-item.active { color: var(--up); }
-.nav-item.active .ico { color: var(--up); text-shadow: 0 0 10px var(--up-glow); }
-
-.cloud-status, .link-btn, .build-tag {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-}
-.cloud-status.online .cloud-dot {
-  background: var(--up);
-  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15), 0 0 10px var(--up-glow);
-}
-
-/* Operating-since pill → instrument readout */
-.operating-since {
-  font-family: var(--font-mono);
-  border: 1px solid var(--border);
-  background: var(--surface);
-  border-radius: var(--radius);
-}
-.operating-since .op-label {
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  font-size: 9.5px;
-  color: var(--muted-2);
-}
-.operating-since .op-duration { color: var(--up); }
-
-/* ── TOPBAR (mobile) ─────────────────────────────────────────── */
-.topbar {
-  background: rgba(5, 6, 8, 0.88);
-  backdrop-filter: saturate(140%) blur(16px);
-  -webkit-backdrop-filter: saturate(140%) blur(16px);
-  border-bottom: 1px solid var(--border);
-}
-.topbar-title {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-/* ── BUTTON / INPUT FEEL ─────────────────────────────────────── */
-.btn:active { transform: translateY(0.5px) scale(0.99); }
-.btn.primary { border-radius: var(--radius); }
-input::placeholder, textarea::placeholder { color: var(--muted-2); }
-.toolbar input[type="search"], .toolbar input[type="text"] {
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-}
-
-/* Modals — crisp edge with a barely-there green rim light */
-.modal-card, .discount-popup-card {
-  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.06), 0 24px 60px rgba(0, 0, 0, 0.7);
-}
-
-/* ── MOBILE ERGONOMICS ───────────────────────────────────────── */
-.main { padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
-@media (max-width: 640px) {
-  .main {
-    padding-left: max(14px, env(safe-area-inset-left));
-    padding-right: max(14px, env(safe-area-inset-right));
-  }
-  /* Two KPI tiles per row — instrument-cluster density */
-  .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
-  .kpi { padding: 14px 14px; }
-  .kpi-value { font-size: 19px; text-shadow: none; }
-  .kpi-label { font-size: 8.5px; letter-spacing: 0.1em; }
-  .view-head h1 { font-size: 18px; }
-  .view-head h1::after { display: none; }  /* cursor is noise on small screens */
-  .card { padding: 14px; }
-  .card-head h3 { font-size: 10.5px; }
-  /* Comfortable tap targets */
-  .btn { min-height: 42px; }
-  .nav-item { min-height: 44px; }
-}
-@media (hover: none) {
-  .btn:active { background: var(--surface-3); }
-  .btn.primary:active { background: var(--primary-hover); filter: none; }
-  .table tbody tr:active td { background: var(--surface-2); }
-  .today-row:active { background: var(--surface-2); border-left-color: var(--up); }
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   TERMINAL PRO · REDESIGN
-   Structural pass: the KPI grid fuses into one segmented
-   instrument cluster, cards become tmux-style panes with title
-   bars, the nav becomes a numbered index, and every page opens
-   with a shell prompt line. CRT vignette + scanlines on top.
-   ═══════════════════════════════════════════════════════════════ */
-
-/* ── CRT LAYER ───────────────────────────────────────────────
-   One fixed overlay: darkened corners (vignette) + ultra-faint
-   scanlines. pointer-events:none so it never blocks a tap. */
-body::after {
-  content: '' !important;
-  display: block !important;
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 99999;
-  background:
-    radial-gradient(130% 100% at 50% 10%, transparent 62%, rgba(0, 0, 0, 0.32) 100%),
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 3px);
-}
-
-/* Shell prompt lines removed per feedback — titles stand alone. */
-.view-head { position: relative; }
-
-/* Retire the ▸ arrow — the prompt line carries the terminal cue now. */
-.view h1::before,
-.view-head h1::before,
-.view-header h1::before,
-.dashboard-head h1::before { content: none; }
-
-/* ── INSTRUMENT CLUSTER ──────────────────────────────────────
-   Six KPIs fuse into one segmented panel: 1px gaps expose the
-   border color as internal dividers. 3×2 on desktop, 2×3 on
-   phones. Each segment keeps its color-matched top hairline. */
-.kpi-grid {
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1px;
-  background: var(--border);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  overflow: hidden;
-  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.04), 0 18px 50px rgba(0, 0, 0, 0.45);
-}
-.kpi,
-.kpi-revenue,
-.kpi-net,
-.kpi-pending,
-.kpi-inventory,
-.kpi-expenses {
-  border: none !important;
-  border-radius: 0 !important;
-  margin: 0;
-}
-.kpi:hover {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 55%), var(--surface-2) !important;
-}
-/* Segment hairline spans the full width inside the cluster */
-.kpi::after { left: 0; right: 0; }
-
-/* ── PANES (tmux-style cards) ────────────────────────────────
-   Card headers become full-bleed title bars: darker strip,
-   bottom rule, mono title with its glowing tab marker. */
-.card > .card-head {
-  margin: -20px -20px 16px;
-  padding: 11px 16px;
-  background: rgba(255, 255, 255, 0.02);
-  border-bottom: 1px solid var(--border);
-  border-radius: calc(var(--radius-xl) - 1px) calc(var(--radius-xl) - 1px) 0 0;
-}
-.card > .card-head .muted {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-/* Income-statement cards use a bare h3 — same title-bar treatment */
-.card > h3:first-child {
-  margin: -20px -20px 16px;
-  padding: 11px 16px;
-  background: rgba(255, 255, 255, 0.02);
-  border-bottom: 1px solid var(--border);
-  border-radius: calc(var(--radius-xl) - 1px) calc(var(--radius-xl) - 1px) 0 0;
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 11.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--text-2);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.card > h3:first-child::before {
-  content: '';
-  width: 3px;
-  height: 12px;
-  border-radius: 1px;
-  background: var(--up);
-  box-shadow: 0 0 8px var(--up-glow);
-  flex: 0 0 auto;
-}
-.is-row b {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-}
-
-/* ── NAV INDEX ───────────────────────────────────────────────
-   Icons out, line numbers in — the sidebar reads like a file
-   index. Numbers light green with their row. */
-.nav { counter-reset: nav-i; position: relative; padding-top: 20px; }
-.nav::before {
-  content: 'index';
-  position: absolute;
-  top: 0;
-  left: 12px;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: var(--muted-2);
-}
-.nav-item { counter-increment: nav-i; }
-.nav-item .ico { display: none; }
-.nav-item::before {
-  content: counter(nav-i, decimal-leading-zero);
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  color: var(--muted-2);
-  width: 22px;
-  flex: 0 0 auto;
-  letter-spacing: 0.04em;
-  transition: color .12s;
-}
-.nav-item:hover::before { color: var(--text-2); }
-.nav-item.active::before {
-  color: var(--up);
-  text-shadow: 0 0 10px var(--up-glow);
-}
-
-/* Sidebar footer reads as a status line */
-.sidebar-foot {
-  border-top: 1px solid var(--border);
-  padding-top: 12px;
-}
-
-/* ── MODAL PANE ──────────────────────────────────────────────
-   Same title-bar language as the cards. */
-.modal-head {
-  background: rgba(255, 255, 255, 0.02);
-  border-bottom: 1px solid var(--border);
-}
-.modal-head h3 {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-2);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.modal-head h3::before {
-  content: '';
-  width: 3px;
-  height: 12px;
-  border-radius: 1px;
-  background: var(--up);
-  box-shadow: 0 0 8px var(--up-glow);
-  flex: 0 0 auto;
-}
-
-/* ── COMMAND-BAR TOOLBARS ────────────────────────────────────── */
-.toolbar input[type="text"],
-.toolbar input[type="search"],
-.toolbar select {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  background: var(--surface);
-  border-color: var(--border);
-}
-.toolbar select { text-transform: uppercase; letter-spacing: 0.04em; }
-
-/* ── MOBILE ──────────────────────────────────────────────────── */
-@media (max-width: 640px) {
-  .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 1px; }
-  .card > .card-head,
-  .card > h3:first-child { margin: -14px -14px 12px; padding: 10px 12px; }
-  /* Scanlines off on phones — cleaner text at small sizes */
-  body::after {
-    background: radial-gradient(140% 100% at 50% 10%, transparent 66%, rgba(0, 0, 0, 0.30) 100%);
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   TERMINAL PRO · DETAIL PASS
-   The last 10%: every small component joins the same design
-   language — mini stat clusters, LED toggles, terminal toasts,
-   the login screen as an auth prompt, legend dots on labels.
-   ═══════════════════════════════════════════════════════════════ */
-
-/* ── LEGEND DOTS on KPI labels ───────────────────────────────
-   A tiny color chip ties each label to its number's color. */
-.kpi-label { display: flex; align-items: center; gap: 7px; }
-.kpi-label::before {
-  content: '';
-  width: 5px;
-  height: 5px;
-  border-radius: 1px;
-  flex: 0 0 auto;
-  background: var(--kpi-accent, var(--muted-2));
-  box-shadow: 0 0 6px var(--kpi-accent, transparent);
-}
-
-/* ── MINI STAT CLUSTERS (This Month / Today tiles) ───────────
-   Same fused-segment language as the hero cluster: 1px seams,
-   flat segments, color-matched top hairline + tinted number.
-   Replaces the base sheet's indigo tints + dashed borders. */
-.this-month-stats {
-  gap: 1px;
-  background: var(--border);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow: hidden;
-}
-.tm-stat,
-.tm-stat-revenue,
-.tm-stat-net,
-.tm-stat-pending {
-  position: relative;
-  background: var(--surface-2);
-  border: none;
-  border-radius: 0;
-}
-.tm-stat::after {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--tm-accent, var(--border-strong)), transparent);
-  opacity: 0.7;
-}
-.tm-stat-revenue { --tm-accent: var(--cyan); }
-.tm-stat-net { --tm-accent: var(--up); }
-.tm-stat-pending { --tm-accent: var(--amber); }
-.tm-stat-revenue b { color: var(--cyan); }
-.tm-stat-net b { color: var(--up); }
-.tm-stat-pending b { color: var(--amber); }
-.tm-stat .tm-label,
-.tm-stat-revenue .tm-label,
-.tm-stat-net .tm-label,
-.tm-stat-pending .tm-label { color: var(--muted); }
-
-/* ── MONTHLY SUMMARY STRIP — fused, hairlined ────────────────── */
-.cal-summary {
-  gap: 1px;
-  background: var(--border);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow: hidden;
-}
-.cal-sum-stat {
-  border: none;
-  border-radius: 0;
-  background: var(--surface-2);
-}
-.cal-sum-stat::before {
-  left: 0; right: 0; top: 0; bottom: auto;
-  width: auto; height: 1px;
-  background: linear-gradient(90deg, transparent, var(--cs-accent, var(--border-strong)), transparent);
-  opacity: 0.75;
-}
-.cal-sum-gross { --cs-accent: var(--cyan); }
-.cal-sum-net { --cs-accent: var(--up); }
-.cal-sum-qty { --cs-accent: var(--purple); }
-.cal-sum-pending { --cs-accent: var(--amber); }
-.cal-sum-gross b { color: var(--cyan); }
-.cal-sum-net b { color: var(--up); }
-.cal-sum-qty b { color: var(--text); }
-.cal-sum-pending-line { color: var(--amber); font-family: var(--font-mono); }
-
-/* Calendar cells warm to green on hover */
-.cal-month-cell, .cal-day {
-  transition: border-color .12s var(--ease), background .12s var(--ease);
-}
-.cal-month-cell:hover, .cal-day:hover {
-  border-color: rgba(34, 197, 94, 0.35);
-}
-
-/* ── LED TOGGLES ─────────────────────────────────────────────
-   Off: dark socket. On: green LED — glowing knob in a lit ring. */
-.slider {
-  background: var(--surface-3);
-  box-shadow: inset 0 0 0 1px var(--border-strong);
-}
-.slider::before {
-  background: var(--muted);
-  box-shadow: none;
-}
-.switch input:checked + .slider {
-  background: rgba(34, 197, 94, 0.18);
-  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.55), 0 0 10px rgba(34, 197, 94, 0.15);
-}
-.switch input:checked + .slider::before {
-  background: var(--up);
-  box-shadow: 0 0 8px var(--up-glow);
-}
-
-/* ── TERMINAL TOAST ──────────────────────────────────────────── */
-.toast {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: 0.02em;
-  background: #0c0f14;
-  border: 1px solid var(--border-strong);
-  border-left: 3px solid var(--up);
-  border-radius: 6px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), 0 0 14px rgba(34, 197, 94, 0.10);
-}
-
-/* ── LOGIN = AUTH PROMPT ─────────────────────────────────────── */
-.login-overlay {
-  background:
-    radial-gradient(800px 400px at 50% 30%, rgba(34, 197, 94, 0.05), transparent 65%),
-    #050608;
-}
-.login-card {
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: 10px;
-  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.08), 0 30px 80px rgba(0, 0, 0, 0.8);
-}
-.login-card .login-title {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 15px;
-  color: var(--text);
-}
-.login-card .login-sub {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: var(--muted-2);
-}
-.login-card .login-sub::before { content: '// '; color: var(--up); }
-.login-card label span {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
   color: var(--muted);
 }
 
-/* ── SEARCH = COMMAND INPUT ──────────────────────────────────
-   A green prompt chevron sits inside every search field. */
-.search-wrap::before {
-  content: '>';
-  position: absolute;
-  left: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 12px;
-  color: var(--up);
-  pointer-events: none;
-  z-index: 1;
-}
-.search-wrap input { padding-left: 30px; }
-
-/* ── TABLE FOOTERS = TOTALS READOUT ──────────────────────────── */
-.table tfoot td {
-  font-family: var(--font-mono);
+/* Force everything numeric to tabular so columns line up */
+.this-month-stats b,
+.tm-stat b,
+.cal-sum-stat b,
+.dd-stat b,
+.kpi-value,
+.rd-total-value {
   font-variant-numeric: tabular-nums;
-  border-top: 1px solid var(--border-strong);
-  background: rgba(255, 255, 255, 0.015);
-}
-.table tfoot .foot-label {
-  font-size: 9.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--muted-2);
-}
-
-/* ── SMALL STUFF ─────────────────────────────────────────────── */
-.link-btn:hover { color: var(--up); }
-.period-picker label {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: var(--muted);
-}
-.today-empty {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: var(--muted-2);
-}
-.top-list li { border-left: 2px solid transparent; }
-.top-list li:hover { border-left-color: var(--up); }
-.top-list li b { font-family: var(--font-mono); }
-.modal {
-  background: rgba(2, 3, 4, 0.78);
-  backdrop-filter: blur(10px) saturate(1.1);
-  -webkit-backdrop-filter: blur(10px) saturate(1.1);
-}
-.btn.primary { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 0 20px var(--up-glow); }
-* { scrollbar-color: #171b24 transparent; scrollbar-width: thin; }
-
-/* ── CALENDAR: GROSS vs NET must read at a glance ────────────
-   One color story app-wide: GROSS/REVENUE = cyan · PROFIT = green.
-   The base sheet colored calendar gross with var(--primary), which
-   this theme turned green — same hue as net. Recolor to cyan on
-   month tiles, day cells, and week totals so the pair is distinct. */
-.cal-month-gross { color: var(--cyan); }
-.cal-month-net { color: var(--up); }
-.cal-cell-gross { color: var(--cyan); }
-.cal-cell-net { color: var(--up); }
-/* Today ring stays green (action color), not revenue-cyan */
-.cal-cell-today.cal-cell-active { border-color: var(--up); }
-/* Pending mode keeps its amber/teal split — untouched */
-
-/* ── LABELED LEDGER ROWS on month tiles ──────────────────────
-   Each money line carries its own tiny label, value pushed to
-   the right edge — the tile reads like a ledger entry:
-     Jun
-     GROSS ......... $16,101
-     NET ........... $11,180
-                    211 items */
-.cal-month-gross,
-.cal-month-net {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  width: 100%;
-}
-.cal-month-gross::before,
-.cal-month-net::before {
-  font-family: var(--font-mono);
-  font-size: 8px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: var(--muted-2);
-  margin-right: auto;   /* pins label left, value right */
-}
-.cal-month-gross::before { content: 'gross'; }
-.cal-month-net::before { content: 'net'; }
-.cal-month-qty { align-self: flex-end; }
-/* Pending filter relabels the same rows honestly */
-.cal-pending-mode .cal-month-gross::before { content: 'pend'; }
-.cal-pending-mode .cal-month-net::before { content: 'pot.net'; }
-
-/* Day cells: single-letter tags — space is tight */
-.cal-cell-gross::before,
-.cal-cell-net::before {
-  font-family: var(--font-mono);
-  font-size: 8px;
-  font-weight: 600;
-  color: var(--muted-2);
-  margin-right: 3px;
-  letter-spacing: 0;
-}
-.cal-cell-gross::before { content: 'G'; }
-.cal-cell-net::before { content: 'N'; }
-@media (max-width: 640px) {
-  /* Phone day cells are too narrow for tags — color carries it */
-  .cal-cell-gross::before, .cal-cell-net::before { display: none; }
-  .cal-month-gross::before, .cal-month-net::before { font-size: 7px; }
-}
-
-/* Empty / projected month tiles speak mono too */
-.cal-month-empty {
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: var(--muted-2);
-}
-
-/* ── FINISH DETAILS ──────────────────────────────────────────── */
-/* Brand logo sits in a lit bezel */
-.brand .logo, .topbar-brand .logo {
-  border-radius: 8px;
-  box-shadow: 0 0 0 1px var(--border-strong), 0 0 14px rgba(34, 197, 94, 0.12);
-}
-/* Whisper-zebra on table bodies — depth without stripes shouting */
-.table tbody tr:nth-child(odd) td { background: rgba(255, 255, 255, 0.008); }
-.table tbody tr:hover td { background: var(--surface-2); }
-/* Pane tab marker stretches when you engage its card */
-.card-head h3::before, .card > h3:first-child::before {
-  transition: height .15s var(--ease);
-}
-.card:hover .card-head h3::before,
-.card:hover > h3:first-child::before { height: 16px; }
-/* Icon buttons answer in green */
-.icon-btn:hover { color: var(--up); border-color: rgba(34, 197, 94, 0.35); }
-
-/* ── MoM DELTA on month tiles ────────────────────────────────
-   ▲ green when the month beat the one before it, ▼ red when it
-   fell short. Sits right-aligned between the money rows and the
-   item count. In-progress months show nothing (not comparable). */
-.cal-month-delta {
-  font-family: var(--font-mono);
-  font-size: 8.5px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  align-self: flex-end;
-  font-variant-numeric: tabular-nums;
-}
-.cal-month-delta.up { color: var(--up); }
-.cal-month-delta.down { color: var(--down); }
-.cal-month-delta.flat { color: var(--muted-2); }
-
-/* ── LIVE CLOCK in the sidebar footer ─────────────────────────
-   FRI 07:03:22 · JUL 3 — with a breathing green dot. */
-.term-clock {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 4px 10px 2px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-.term-clock::before {
-  content: '';
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--up);
-  box-shadow: 0 0 8px var(--up-glow);
-  animation: pulse 2.4s ease-in-out infinite;
-  flex: 0 0 auto;
 }

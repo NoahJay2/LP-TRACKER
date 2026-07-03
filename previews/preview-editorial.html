@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="theme-color" content="#0b0c10" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<title>Preview · Editorial</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* Deep ink background, generous whitespace, typography as hero */
+    --bg: #0b0c10;
+    --surface: #121319;
+    --surface-2: #191b23;
+    --border: #22242c;
+    --border-strong: #2f323c;
+
+    --text: #f5f5f4;
+    --text-2: #d6d3cd;
+    --muted: #a1a1a1;
+    --muted-2: #6b6b6b;
+
+    /* Restrained editorial palette — cream, sage, muted rose */
+    --cream: #f5f0e6;
+    --gold: #e5c07b;
+    --sage: #93b891;
+    --sage-soft: rgba(147, 184, 145, 0.10);
+    --rose: #d4a5a5;
+    --ink: #1c1d24;
+
+    --radius: 4px;
+
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: 'ss01';
+    letter-spacing: -0.011em;
+    font-size: 14px;
+  }
+
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 56px 40px 90px; }
+
+  /* Editorial header — serif display type, thin rule beneath */
+  .masthead {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--border-strong);
+    margin-bottom: 48px;
+  }
+  h1 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 500; font-size: 44px; letter-spacing: -0.03em;
+    margin: 0; line-height: 1;
+    color: var(--cream);
+  }
+  .dateline {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.14em;
+  }
+
+  /* Section labels — small caps, generous spacing */
+  h2 {
+    font-family: 'Fraunces', serif;
+    font-weight: 600; font-size: 13px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--muted);
+    margin: 56px 0 20px;
+    display: flex; align-items: center; gap: 14px;
+  }
+  h2::after {
+    content: ''; flex: 1; height: 1px; background: var(--border);
+  }
+
+  /* KPI Row — 4 columns divided by thin rules, no cards */
+  .kpi-row {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--surface);
+  }
+  .kpi {
+    padding: 28px 26px;
+    border-right: 1px solid var(--border);
+    position: relative;
+  }
+  .kpi:last-child { border-right: none; }
+  .kpi-label {
+    font-family: 'Fraunces', serif;
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600;
+  }
+  .kpi-value {
+    font-family: 'Fraunces', serif;
+    font-weight: 500;
+    font-size: 40px; letter-spacing: -0.035em;
+    margin-top: 14px; font-variant-numeric: tabular-nums;
+    color: var(--cream);
+    line-height: 1;
+  }
+  .kpi-delta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; margin-top: 10px; color: var(--muted);
+    letter-spacing: 0.02em;
+  }
+  .kpi-delta.up { color: var(--sage); }
+
+  /* Content grid — asymmetric, editorial */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 4px; }
+
+  /* Order list — no card container, just a divided list */
+  .order-block {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 28px 28px 12px;
+  }
+  .order-block-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 20px;
+  }
+  .order-block-head h3 {
+    font-family: 'Fraunces', serif;
+    font-weight: 600; font-size: 18px; letter-spacing: -0.02em;
+    margin: 0; color: var(--cream);
+  }
+  .order-block-meta { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted); }
+  .order {
+    display: grid; grid-template-columns: 1fr auto auto;
+    gap: 16px; align-items: center; padding: 18px 0;
+    border-top: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .order-name { font-family: 'Fraunces', serif; font-size: 17px; font-weight: 500; color: var(--cream); letter-spacing: -0.015em; }
+  .order-amt {
+    font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    font-weight: 500; font-size: 14px; color: var(--text-2);
+  }
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 999px; font-size: 10.5px; font-weight: 600;
+    letter-spacing: 0.02em;
+    font-family: 'Inter', sans-serif;
+  }
+  .pill.green { color: var(--sage); background: var(--sage-soft); }
+  .pill.amber { color: var(--gold); background: rgba(229, 192, 123, 0.10); }
+  .pill.partial { color: var(--rose); background: rgba(212, 165, 165, 0.10); }
+  .pill .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+
+  /* Invoice — like a printed receipt, generous typography */
+  .invoice {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 36px 34px;
+  }
+  .inv-head {
+    padding-bottom: 22px;
+    border-bottom: 1px solid var(--border);
+  }
+  .inv-head-top {
+    display: flex; justify-content: space-between; align-items: baseline;
+  }
+  .inv-head h3 {
+    font-family: 'Fraunces', serif;
+    margin: 0; font-size: 26px; font-weight: 500;
+    letter-spacing: -0.025em;
+    color: var(--cream);
+  }
+  .inv-head .num { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.12em; }
+  .inv-date {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.12em;
+    margin-top: 10px;
+  }
+  .inv-lines { padding: 22px 0 16px; }
+  .inv-line { display: flex; justify-content: space-between; padding: 12px 0; font-size: 14px; }
+  .inv-line + .inv-line { border-top: 1px dotted var(--border-strong); }
+  .inv-line .name {
+    font-family: 'Fraunces', serif; font-size: 15px; color: var(--text-2); letter-spacing: -0.01em;
+  }
+  .inv-line .amt {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 500; font-variant-numeric: tabular-nums;
+  }
+  .inv-line.saved .name, .inv-line.saved .amt { color: var(--sage); }
+  .inv-foot {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding-top: 20px; border-top: 2px solid var(--border-strong);
+  }
+  .inv-foot .label {
+    font-family: 'Fraunces', serif;
+    color: var(--cream); font-size: 14px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.14em;
+  }
+  .inv-foot .val {
+    font-family: 'Fraunces', serif;
+    font-weight: 500; font-size: 32px; letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+    color: var(--cream);
+  }
+
+  /* Buttons — pill-shaped, understated */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 11px 22px; border-radius: 999px;
+    border: 1px solid var(--border-strong);
+    background: transparent;
+    color: var(--text); font-weight: 500; font-size: 13px; cursor: pointer;
+    letter-spacing: 0.01em;
+    transition: background 0.15s, border-color 0.15s;
+    font-family: 'Inter', sans-serif;
+  }
+  .btn:hover { background: var(--surface-2); border-color: var(--muted); }
+  .btn.primary {
+    background: var(--cream);
+    border-color: var(--cream);
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .btn.primary:hover { background: #ffffff; border-color: #ffffff; }
+  .btn-row { display: flex; gap: 10px; margin-top: 24px; justify-content: flex-end; }
+
+  @media (max-width: 900px) {
+    .wrap { padding: 40px 28px 70px; }
+    h1 { font-size: 36px; }
+    .kpi-row { grid-template-columns: repeat(2, 1fr); }
+    .kpi:nth-child(2) { border-right: none; }
+    .kpi:nth-child(1), .kpi:nth-child(2) { border-bottom: 1px solid var(--border); }
+    .grid { grid-template-columns: 1fr; gap: 20px; }
+  }
+  @media (max-width: 560px) {
+    .wrap {
+      padding: 32px 20px 60px;
+      padding-top: max(32px, env(safe-area-inset-top));
+      padding-left: max(20px, env(safe-area-inset-left));
+      padding-right: max(20px, env(safe-area-inset-right));
+      padding-bottom: max(60px, env(safe-area-inset-bottom));
+    }
+    .masthead { flex-direction: column; align-items: flex-start; gap: 6px; margin-bottom: 36px; padding-bottom: 18px; }
+    h1 { font-size: 30px; }
+    h2 { margin: 44px 0 16px; }
+
+    .kpi-row { grid-template-columns: 1fr 1fr; }
+    .kpi { padding: 20px 18px; }
+    .kpi-label { font-size: 10px; letter-spacing: 0.12em; }
+    .kpi-value { font-size: 26px; margin-top: 10px; }
+    .kpi-delta { font-size: 10.5px; }
+
+    .order-block { padding: 22px 22px 8px; }
+    .order-block-head h3 { font-size: 16px; }
+    .order {
+      grid-template-columns: 1fr auto;
+      grid-template-areas: "name amt" "tag tag";
+      row-gap: 8px; padding: 16px 0;
+      min-height: 60px;
+    }
+    .order-name { grid-area: name; font-size: 15px; }
+    .order-amt { grid-area: amt; }
+    .order > div:last-child { grid-area: tag; justify-self: start; }
+
+    .invoice { padding: 26px 22px; }
+    .inv-head h3 { font-size: 22px; }
+    .inv-line .name { font-size: 14px; }
+    .inv-foot .val { font-size: 26px; }
+    .inv-foot .label { font-size: 12px; }
+
+    .btn-row { flex-direction: column-reverse; gap: 8px; }
+    .btn { width: 100%; justify-content: center; padding: 13px 20px; min-height: 46px; font-size: 14px; }
+  }
+  @media (hover: none) {
+    .btn:active { transform: scale(0.99); }
+    .order:active { opacity: 0.7; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <h1>Dashboard</h1>
+    <div class="dateline">Vol. IV · Jul 3, 2026</div>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi">
+      <div class="kpi-label">Gross Revenue</div>
+      <div class="kpi-value">$59,976</div>
+      <div class="kpi-delta up">↑ 12.4% vs last month</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Gross Profit</div>
+      <div class="kpi-value">$45,286</div>
+      <div class="kpi-delta">75.5% margin</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Pending Gross</div>
+      <div class="kpi-value">$1,415</div>
+      <div class="kpi-delta">4 open orders</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Total Expenses</div>
+      <div class="kpi-value">$30,711</div>
+      <div class="kpi-delta">All-time</div>
+    </div>
+  </div>
+
+  <h2>Today</h2>
+  <div class="grid">
+    <div class="order-block">
+      <div class="order-block-head">
+        <h3>To Do</h3>
+        <div class="order-block-meta">4 · $2,140</div>
+      </div>
+      <div class="order">
+        <div class="order-name">Jesus Chapa</div>
+        <div class="order-amt">$1,040</div>
+        <div><span class="pill amber"><span class="dot"></span>Pay</span></div>
+      </div>
+      <div class="order">
+        <div class="order-name">Marcus Reed</div>
+        <div class="order-amt">$680</div>
+        <div><span class="pill partial"><span class="dot"></span>Partial $300</span></div>
+      </div>
+      <div class="order">
+        <div class="order-name">Sofia Vance</div>
+        <div class="order-amt">$420</div>
+        <div><span class="pill amber"><span class="dot"></span>Send</span></div>
+      </div>
+    </div>
+
+    <div class="invoice">
+      <div class="inv-head">
+        <div class="inv-head-top">
+          <h3>Invoice</h3>
+          <div class="num">#A3F82C</div>
+        </div>
+        <div class="inv-date">Jul 3, 2026</div>
+      </div>
+      <div class="inv-lines">
+        <div class="inv-line"><span class="name">10MG Retatrutide (GLP-3) ×8</span><span class="amt">$640</span></div>
+        <div class="inv-line"><span class="name">CJC/Ipamorelin 10MG ×8</span><span class="amt">$640</span></div>
+        <div class="inv-line"><span class="name">10 Pack Insulin Syringes ×4</span><span class="amt">$20</span></div>
+        <div class="inv-line saved"><span class="name">You Saved</span><span class="amt">− $260</span></div>
+      </div>
+      <div class="inv-foot">
+        <span class="label">Total Due</span>
+        <span class="val">$1,040</span>
+      </div>
+      <div class="btn-row">
+        <button class="btn">Show Invoice</button>
+        <button class="btn primary">Send Invoice</button>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

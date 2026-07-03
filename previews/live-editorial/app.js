@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-06-17.49';
+const BUILD_VERSION = '2026-06-17.48';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -5729,25 +5729,9 @@ function renderYearView(year, monthBuckets) {
         ? ` <span class="cal-month-pending-net-inline" title="${fmt$(round2(b.pendingNet))} potential profit">+${fmt$(round2(b.pendingNet))}</span>`
         : '';
       const totalQty = (b.qty || 0) + (b.pendingQty || 0);
-      // Month-over-month delta on gross — cash modes only, completed months
-      // only (the in-progress month would always read as a misleading drop).
-      // Compares across year boundaries: Jan reads against prior-year Dec.
-      let deltaSpan = '';
-      if (!__monthlyPending && hasRealized && mk !== monthKey(todayISO())) {
-        const prevMk = addMonthsToKey(mk, -1);
-        const prevG = Number(monthBuckets[prevMk] && monthBuckets[prevMk].gross) || 0;
-        const curG = Number(b.gross) || 0;
-        if (prevG > 0.005 && curG > 0.005) {
-          const pct = Math.round(((curG - prevG) / prevG) * 100);
-          const dir = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
-          const arrow = pct > 0 ? '▲' : pct < 0 ? '▼' : '—';
-          deltaSpan = `<span class="cal-month-delta ${dir}" title="vs ${monthName(prevMk + '-01')}: ${fmt$(round2(prevG))}">${arrow} ${Math.abs(pct)}% MoM</span>`;
-        }
-      }
       inner = `
         <span class="cal-month-gross">${fmt$(round2(b.gross))}${pendingGrossSpan}</span>
         <span class="cal-month-net">${fmt$(round2(b.net))}${pendingNetSpan}</span>
-        ${deltaSpan}
         <span class="cal-month-qty">${fmtN(totalQty)} item${totalQty === 1 ? '' : 's'}</span>`;
     } else if (projectable) {
       const pq = Math.round(proj.qty);
@@ -6523,22 +6507,3 @@ if (sb) {
   hideLogin();
   setCloudStatus('offline', 'No cloud configured');
 }
-// ── Terminal clock (preview-only) ─────────────────────────────
-// Live HH:MM:SS readout in the sidebar footer. Pure flavor — no
-// app logic depends on it.
-(function () {
-  const el = document.getElementById('termClock');
-  if (!el) return;
-  const DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-  const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-  const p = (n) => String(n).padStart(2, '0');
-  const tick = () => {
-    const d = new Date();
-    const h24 = d.getHours();
-    const h12 = h24 % 12 || 12;
-    const ampm = h24 < 12 ? 'AM' : 'PM';
-    el.textContent = `${DAYS[d.getDay()]} ${h12}:${p(d.getMinutes())}:${p(d.getSeconds())} ${ampm} · ${MONTHS[d.getMonth()]} ${d.getDate()}`;
-  };
-  tick();
-  setInterval(tick, 1000);
-})();

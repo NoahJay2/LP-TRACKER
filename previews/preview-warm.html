@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="theme-color" content="#100e0c" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<title>Preview · Warm Dark</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* Warm charcoal — shifted from cool blue-black toward brown/amber */
+    --bg: #100e0c;
+    --bg-grad:
+      radial-gradient(1200px 700px at 90% -10%, rgba(217, 119, 6, 0.10) 0%, transparent 55%),
+      radial-gradient(800px 500px at -5% 100%, rgba(120, 53, 15, 0.14) 0%, transparent 55%),
+      #100e0c;
+
+    --surface: #1a1613;
+    --surface-2: #221d19;
+    --surface-3: #2b241f;
+    --border: #2d251f;
+    --border-strong: #3d3229;
+
+    --text: #f5efe6;
+    --text-2: #d4c9b8;
+    --muted: #9a8e7c;
+    --muted-2: #6d6355;
+
+    /* Warm palette — amber primary, sage green profit, terracotta danger */
+    --amber: #f59e0b;
+    --amber-soft: rgba(245, 158, 11, 0.12);
+    --amber-grad: linear-gradient(135deg, #f59e0b, #d97706);
+    --sage: #84cc16;
+    --sage-soft: rgba(132, 204, 22, 0.12);
+    --terracotta: #ea580c;
+    --clay: #dc2626;
+    --cream: #fde68a;
+
+    --radius: 10px;
+    --radius-lg: 16px;
+
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    background-image: var(--bg-grad);
+    background-attachment: fixed;
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+    letter-spacing: -0.011em;
+    font-size: 14px;
+  }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 40px 32px 80px; }
+
+  h1 {
+    font-size: 32px; font-weight: 700; letter-spacing: -0.03em;
+    margin: 0 0 32px;
+    color: var(--cream);
+  }
+  h2 {
+    font-size: 11.5px; font-weight: 600; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted); margin: 40px 0 14px;
+  }
+
+  .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .kpi {
+    padding: 20px 22px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    position: relative; overflow: hidden;
+  }
+  .kpi::after {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: var(--accent, var(--amber));
+    opacity: 0.7;
+  }
+  .kpi-label {
+    font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600;
+  }
+  .kpi-value {
+    font-size: 30px; font-weight: 700; letter-spacing: -0.03em;
+    margin-top: 10px; font-variant-numeric: tabular-nums;
+    color: var(--cream);
+  }
+  .kpi-delta { font-size: 12px; margin-top: 6px; color: var(--muted); font-weight: 500; }
+  .kpi-delta.up { color: var(--sage); }
+  .kpi.gross { --accent: var(--amber); }
+  .kpi.profit { --accent: var(--sage); }
+  .kpi.pending { --accent: var(--terracotta); }
+  .kpi.expense { --accent: var(--clay); }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+  }
+  .card-head {
+    padding: 18px 22px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: baseline;
+  }
+  .card-title { font-size: 15px; font-weight: 700; letter-spacing: -0.015em; color: var(--cream); }
+  .card-meta { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .list { padding: 8px; }
+  .order {
+    display: grid; grid-template-columns: 1fr auto auto; gap: 14px;
+    align-items: center; padding: 12px 14px;
+    border-radius: var(--radius);
+    transition: background 0.12s;
+    cursor: pointer;
+  }
+  .order:hover { background: var(--surface-2); }
+  .order-name { font-weight: 600; font-size: 14px; color: var(--text); }
+  .order-amt { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 14.5px; color: var(--cream); }
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 600;
+  }
+  .pill.green { color: var(--sage); background: var(--sage-soft); }
+  .pill.amber { color: var(--amber); background: var(--amber-soft); }
+  .pill.partial { color: var(--cream); background: rgba(253, 230, 138, 0.10); }
+  .pill .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+
+  .invoice { padding: 30px; max-width: 480px; }
+  .inv-head {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    padding-bottom: 18px; border-bottom: 1px solid var(--border);
+  }
+  .inv-head-l h3 {
+    margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.025em;
+    color: var(--amber);
+  }
+  .inv-head-l .num { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .inv-head-r { text-align: right; }
+  .inv-head-r .date { font-size: 12px; color: var(--muted); }
+  .inv-head-r .total { font-size: 28px; font-weight: 700; letter-spacing: -0.025em; margin-top: 4px; color: var(--cream); font-variant-numeric: tabular-nums; }
+  .inv-lines { padding: 18px 0; }
+  .inv-line { display: flex; justify-content: space-between; padding: 10px 0; font-size: 13.5px; }
+  .inv-line + .inv-line { border-top: 1px dashed var(--border); }
+  .inv-line .name { color: var(--text-2); }
+  .inv-line .amt { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .inv-line.saved .name, .inv-line.saved .amt { color: var(--sage); }
+  .inv-foot {
+    display: flex; justify-content: space-between;
+    padding-top: 16px; border-top: 1px solid var(--border);
+  }
+  .inv-foot .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
+  .inv-foot .val { font-weight: 700; font-size: 18px; font-variant-numeric: tabular-nums; color: var(--cream); }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 10px 16px; border-radius: var(--radius);
+    border: 1px solid var(--border-strong);
+    background: var(--surface-2);
+    color: var(--text); font-weight: 600; font-size: 13px; cursor: pointer;
+    transition: background 0.12s;
+  }
+  .btn:hover { background: var(--surface-3); }
+  .btn.primary {
+    background: var(--amber-grad);
+    border: 1px solid transparent;
+    color: #1a1613;
+    box-shadow: 0 4px 20px rgba(217, 119, 6, 0.25);
+  }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn-row { display: flex; gap: 8px; margin-top: 20px; justify-content: flex-end; }
+
+  @media (max-width: 900px) {
+    .wrap { padding: 28px 20px 60px; }
+    h1 { font-size: 26px; }
+    .kpi-row { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .grid { grid-template-columns: 1fr; gap: 14px; }
+    .invoice { max-width: none; }
+  }
+  @media (max-width: 560px) {
+    .wrap {
+      padding-top: max(20px, env(safe-area-inset-top));
+      padding-left: max(16px, env(safe-area-inset-left));
+      padding-right: max(16px, env(safe-area-inset-right));
+      padding-bottom: max(40px, env(safe-area-inset-bottom));
+    }
+    h1 { font-size: 22px; margin-bottom: 22px; }
+    h2 { margin: 32px 0 10px; }
+    .kpi-row { gap: 10px; }
+    .kpi { padding: 16px; border-radius: 12px; }
+    .kpi-label { font-size: 9.5px; letter-spacing: 0.12em; }
+    .kpi-value { font-size: 22px; margin-top: 8px; }
+    .kpi-delta { font-size: 11px; }
+    .card-head { padding: 14px 16px 12px; }
+    .list { padding: 6px; }
+    .order {
+      min-height: 48px;
+      grid-template-columns: 1fr auto;
+      grid-template-areas: "name amt" "tag tag";
+      row-gap: 6px;
+    }
+    .order-name { grid-area: name; }
+    .order-amt { grid-area: amt; }
+    .order > div:last-child { grid-area: tag; justify-self: start; }
+    .invoice { padding: 22px 18px; }
+    .inv-head { flex-direction: column; gap: 12px; }
+    .inv-head-r { text-align: left; align-self: stretch; display: flex; justify-content: space-between; align-items: baseline; }
+    .inv-head-r .total { font-size: 24px; margin-top: 0; }
+    .inv-head-l h3 { font-size: 20px; }
+    .btn-row { flex-direction: column-reverse; gap: 8px; }
+    .btn { width: 100%; justify-content: center; padding: 12px 16px; min-height: 44px; font-size: 14px; }
+  }
+  @media (hover: none) {
+    .btn:active { transform: scale(0.99); }
+    .order:active { background: var(--surface-2); }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Dashboard</h1>
+
+  <div class="kpi-row">
+    <div class="kpi gross">
+      <div class="kpi-label">Gross Revenue</div>
+      <div class="kpi-value">$59,976</div>
+      <div class="kpi-delta up">↑ 12.4% vs last month</div>
+    </div>
+    <div class="kpi profit">
+      <div class="kpi-label">Gross Profit</div>
+      <div class="kpi-value">$45,286</div>
+      <div class="kpi-delta">75.5% margin</div>
+    </div>
+    <div class="kpi pending">
+      <div class="kpi-label">Pending Gross</div>
+      <div class="kpi-value">$1,415</div>
+      <div class="kpi-delta">4 open orders</div>
+    </div>
+    <div class="kpi expense">
+      <div class="kpi-label">Total Expenses</div>
+      <div class="kpi-value">$30,711</div>
+      <div class="kpi-delta">All-time</div>
+    </div>
+  </div>
+
+  <h2>Today</h2>
+  <div class="grid">
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">To Do</div>
+        <div class="card-meta">4 orders · $2,140</div>
+      </div>
+      <div class="list">
+        <div class="order">
+          <div class="order-name">Jesus Chapa</div>
+          <div class="order-amt">$1,040</div>
+          <div><span class="pill amber"><span class="dot"></span>Pay</span></div>
+        </div>
+        <div class="order">
+          <div class="order-name">Marcus Reed</div>
+          <div class="order-amt">$680</div>
+          <div><span class="pill partial"><span class="dot"></span>Partial $300</span></div>
+        </div>
+        <div class="order">
+          <div class="order-name">Sofia Vance</div>
+          <div class="order-amt">$420</div>
+          <div><span class="pill amber"><span class="dot"></span>Send</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card invoice">
+      <div class="inv-head">
+        <div class="inv-head-l">
+          <h3>Invoice</h3>
+          <div class="num">7/3 · #A3F82C</div>
+        </div>
+        <div class="inv-head-r">
+          <div class="date">Jul 3, 2026</div>
+          <div class="total">$1,040</div>
+        </div>
+      </div>
+      <div class="inv-lines">
+        <div class="inv-line"><span class="name">10MG Retatrutide (GLP-3) ×8</span><span class="amt">$640</span></div>
+        <div class="inv-line"><span class="name">CJC/Ipamorelin 10MG ×8</span><span class="amt">$640</span></div>
+        <div class="inv-line"><span class="name">10 Pack Insulin Syringes ×4</span><span class="amt">$20</span></div>
+        <div class="inv-line saved"><span class="name">You Saved</span><span class="amt">− $260</span></div>
+      </div>
+      <div class="inv-foot">
+        <span class="label">Total Due</span>
+        <span class="val">$1,040</span>
+      </div>
+      <div class="btn-row">
+        <button class="btn">Show Invoice</button>
+        <button class="btn primary">Send Invoice</button>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

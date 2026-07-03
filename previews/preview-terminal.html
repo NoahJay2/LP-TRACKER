@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="theme-color" content="#050608" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<title>Preview · Terminal Pro</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* Pure black canvas with faint grid — trading terminal aesthetic */
+    --bg: #050608;
+    --bg-grid:
+      linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px) 0 0 / 40px 40px,
+      linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px) 0 0 / 40px 40px;
+
+    --surface: #0a0c10;
+    --surface-2: #10131a;
+    --surface-3: #171b24;
+    --border: #1c2028;
+    --border-strong: #2a2f3a;
+    --border-glow: rgba(52, 211, 153, 0.15);
+
+    --text: #ffffff;
+    --text-2: #d1d5db;
+    --muted: #6b7280;
+    --muted-2: #4b5563;
+
+    /* Punchy, high-contrast trading palette */
+    --up: #22c55e;
+    --up-glow: rgba(34, 197, 94, 0.35);
+    --down: #ef4444;
+    --down-glow: rgba(239, 68, 68, 0.35);
+    --warn: #f59e0b;
+    --info: #06b6d4;
+    --accent: #a855f7;
+
+    --radius: 4px;
+    --radius-lg: 6px;
+
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    background-image: var(--bg-grid);
+    background-attachment: fixed;
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    letter-spacing: -0.005em;
+    font-size: 13px;
+  }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 32px 24px 60px; }
+
+  h1 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 22px; font-weight: 700; letter-spacing: -0.02em;
+    margin: 0 0 4px;
+    text-transform: uppercase;
+  }
+  h1::before { content: '▸ '; color: var(--up); }
+
+  .status {
+    display: flex; align-items: center; gap: 8px;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    color: var(--muted); margin-bottom: 28px;
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .status .live-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--up); box-shadow: 0 0 8px var(--up-glow);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  h2 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted); margin: 36px 0 10px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  h2::before {
+    content: ''; height: 1px; width: 20px; background: var(--border-strong);
+  }
+
+  /* KPI Row — dense, monospaced numerals, up/down deltas prominent */
+  .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .kpi {
+    padding: 16px 18px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    position: relative;
+  }
+  .kpi-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .kpi-sym {
+    font-size: 10px; color: var(--muted-2);
+    padding: 2px 6px; border-radius: 3px; background: var(--surface-2);
+    letter-spacing: 0;
+  }
+  .kpi-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 26px; font-weight: 700; letter-spacing: -0.02em;
+    margin-top: 10px; font-variant-numeric: tabular-nums;
+  }
+  .kpi-delta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; margin-top: 6px; font-weight: 600;
+    display: flex; align-items: center; gap: 5px;
+  }
+  .kpi-delta.up { color: var(--up); }
+  .kpi-delta.down { color: var(--down); }
+  .kpi-delta.flat { color: var(--muted); }
+  .kpi.hot { border-color: var(--up); box-shadow: 0 0 0 1px var(--up-glow), 0 0 20px rgba(34, 197, 94, 0.08); }
+
+  /* Section grid */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 4px; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+  }
+  .card-head {
+    padding: 14px 18px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .card-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+  .card-meta { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* Order row — table-dense */
+  .list { padding: 4px; }
+  .order {
+    display: grid; grid-template-columns: 1fr auto auto; gap: 12px;
+    align-items: center; padding: 10px 14px;
+    border-radius: var(--radius);
+    font-family: 'JetBrains Mono', monospace;
+    cursor: pointer;
+    border-left: 2px solid transparent;
+  }
+  .order:hover { background: var(--surface-2); border-left-color: var(--up); }
+  .order-name { font-weight: 500; font-size: 12.5px; letter-spacing: 0; color: var(--text); font-family: 'Inter', sans-serif; }
+  .order-amt { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 13px; color: var(--text); }
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 8px; border-radius: 3px; font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    font-family: 'JetBrains Mono', monospace;
+    border: 1px solid transparent;
+  }
+  .pill.green { color: var(--up); background: rgba(34, 197, 94, 0.08); border-color: rgba(34, 197, 94, 0.2); }
+  .pill.amber { color: var(--warn); background: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.2); }
+  .pill.partial { color: var(--info); background: rgba(6, 182, 212, 0.08); border-color: rgba(6, 182, 212, 0.2); }
+
+  /* Invoice */
+  .invoice { padding: 28px; max-width: 480px; }
+  .inv-head { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 18px; border-bottom: 1px solid var(--border); }
+  .inv-head-l h3 {
+    font-family: 'JetBrains Mono', monospace;
+    margin: 0; font-size: 18px; font-weight: 700; letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--text);
+  }
+  .inv-head-l .num { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted); margin-top: 6px; }
+  .inv-head-r { text-align: right; }
+  .inv-head-r .date { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted); text-transform: uppercase; }
+  .inv-head-r .total { font-family: 'JetBrains Mono', monospace; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; margin-top: 4px; font-variant-numeric: tabular-nums; color: var(--up); }
+  .inv-lines { padding: 16px 0; }
+  .inv-line { display: flex; justify-content: space-between; padding: 8px 0; font-size: 12.5px; }
+  .inv-line + .inv-line { border-top: 1px solid var(--border); }
+  .inv-line .name { color: var(--text-2); }
+  .inv-line .amt { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .inv-line.saved .name, .inv-line.saved .amt { color: var(--up); }
+  .inv-foot {
+    display: flex; justify-content: space-between;
+    padding-top: 14px; border-top: 1px solid var(--border);
+  }
+  .inv-foot .label { font-family: 'JetBrains Mono', monospace; color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700; }
+  .inv-foot .val { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 16px; font-variant-numeric: tabular-nums; }
+
+  /* Buttons */
+  .btn {
+    font-family: 'JetBrains Mono', monospace;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 9px 14px; border-radius: var(--radius);
+    border: 1px solid var(--border-strong);
+    background: var(--surface-2);
+    color: var(--text); font-weight: 600; font-size: 11.5px; cursor: pointer;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    transition: background 0.12s, border-color 0.12s;
+  }
+  .btn:hover { background: var(--surface-3); border-color: var(--muted); }
+  .btn.primary {
+    background: var(--up);
+    border-color: var(--up);
+    color: #050608;
+    box-shadow: 0 0 20px var(--up-glow);
+  }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn-row { display: flex; gap: 8px; margin-top: 18px; justify-content: flex-end; }
+
+  @media (max-width: 900px) {
+    .wrap { padding: 24px 18px 60px; }
+    .kpi-row { grid-template-columns: repeat(2, 1fr); }
+    .grid { grid-template-columns: 1fr; gap: 12px; }
+    .invoice { max-width: none; }
+  }
+  @media (max-width: 560px) {
+    .wrap {
+      padding-top: max(20px, env(safe-area-inset-top));
+      padding-left: max(14px, env(safe-area-inset-left));
+      padding-right: max(14px, env(safe-area-inset-right));
+      padding-bottom: max(40px, env(safe-area-inset-bottom));
+    }
+    h1 { font-size: 18px; }
+    .kpi { padding: 14px 14px; }
+    .kpi-label { font-size: 9.5px; }
+    .kpi-value { font-size: 20px; }
+    .kpi-delta { font-size: 10.5px; }
+    .card-head { padding: 12px 14px 10px; }
+    .list { padding: 4px; }
+    .order {
+      min-height: 48px;
+      grid-template-columns: 1fr auto;
+      grid-template-areas: "name amt" "tag tag";
+      row-gap: 6px;
+    }
+    .order-name { grid-area: name; }
+    .order-amt { grid-area: amt; }
+    .order > div:last-child { grid-area: tag; justify-self: start; }
+    .invoice { padding: 20px 16px; }
+    .inv-head { flex-direction: column; gap: 12px; }
+    .inv-head-r { text-align: left; align-self: stretch; display: flex; justify-content: space-between; align-items: baseline; }
+    .inv-head-r .total { font-size: 22px; margin-top: 0; }
+    .inv-head-l h3 { font-size: 16px; }
+    .btn-row { flex-direction: column-reverse; gap: 8px; }
+    .btn { width: 100%; justify-content: center; padding: 12px 16px; min-height: 44px; font-size: 12px; }
+  }
+  @media (hover: none) {
+    .btn:active { transform: scale(0.99); }
+    .order:active { background: var(--surface-2); border-left-color: var(--up); }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Dashboard</h1>
+  <div class="status">
+    <span class="live-dot"></span>
+    <span>LIVE · 07:03:22 · +$1,040 TODAY</span>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi hot">
+      <div class="kpi-label"><span>GROSS REVENUE</span><span class="kpi-sym">USD</span></div>
+      <div class="kpi-value">$59,976</div>
+      <div class="kpi-delta up">▲ $6,612 (+12.4%)</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label"><span>GROSS PROFIT</span><span class="kpi-sym">75.5%</span></div>
+      <div class="kpi-value">$45,286</div>
+      <div class="kpi-delta up">▲ 75.5% MARGIN</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label"><span>PENDING</span><span class="kpi-sym">4 OPEN</span></div>
+      <div class="kpi-value">$1,415</div>
+      <div class="kpi-delta flat">— 2.4% OF GROSS</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label"><span>EXPENSES</span><span class="kpi-sym">ALL</span></div>
+      <div class="kpi-value">$30,711</div>
+      <div class="kpi-delta down">▼ 51.2% OF GROSS</div>
+    </div>
+  </div>
+
+  <h2>Today · Active Orders</h2>
+  <div class="grid">
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">To Do</div>
+        <div class="card-meta">4 · $2,140</div>
+      </div>
+      <div class="list">
+        <div class="order">
+          <div class="order-name">Jesus Chapa</div>
+          <div class="order-amt">$1,040</div>
+          <div><span class="pill amber">PAY</span></div>
+        </div>
+        <div class="order">
+          <div class="order-name">Marcus Reed</div>
+          <div class="order-amt">$680</div>
+          <div><span class="pill partial">PART $300</span></div>
+        </div>
+        <div class="order">
+          <div class="order-name">Sofia Vance</div>
+          <div class="order-amt">$420</div>
+          <div><span class="pill amber">SEND</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card invoice">
+      <div class="inv-head">
+        <div class="inv-head-l">
+          <h3>Invoice</h3>
+          <div class="num">7/3 · #A3F82C</div>
+        </div>
+        <div class="inv-head-r">
+          <div class="date">JUL 3 · 2026</div>
+          <div class="total">$1,040</div>
+        </div>
+      </div>
+      <div class="inv-lines">
+        <div class="inv-line"><span class="name">10MG Retatrutide (GLP-3) ×8</span><span class="amt">$640</span></div>
+        <div class="inv-line"><span class="name">CJC/Ipamorelin 10MG ×8</span><span class="amt">$640</span></div>
+        <div class="inv-line"><span class="name">10 Pack Insulin Syringes ×4</span><span class="amt">$20</span></div>
+        <div class="inv-line saved"><span class="name">You Saved</span><span class="amt">− $260</span></div>
+      </div>
+      <div class="inv-foot">
+        <span class="label">Total Due</span>
+        <span class="val">$1,040</span>
+      </div>
+      <div class="btn-row">
+        <button class="btn">Show</button>
+        <button class="btn primary">Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
