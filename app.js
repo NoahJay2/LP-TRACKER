@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-06-17.50';
+const BUILD_VERSION = '2026-06-17.51';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -718,10 +718,13 @@ function orderItemsTotal(o) {
 function itemLineSubtotal(it) {
   return (Number(it && it.qty) || 0) * (Number(it && it.price) || 0);
 }
-// Per-line discount — either a flat dollar amount OR a percent of the line
-// subtotal, depending on the user's pick. Schema is { type, value } | null.
-// Legacy entries stored a bare number — treat those as dollars. Always rounds
-// UP to whole dollars (whole-dollar policy) and is capped at the line subtotal.
+// Per-line discount — either a dollar amount PER UNIT or a percent of the
+// line subtotal, depending on the user's pick. Schema is { type, value } | null.
+// Dollar discounts multiply by quantity: "$5 off" on a qty-4 line = $20 off,
+// so a per-unit deal reads the same no matter how many the customer buys.
+// Legacy entries stored a bare number — treat those as per-unit dollars too.
+// Always rounds UP to whole dollars (whole-dollar policy) and is capped at
+// the line subtotal.
 function itemDiscountAmount(it) {
   if (!it) return 0;
   const d = it.discount;
@@ -734,7 +737,8 @@ function itemDiscountAmount(it) {
   }
   if (value <= 0) return 0;
   const base = itemLineSubtotal(it);
-  const raw = type === 'percent' ? (base * value / 100) : value;
+  const qty = Number(it.qty) || 0;
+  const raw = type === 'percent' ? (base * value / 100) : value * qty;
   return Math.min(base, Math.max(0, Math.ceil(raw - 1e-9)));
 }
 // Per-line net (qty × price − line discount) — used everywhere the customer-
@@ -2878,7 +2882,7 @@ function orderModal(existing, draft) {
           <div class="discount-exclude" id="discountExclude">
             <div class="discount-exclude-head">
               <div class="discount-exclude-label">Line Items</div>
-              <div class="discount-exclude-sub muted">Uncheck to skip the overall discount · type a dollar amount to discount just that line</div>
+              <div class="discount-exclude-sub muted">Uncheck to skip the overall discount · $ line discounts are per item ($5 off × 4 = $20)</div>
             </div>
             <div class="discount-exclude-cols muted">
               <span>Include</span><span>Item</span><span>Line</span><span>Off</span>
