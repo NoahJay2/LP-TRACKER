@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-06-17.45';
+const BUILD_VERSION = '2026-06-17.48';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -2198,7 +2198,9 @@ function openTodayOrderDetail(customerKey, dateKey) {
   }
 
   function renderDetail() {
-    const allItems = orders.flatMap(o => orderItems(o));
+    // Flatten items but retain the parent order so we can attribute the
+    // order-level discount + shipping correctly per row.
+    const rows = orders.flatMap(o => orderItems(o).map(it => ({ o, it })));
     const total = orders.reduce((s, o) => s + orderTotal(o), 0);
     const profit = orders.reduce((s, o) => s + orderProfit(o), 0);
     const paidSoFar = orders.reduce((s, o) => s + orderPaidRevenue(o), 0);
@@ -2206,6 +2208,20 @@ function openTodayOrderDetail(customerKey, dateKey) {
     const allPaid = orders.every(o => o.paid);
     const allDelivered = orders.every(o => o.delivered);
     const anyPartial = orders.some(o => orderIsPartiallyPaid(o));
+
+    const itemsSubtotalGross = rows.reduce((s, { it }) => s + itemLineSubtotal(it), 0);
+    const lineDiscountsTotal = rows.reduce((s, { it }) => s + itemDiscountAmount(it), 0);
+    const orderDiscountsTotal = orders.reduce((s, o) => s + orderDiscountAmount(o), 0);
+    const shippingTotal = orders.reduce((s, o) => s + orderShipping(o), 0);
+    // Sale savings — the delta between an item's original price and its
+    // current price, folded into "You saved" alongside actual discounts.
+    const saleSavings = rows.reduce((s, { it }) => {
+      const qty = Number(it.qty) || 0;
+      const price = Number(it.price) || 0;
+      const orig = Number(it.originalPrice) || 0;
+      return s + (orig > price ? (orig - price) * qty : 0);
+    }, 0);
+    const totalSavings = lineDiscountsTotal + orderDiscountsTotal + saleSavings;
 
     form.innerHTML = `
       <div class="readonly-detail">
@@ -2223,20 +2239,42 @@ function openTodayOrderDetail(customerKey, dateKey) {
           </label>
         </div>
         <div class="rd-items">
-          ${allItems.map(it => {
+          ${rows.map(({ it }) => {
             const qty = Number(it.qty) || 0;
             const price = Number(it.price) || 0;
+            const orig = Number(it.originalPrice) || 0;
+            const lineDisc = itemDiscountAmount(it);
+            const lineTotal = itemLineTotal(it);
+            const effectivePer = qty > 0 ? lineTotal / qty : 0;
+            const showStrike = (orig > price) || lineDisc > 0;
+            const strikeSrc = orig > price ? orig : price;
             return `
               <div class="rd-item">
                 <span class="rd-item-name">${escapeHtml(it.product || '')}</span>
                 <span class="rd-item-qty">×${fmtN(qty)}</span>
-                <span class="rd-item-price muted">${fmt$(price)} ea</span>
-                <span class="rd-item-total">${fmt$(qty * price)}</span>
+                <span class="rd-item-price muted">${showStrike ? `<s>${fmt$(strikeSrc)}</s> ` : ''}${fmt$(effectivePer)} ea</span>
+                <span class="rd-item-total">${fmt$(lineTotal)}</span>
               </div>
             `;
           }).join('')}
         </div>
         <div class="rd-totals">
+          ${totalSavings > 0.005 ? `
+            <div class="rd-total-row">
+              <span class="rd-total-label muted">Subtotal</span>
+              <b class="rd-total-value">${fmt$(itemsSubtotalGross)}</b>
+            </div>
+            <div class="rd-total-row">
+              <span class="rd-total-label muted">You Saved</span>
+              <b class="rd-total-value rd-savings">− ${fmt$(totalSavings)}</b>
+            </div>
+          ` : ''}
+          ${shippingTotal > 0.005 ? `
+            <div class="rd-total-row">
+              <span class="rd-total-label muted">Shipping</span>
+              <b class="rd-total-value">${fmt$(shippingTotal)}</b>
+            </div>
+          ` : ''}
           <div class="rd-total-row">
             <span class="rd-total-label">Total</span>
             <b class="rd-total-value">${fmt$(total)}</b>
@@ -5515,20 +5553,31 @@ function renderMonthly() {
     });
   } else {
     orders.forEach(o => {
-      // 1) Every payment counts as gross on its own date.
+      // 1) Every payment counts as gross on its own date — but cap the total
+      // attributed to any single order at orderTotal so an over-payment can't
+      // inflate the books. This matches the Dashboard's orderPaidRevenue()
+      // which caps at orderTotal for the same reason.
+      const cap = orderTotal(o);
+      let attributed = 0;
       for (const p of orderPayments(o)) {
         const pd = p && p.date;
-        const amt = Number(p && p.amount) || 0;
-        if (!pd || amt <= 0) continue;
+        const raw = Number(p && p.amount) || 0;
+        if (!pd || raw <= 0) continue;
+        const room = Math.max(0, cap - attributed);
+        if (room <= 0) break;
+        const amt = Math.min(raw, room);
+        attributed += amt;
         const day = ensureDay(pd);
         day.gross += amt;
         day.payments.push({ order: o, payment: p });
         ensureMonth(monthKey(pd)).gross += amt;
       }
       // 2) Profit + qty land on the day the order closed (last payment date).
+      // Round profit per-order (matches Dashboard's orderPaidProfit) so summed
+      // buckets equal the Dashboard's rounded Gross Profit figure.
       const completed = orderCompletionDate(o);
       if (completed) {
-        const profit = orderProfit(o);
+        const profit = orderPaidProfit(o);
         const qty = orderQty(o);
         const day = ensureDay(completed);
         day.net += profit;
@@ -5599,16 +5648,19 @@ function calSummaryHtml(gross, net, qty, pendingGross, pendingNet, pendingQty) {
   const pn = Number(pendingNet) || 0;
   const pq = Number(pendingQty) || 0;
   const hasPending = !__monthlyPending && (pg > 0.005 || pq > 0);
-  const totalG = g + pg;
-  const totalN = n + pn;
-  const totalQty = q + pq;
-  const grossTip = hasPending ? ` title="${fmt$(round2(g))} paid + ${fmt$(round2(pg))} pending"` : '';
-  const netTip = hasPending ? ` title="${fmt$(round2(n))} paid + ${fmt$(round2(pn))} pending"` : '';
-  const qtyTip = hasPending ? ` title="${fmtN(q)} delivered + ${fmtN(pq)} pending"` : '';
+  // Cash-basis totals — match the Dashboard's Gross Revenue / Gross Profit
+  // cards. Pending amounts are shown as a subtle "+ $X pending" line beneath
+  // instead of being folded into the headline number.
+  const grossTip = hasPending ? ` title="${fmt$(round2(g))} paid · ${fmt$(round2(pg))} pending"` : '';
+  const netTip = hasPending ? ` title="${fmt$(round2(n))} paid · ${fmt$(round2(pn))} pending"` : '';
+  const qtyTip = hasPending ? ` title="${fmtN(q)} delivered · ${fmtN(pq)} pending"` : '';
+  const pendGrossLine = hasPending ? `<span class="cal-sum-pending-line">+${fmt$(round2(pg))} pending</span>` : '';
+  const pendNetLine = hasPending ? `<span class="cal-sum-pending-line">+${fmt$(round2(pn))} pending</span>` : '';
+  const pendQtyLine = hasPending ? `<span class="cal-sum-pending-line">+${fmtN(pq)} pending</span>` : '';
   return `
-    <div class="cal-sum-stat cal-sum-gross${__monthlyPending ? ' cal-sum-pending' : ''}"${grossTip}><span class="cal-sum-label">${labels.gross}</span><b>${fmt$(round2(totalG))}</b></div>
-    <div class="cal-sum-stat cal-sum-net${__monthlyPending ? ' cal-sum-pending' : ''}"${netTip}><span class="cal-sum-label">${labels.net}</span><b>${fmt$(round2(totalN))}</b></div>
-    <div class="cal-sum-stat cal-sum-qty"${qtyTip}><span class="cal-sum-label">${labels.qty}</span><b>${fmtN(totalQty)}</b></div>
+    <div class="cal-sum-stat cal-sum-gross${__monthlyPending ? ' cal-sum-pending' : ''}"${grossTip}><span class="cal-sum-label">${labels.gross}</span><b>${fmt$(round2(g))}</b>${pendGrossLine}</div>
+    <div class="cal-sum-stat cal-sum-net${__monthlyPending ? ' cal-sum-pending' : ''}"${netTip}><span class="cal-sum-label">${labels.net}</span><b>${fmt$(round2(n))}</b>${pendNetLine}</div>
+    <div class="cal-sum-stat cal-sum-qty"${qtyTip}><span class="cal-sum-label">${labels.qty}</span><b>${fmtN(q)}</b>${pendQtyLine}</div>
   `;
 }
 

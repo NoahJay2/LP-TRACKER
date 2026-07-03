@@ -1082,6 +1082,8 @@ a.invoice-payment-value { color: #1d4ed8; }
 }
 .readonly-detail .rd-total-label { font-weight: 600; }
 .readonly-detail .rd-total-value { font-variant-numeric: tabular-nums; font-size: 16px; }
+.readonly-detail .rd-item-price s { opacity: .55; margin-right: 2px; }
+.readonly-detail .rd-savings { color: var(--success, #22c55e); }
 @media (max-width: 640px) {
   .readonly-detail .rd-item {
     grid-template-columns: 1fr auto auto;
@@ -1447,6 +1449,14 @@ a.invoice-payment-value { color: #1d4ed8; }
 .cal-sum-gross::before { background: var(--primary); }
 .cal-sum-net::before { background: var(--success); }
 .cal-sum-stat b { display: block; font-size: 19px; font-weight: 700; margin-top: 3px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.cal-sum-pending-line {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: #f59e0b;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
 .cal-sum-label { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 600; }
 .cal-sum-gross b { color: var(--primary); }
 .cal-sum-net b { color: var(--success); }
