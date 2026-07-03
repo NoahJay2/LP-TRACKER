@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-06-17.49';
+const BUILD_VERSION = '2026-06-17.50';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -1019,8 +1019,19 @@ function attachTypeahead(input, getOptions) {
     activeIdx = -1;
     input.blur();
   };
-  input.addEventListener('input', () => { activeIdx = -1; render(); });
-  input.addEventListener('focus', () => { activeIdx = -1; render(); });
+  // Suggestions must NOT appear on programmatic focus (the order modal
+  // auto-focuses the customer field on open, which popped the list on
+  // mobile before the user touched anything). Track real user intent:
+  // a pointer press on the field or actual typing opens the list;
+  // .focus() called from code does not.
+  let userIntent = false;
+  input.addEventListener('pointerdown', () => { userIntent = true; });
+  input.addEventListener('input', () => { userIntent = true; activeIdx = -1; render(); });
+  input.addEventListener('focus', () => {
+    if (!userIntent) return;
+    activeIdx = -1;
+    render();
+  });
   input.addEventListener('keydown', (e) => {
     if (dropdown.hidden && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
       render();
@@ -1043,6 +1054,7 @@ function attachTypeahead(input, getOptions) {
     }
   });
   input.addEventListener('blur', () => {
+    userIntent = false;
     // Defer so a click on a dropdown item can fire before we hide.
     setTimeout(() => { dropdown.hidden = true; }, 150);
   });
