@@ -3159,17 +3159,26 @@ tr.row-flag-pending:hover > td,
   /* Surface the "N items" badge on collapsed shipment group rows so the user
      can see how many shipments are in the group without expanding it. */
   #view-shipments .table tbody tr:not(.child-row) .grp-badge { display: inline-block; }
-  /* Allow long tracking numbers to wrap on tight screens instead of forcing
-     a horizontal table scroll. */
-  #view-shipments .table tbody tr:not(.child-row) td:nth-child(4) {
-    word-break: break-all;
-    max-width: 130px;
-  }
+  /* Shipments (7 cols): Vendor(1) Timeline(2) Category(3) Product(4)
+     Tracking(5) Delivered(6) Actions(7).
+     A phone gets the four that drive a decision — who it's from, how late it
+     is, what's in it, and the delivered toggle. Category is on the product,
+     and tracking is one tap away in the row menu (open with the carrier, or
+     copy), so neither needs to eat width here. Hidden on child rows too, or
+     the expanded lines stop lining up with the header. */
+  #view-shipments .table thead th:nth-child(3),
+  #view-shipments .table thead th:nth-child(5),
+  #view-shipments .table tbody td:nth-child(3),
+  #view-shipments .table tbody td:nth-child(5) { display: none; }
+  #view-shipments .table tbody tr:not(.child-row) td:nth-child(4) { max-width: 150px; }
 
-  /* Expenses (5 cols): Vendor(1), Date(2), Products(3), Total Cost(4), Actions(5).
-     Hide only Date(2) on parent rows so the Products column stays visible. */
-  #view-expenses .table thead th:nth-child(2),
-  #view-expenses .table tbody tr:not(.child-row) td:nth-child(2) { display: none; }
+  /* Expenses (6 cols): Vendor(1) Date(2) Category(3) Products(4) Cost(5)
+     Actions(6).
+     Products is the widest column and the least load-bearing on a phone — the
+     vendor, date, category and amount are what you scan for. The full product
+     list is still one tap away via the row menu. */
+  #view-expenses .table thead th:nth-child(4),
+  #view-expenses .table tbody tr:not(.child-row) td:nth-child(4) { display: none; }
   /* Surface the "N items" badge on collapsed expense group rows so the user
      can see how many items are in the group without expanding it. */
   #view-expenses .table tbody tr:not(.child-row) .grp-badge { display: inline-block; }
@@ -4979,4 +4988,939 @@ html, body { overscroll-behavior-y: none; }
   }
   .top-products-body .toolbar .btn-reset,
   #view-inventory .toolbar .btn-reset { flex: 1 1 100%; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   EXPENSES · categories, capital split, category breakdown
+   ═══════════════════════════════════════════════════════════════ */
+
+/* One color per bookkeeping category, used by the chips, the share bar and
+   the legend dots so a category reads the same everywhere on the page. */
+:root {
+  --cat-inventory: #22c55e;
+  --cat-packaging: #38bdf8;
+  --cat-labsupply: #a78bfa;
+  --cat-equipment: #f59e0b;
+  --cat-software:  #60a5fa;
+  --cat-vehicle:   #f472b6;
+  --cat-marketing: #fb923c;
+  --cat-fees:      #94a3b8;
+  --cat-ownerdraw: #facc15;
+  --cat-otherexp:  #6b7280;
+}
+[data-cat="inventory"] { --cat: var(--cat-inventory); }
+[data-cat="packaging"] { --cat: var(--cat-packaging); }
+[data-cat="labsupply"] { --cat: var(--cat-labsupply); }
+[data-cat="equipment"] { --cat: var(--cat-equipment); }
+[data-cat="software"]  { --cat: var(--cat-software); }
+[data-cat="vehicle"]   { --cat: var(--cat-vehicle); }
+[data-cat="marketing"] { --cat: var(--cat-marketing); }
+[data-cat="fees"]      { --cat: var(--cat-fees); }
+[data-cat="ownerdraw"] { --cat: var(--cat-ownerdraw); }
+[data-cat="otherexp"]  { --cat: var(--cat-otherexp); }
+
+/* Header actions sit together so Export and New Expense read as one control
+   group rather than a stray button floating beside the title. */
+.view-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ── Summary tiles ─────────────────────────────────────────── */
+.exp-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.exp-stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+}
+.exp-stat-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  color: var(--muted);
+  font-weight: 600;
+}
+.exp-stat-value {
+  font-size: 23px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  margin-top: 7px;
+}
+.exp-stat-note {
+  margin-top: 5px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.exp-stat-op {
+  box-shadow: inset 3px 0 0 var(--danger), var(--shadow-sm);
+  border-color: rgba(239, 68, 68, 0.28);
+}
+.exp-stat-op .exp-stat-value { color: var(--danger); }
+/* Capital is deliberately dashed — it's money that sits outside the P&L. */
+.exp-stat-cap {
+  border-style: dashed;
+  border-color: rgba(250, 204, 21, 0.35);
+  box-shadow: inset 3px 0 0 rgba(250, 204, 21, 0.8), var(--shadow-sm);
+}
+.exp-stat-cap .exp-stat-value { color: #facc15; }
+.exp-stat-cap.is-empty { opacity: 0.6; }
+.exp-stat-cap.is-empty .exp-stat-value { color: var(--muted); }
+.exp-stat-total {
+  box-shadow: inset 3px 0 0 var(--border-strong), var(--shadow-sm);
+}
+
+/* ── Category breakdown ────────────────────────────────────── */
+.exp-breakdown-card { margin-bottom: 18px; }
+.exp-breakdown-card .card-head { margin-bottom: 14px; }
+.exp-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--surface-2);
+  gap: 2px;
+}
+.exp-bar-seg {
+  background: var(--cat, var(--muted));
+  min-width: 3px;
+  transition: opacity .2s var(--ease);
+}
+.exp-bar:hover .exp-bar-seg { opacity: 0.45; }
+.exp-bar .exp-bar-seg:hover { opacity: 1; }
+
+.exp-legend-grid {
+  display: grid;
+  /* Wide enough that a full category name plus its amount fits without
+     ellipsis — the names are long and a truncated "Vehi…" is useless. */
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  gap: 6px;
+  margin-top: 14px;
+}
+.exp-legend {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--text-2);
+  text-align: left;
+  width: 100%;
+  transition: background .15s var(--ease), border-color .15s var(--ease);
+}
+.exp-legend:hover { background: var(--surface-2); border-color: var(--border); }
+.exp-legend.active {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.exp-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--cat, var(--muted));
+  flex: 0 0 auto;
+}
+.exp-legend-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.exp-legend-amt {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--text);
+  flex: 0 0 auto;
+}
+.exp-legend-pct {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  min-width: 32px;
+  text-align: right;
+  flex: 0 0 auto;
+}
+.exp-legend-cap {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: #facc15;
+  flex: 0 0 auto;
+}
+
+/* ── Category chip (inline reassign) ───────────────────────── */
+.exp-table .cat-cell { white-space: nowrap; }
+.cat-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--cat, var(--muted)) 40%, transparent);
+  background: color-mix(in srgb, var(--cat, var(--muted)) 12%, transparent);
+  color: var(--cat, var(--muted));
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.cat-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The select is laid transparently over the chip: native picker behaviour,
+   custom look, and no risk of a bespoke dropdown getting clipped by the
+   table's overflow. */
+.cat-chip-select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  border: none;
+  appearance: none;
+  background: transparent;
+  font: inherit;
+}
+.cat-chip:not(.static):hover {
+  border-color: var(--cat, var(--muted));
+  background: color-mix(in srgb, var(--cat, var(--muted)) 20%, transparent);
+}
+.cat-chip.static { cursor: default; }
+
+/* ── Capital marker ────────────────────────────────────────── */
+.cap-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px dashed rgba(250, 204, 21, 0.45);
+  background: rgba(250, 204, 21, 0.08);
+  color: #facc15;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  font-weight: 600;
+  vertical-align: middle;
+}
+/* A dotted left rail on capital rows — visible enough to spot when scanning,
+   quiet enough not to shout over the category colors. */
+.exp-table tbody tr.is-capital > td:first-child {
+  box-shadow: inset 2px 0 0 rgba(250, 204, 21, 0.55);
+}
+
+/* ── Footer split ──────────────────────────────────────────── */
+#expFootSplit {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* ── Income statement · capital + category table ───────────── */
+.is-capital-card {
+  border-style: dashed;
+  border-color: rgba(250, 204, 21, 0.3);
+}
+.is-capital-card #isCapital { color: #facc15; }
+.is-note {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.is-cat-table { margin-top: 12px; }
+.is-cat-table table { width: 100%; }
+.is-cat-table tfoot .is-cat-total td {
+  border-top: 1px solid var(--border-strong);
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* ── Dashboard capital KPIs ────────────────────────────────── */
+.kpi-capital {
+  border-style: dashed;
+  border-color: rgba(250, 204, 21, 0.35);
+  box-shadow: inset 3px 0 0 rgba(250, 204, 21, 0.8), var(--shadow-sm);
+}
+.kpi-capital .kpi-value { color: #facc15; }
+.kpi-capital .kpi-label { color: rgba(250, 204, 21, 0.85); }
+/* All-In Position underwater — the whole point of tracking capital separately
+   is being able to see this without doing the arithmetic. */
+.kpi-capital.is-negative {
+  border-color: rgba(239, 68, 68, 0.4);
+  box-shadow: inset 3px 0 0 var(--danger), var(--shadow-sm);
+}
+.kpi-capital.is-negative .kpi-value { color: var(--danger); }
+.kpi-capital.is-negative .kpi-label { color: rgba(252, 165, 165, 0.9); }
+
+/* ── Modal field hint ──────────────────────────────────────── */
+.modal-body .field-hint {
+  display: block;
+  margin-top: 5px;
+  font-size: 11.5px;
+  color: var(--muted);
+  font-weight: 400;
+}
+.modal-body .field-hint:empty { display: none; }
+
+@media (max-width: 900px) {
+  .is-capital-card,
+  .is-cat-table { grid-column: 1 / -1; }
+}
+
+@media (max-width: 640px) {
+  .view-head-actions { width: 100%; }
+  .view-head-actions .btn { flex: 1 1 0; }
+  .exp-summary { grid-template-columns: 1fr; gap: 10px; }
+  .exp-stat { padding: 12px 14px; }
+  .exp-stat-value { font-size: 20px; }
+  .exp-legend-grid { grid-template-columns: 1fr; }
+  /* The category chip is the one thing that must stay readable at width, so
+     the products column is what gives way first. */
+  .exp-table .cat-cell { max-width: 120px; }
+  #expFootSplit { display: none; }
+}
+
+/* Negative All-In Position on the income statement — same signal as the KPI. */
+.is-capital-card #isAllIn.is-negative { color: var(--danger); }
+
+/* ═══════════════════════════════════════════════════════════════
+   SHIPMENTS · aging, timeline, carrier links, vendor performance
+   ═══════════════════════════════════════════════════════════════ */
+
+/* One color per shipment status, shared by the badge, the row rail and the
+   summary tiles so the three can never tell different stories. */
+:root {
+  --ship-transit: #60a5fa;
+  --ship-aging: #f59e0b;
+  --ship-overdue: #ef4444;
+  --ship-delivered: #22c55e;
+}
+[data-status="transit"]   { --ship: var(--ship-transit); }
+[data-status="aging"]     { --ship: var(--ship-aging); }
+[data-status="overdue"]   { --ship: var(--ship-overdue); }
+[data-status="delivered"] { --ship: var(--ship-delivered); }
+
+/* ── Summary tile variants ─────────────────────────────────── */
+.ship-stat-transit {
+  border-color: rgba(96, 165, 250, 0.3);
+  box-shadow: inset 3px 0 0 var(--ship-transit), var(--shadow-sm);
+}
+.ship-stat-transit .exp-stat-value { color: var(--ship-transit); }
+.ship-stat-late {
+  border-style: dashed;
+  border-color: rgba(239, 68, 68, 0.35);
+  box-shadow: inset 3px 0 0 var(--ship-overdue), var(--shadow-sm);
+}
+.ship-stat-late .exp-stat-value { color: var(--ship-overdue); }
+/* Nothing overdue is good news — let the tile recede instead of shouting. */
+.ship-stat-late.is-empty {
+  border-style: solid;
+  border-color: var(--border);
+  box-shadow: inset 3px 0 0 var(--border-strong), var(--shadow-sm);
+  opacity: 0.6;
+}
+.ship-stat-late.is-empty .exp-stat-value { color: var(--muted); }
+.ship-stat-items {
+  border-color: rgba(167, 139, 250, 0.3);
+  box-shadow: inset 3px 0 0 #a78bfa, var(--shadow-sm);
+}
+.ship-stat-items .exp-stat-value { color: #a78bfa; }
+.ship-stat-avg {
+  box-shadow: inset 3px 0 0 var(--border-strong), var(--shadow-sm);
+}
+
+/* ── Two cards side by side above the table ────────────────── */
+.ship-cards {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 16px;
+  margin-bottom: 18px;
+  /* Size each card to its own content — stretching the shorter one left a
+     large empty void under the category legend. */
+  align-items: start;
+}
+.ship-cards .exp-breakdown-card { margin-bottom: 0; }
+
+/* ── Vendor performance ────────────────────────────────────── */
+.ship-vendors {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+  max-height: 208px;
+  overflow-y: auto;
+}
+.ship-vendor {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  text-align: left;
+  font-size: 12.5px;
+  color: var(--text-2);
+  transition: background .15s var(--ease), border-color .15s var(--ease);
+}
+.ship-vendor:hover { background: var(--surface-2); border-color: var(--border); }
+.ship-vendor.active {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.sv-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.sv-stat {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.sv-stat b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.sv-avg { min-width: 78px; text-align: right; }
+.sv-flag {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(96, 165, 250, 0.4);
+  background: rgba(96, 165, 250, 0.1);
+  color: var(--ship-transit);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sv-flag.overdue {
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--ship-overdue);
+}
+
+/* ── Timeline cell ─────────────────────────────────────────── */
+.ship-timeline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.tl-date {
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+.tl-arrow { color: var(--muted-2); font-size: 11px; }
+.ship-badge {
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--ship, var(--muted)) 40%, transparent);
+  background: color-mix(in srgb, var(--ship, var(--muted)) 12%, transparent);
+  color: var(--ship, var(--muted));
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+/* A shipment that arrived on schedule doesn't need a colored badge competing
+   with the ones that need attention. */
+.ship-row[data-status="delivered"] .ship-badge {
+  border-color: var(--border);
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+/* Left rail marks rows that need attention. Delivered and normal-transit rows
+   get nothing — only aging and overdue earn a mark. */
+.ship-table tbody tr.ship-row[data-status="aging"] > td:first-child {
+  box-shadow: inset 2px 0 0 var(--ship-aging);
+}
+.ship-table tbody tr.ship-row[data-status="overdue"] > td:first-child {
+  box-shadow: inset 2px 0 0 var(--ship-overdue);
+}
+
+/* ── Tracking ──────────────────────────────────────────────── */
+.tracking-no {
+  display: inline-block;
+  max-width: 160px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-2);
+  /* One line, always — a wrapped 22-digit label destroys the row rhythm.
+     The full number is in the title, and the link goes to the carrier. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+.tracking-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 200px;
+  color: var(--text-2);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--border-strong);
+}
+.tracking-digits {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tracking-link:hover { color: var(--primary); border-bottom-color: var(--primary); }
+.tracking-carrier {
+  padding: 0 5px;
+  border-radius: 3px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 9.5px;
+  letter-spacing: .06em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tracking-link:hover .tracking-carrier {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.ship-table .cat-cell { white-space: nowrap; }
+#shipItems {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+@media (max-width: 1100px) {
+  .ship-cards { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+  .ship-cards { gap: 10px; }
+  .ship-vendors { max-height: none; }
+  /* The received date is the first thing worth dropping when space runs out —
+     the aging badge already carries the urgent half of the story. */
+  .ship-timeline .tl-arrow,
+  .ship-timeline .tl-date + .tl-arrow + .tl-date { display: none; }
+  #shipItems { display: none; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   TAP SURFACES · sheets, popovers, action menus, filter panels
+   Sits above the mobile topbar (z 95) and the modal (z 100), below
+   the iOS notch shield (2000) and the toast (99999).
+   ═══════════════════════════════════════════════════════════════ */
+.ov-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  opacity: 0;
+  transition: opacity .18s var(--ease);
+  z-index: 400;
+}
+.ov-backdrop.show { opacity: 1; }
+
+.ov-panel {
+  position: fixed;
+  z-index: 401;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-xl);
+  /* Taps register immediately — no 300ms wait on iOS — and iOS doesn't paint
+     its grey flash over our own pressed states. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.ov-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.ov-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ov-sub {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.ov-body { padding: 6px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+
+/* ── Desktop: anchored popover ─────────────────────────────── */
+.ov-popover {
+  min-width: 230px;
+  max-width: min(340px, calc(100vw - 24px));
+  max-height: min(70vh, 560px);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  transform: translateY(-4px) scale(0.985);
+  transform-origin: top right;
+  transition: opacity .14s var(--ease), transform .14s var(--ease);
+}
+.ov-popover.show { opacity: 1; transform: none; }
+.ov-popover.ov-wide { min-width: 300px; max-width: min(400px, calc(100vw - 24px)); }
+
+/* ── Phone: bottom sheet ───────────────────────────────────── */
+.ov-sheet {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 18px 18px 0 0;
+  border-bottom: none;
+  border-left: none;
+  border-right: none;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  transform: translateY(100%);
+  transition: transform .26s cubic-bezier(0.32, 0.72, 0, 1);
+  /* Clear the home indicator so the last row is never half-swallowed. */
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.ov-sheet.show { transform: none; }
+.ov-grabber {
+  width: 38px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border-strong);
+  margin: 8px auto 2px;
+  flex: 0 0 auto;
+}
+.ov-sheet .ov-head { padding: 10px 18px 12px; }
+.ov-sheet .ov-title { font-size: 15px; }
+.ov-sheet .ov-body { padding: 8px 10px 10px; }
+
+/* ── Menu rows ─────────────────────────────────────────────── */
+.ov-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 11px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--text-2);
+  font-size: 13.5px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background .12s var(--ease), color .12s var(--ease);
+  -webkit-tap-highlight-color: transparent;
+}
+.ov-item:hover, .ov-item:active { background: var(--surface-2); color: var(--text); }
+.ov-item.danger { color: var(--danger); }
+.ov-item.danger:hover, .ov-item.danger:active { background: var(--danger-soft); }
+.ov-item-quiet { color: var(--muted); }
+.ov-item-icon {
+  flex: 0 0 22px;
+  text-align: center;
+  font-size: 14px;
+  opacity: 0.85;
+}
+.ov-item-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.ov-item-label { overflow: hidden; text-overflow: ellipsis; }
+.ov-item-hint {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 400;
+  white-space: normal;
+  line-height: 1.35;
+}
+.ov-sheet .ov-item { min-height: 54px; font-size: 15px; padding: 11px 14px; }
+.ov-sheet .ov-item-icon { flex-basis: 26px; font-size: 16px; }
+.ov-sheet .ov-item-hint { font-size: 12.5px; }
+
+.ov-foot {
+  display: flex;
+  gap: 8px;
+  padding: 10px 6px 4px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+}
+.ov-foot .btn { flex: 1; justify-content: center; }
+
+/* ═══════════════════════════════════════════════════════════════
+   FILTER BAR · search + one Filters tap + active chips
+   ═══════════════════════════════════════════════════════════════ */
+.filterbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.filterbar .search-wrap { flex: 1 1 auto; min-width: 0; }
+.filter-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+.filter-ico { font-size: 12px; opacity: 0.8; }
+.filter-count {
+  display: none;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #04140a;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+.filter-btn.has-filters { border-color: var(--primary); color: var(--text); }
+.filter-btn.has-filters .filter-count { display: inline-block; }
+
+/* Chips make the active filters visible without opening the panel, and each
+   one is its own undo. */
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -4px 0 14px;
+}
+.filter-chips[hidden] { display: none; }
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 3px 8px 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+  max-width: 100%;
+  transition: border-color .12s var(--ease), color .12s var(--ease);
+  -webkit-tap-highlight-color: transparent;
+}
+.filter-chip:hover { border-color: var(--danger); color: var(--text); }
+.fc-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+.fc-value {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.fc-x {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 15px;
+  text-align: center;
+}
+.filter-chip:hover .fc-x { background: var(--danger-soft); color: var(--danger); }
+
+/* Filter fields live hidden in the page and are moved into the panel on open,
+   so the live <select> elements (and their saved values) are never cloned. */
+.filter-fields { display: flex; flex-direction: column; gap: 12px; padding: 4px 6px; }
+.filter-fields[hidden] { display: none; }
+.filter-field { display: flex; flex-direction: column; gap: 5px; }
+.filter-field > span {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted);
+  font-weight: 600;
+}
+.filter-field select {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 500;
+  outline: none;
+}
+.filter-field select:focus { border-color: var(--primary); }
+
+/* ═══════════════════════════════════════════════════════════════
+   ROW ACTION BUTTON
+   ═══════════════════════════════════════════════════════════════ */
+.row-menu-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background .12s var(--ease), color .12s var(--ease), border-color .12s var(--ease);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.row-menu-btn:hover, .row-menu-btn:active {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text);
+}
+.table td.row-actions { width: 1%; white-space: nowrap; text-align: right; }
+
+/* ═══════════════════════════════════════════════════════════════
+   COLLAPSIBLE ANALYSIS CARDS
+   ═══════════════════════════════════════════════════════════════ */
+.card-collapse-btn {
+  display: none;
+  width: 30px;
+  height: 30px;
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.cc-chevron { display: inline-block; transition: transform .2s var(--ease); font-size: 12px; }
+.is-collapsed .cc-chevron { transform: rotate(-90deg); }
+
+@media (max-width: 640px) {
+  /* On a phone these cards are a wall to scroll past before the table, so they
+     start collapsed and open on tap. Above this width they're always open. */
+  .card-collapse-btn { display: inline-flex; align-items: center; justify-content: center; }
+  .exp-breakdown-card .card-head,
+  #shipVendorCard .card-head { cursor: pointer; }
+  .is-collapsed [data-collapse-body] { display: none; }
+  /* Collapsed, the card IS its header — no bottom margin and no leftover
+     padding, so it reads as one tappable strip rather than an empty box. */
+  .is-collapsed .card-head { margin-bottom: 0; }
+  .is-collapsed { padding: 13px 16px; }
+  /* The title and its note ran together once the chevron took the right edge;
+     the gap restores the separation and keeps the chevron hard right. */
+  .card-head { gap: 10px; }
+  .card-head h3 { white-space: nowrap; }
+  /* A descriptive subtitle wraps the collapsed header onto two lines for no
+     benefit. Data notes (the item / category totals) stay — they are the
+     reason to glance at a collapsed card at all. */
+  .card-note-desc { display: none; }
+  .card-head > .muted { margin-left: auto; text-align: right; }
+  .card-collapse-btn { margin-left: 0; flex: 0 0 auto; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   PHONE POLISH
+   ═══════════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+  /* Anything under 16px makes iOS zoom the page on focus and never zoom back. */
+  .toolbar input,
+  .toolbar select,
+  .filterbar input,
+  .filter-field select,
+  .period-picker input { font-size: 16px; }
+
+  .filterbar { gap: 8px; }
+  .filter-btn { padding-left: 12px; padding-right: 12px; min-height: 42px; }
+  .search-wrap input { min-height: 42px; }
+
+  /* Two-up beats a four-tile column — the whole story fits above the fold. */
+  .exp-summary { grid-template-columns: 1fr 1fr; gap: 8px; }
+  /* Expenses has three tiles, so the total would otherwise sit orphaned in a
+     half-width cell on its own row. It's the summary line — give it the row. */
+  .exp-summary .exp-stat-total { grid-column: 1 / -1; }
+  .exp-stat { padding: 10px 11px; }
+  .exp-stat-label { font-size: 9.5px; letter-spacing: .08em; }
+  .exp-stat-value { font-size: 18px; margin-top: 5px; }
+  .exp-stat-note { font-size: 10.5px; line-height: 1.3; }
+
+  /* These tables scroll sideways on a phone. Pinning the first column keeps
+     the row's identity on screen while the rest slides under it. */
+  .exp-table tbody td:first-child,
+  .exp-table thead th:first-child,
+  .ship-table tbody td:first-child,
+  .ship-table thead th:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--surface);
+    box-shadow: 1px 0 0 var(--border);
+  }
+  .exp-table thead th:first-child,
+  .ship-table thead th:first-child { z-index: 3; }
+  /* The status rail is drawn with an inset shadow on the same cell, so it has
+     to be re-declared alongside the sticky separator or it disappears. */
+  .ship-table tbody tr.ship-row[data-status="aging"] > td:first-child {
+    box-shadow: inset 2px 0 0 var(--ship-aging), 1px 0 0 var(--border);
+  }
+  .ship-table tbody tr.ship-row[data-status="overdue"] > td:first-child {
+    box-shadow: inset 2px 0 0 var(--ship-overdue), 1px 0 0 var(--border);
+  }
+  .exp-table tbody tr.is-capital > td:first-child {
+    box-shadow: inset 2px 0 0 rgba(250, 204, 21, 0.55), 1px 0 0 var(--border);
+  }
+
+  /* Comfortable thumb targets in the rows themselves. */
+  .row-menu-btn { width: 38px; height: 38px; font-size: 19px; }
+  .cat-chip { padding: 4px 10px; font-size: 12px; }
+  .filter-chip { min-height: 34px; font-size: 12.5px; }
 }

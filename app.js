@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-06-17.58';
+const BUILD_VERSION = '2026-06-17.59';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -105,6 +105,175 @@ function itemCategory(productName) {
   return product ? stockCategory(product) : classifyProduct(productName);
 }
 
+// ---------- Expense categories ----------
+// Bookkeeping buckets for money going OUT. These map onto the lines an
+// accountant actually files, so a CSV export can be handed over without a
+// translation pass. Every expense carries an explicit `category`; anything
+// that predates the field gets one from classifyExpense() on load, and any of
+// them can be reassigned inline on the Expenses page.
+const EXPENSE_CATEGORIES = [
+  { key: 'inventory', label: 'Inventory / Product Purchases', short: 'Inventory' },
+  { key: 'packaging', label: 'Packaging & Shipping Supplies', short: 'Packaging' },
+  { key: 'labsupply', label: 'Lab & Medical Supplies',        short: 'Lab Supplies' },
+  { key: 'equipment', label: 'Equipment & Hardware',          short: 'Equipment' },
+  { key: 'software',  label: 'Software & Web Services',       short: 'Software' },
+  { key: 'vehicle',   label: 'Vehicle & Transportation',      short: 'Vehicle' },
+  { key: 'marketing', label: 'Marketing & Advertising',       short: 'Marketing' },
+  { key: 'fees',      label: 'Professional & Bank Fees',      short: 'Fees' },
+  { key: 'ownerdraw', label: 'Owner Draw / Personal',         short: 'Owner Draw' },
+  { key: 'otherexp',  label: 'Other',                         short: 'Other' },
+];
+const EXPENSE_CATEGORY_KEYS = EXPENSE_CATEGORIES.map(c => c.key);
+const DEFAULT_EXPENSE_CATEGORY = 'otherexp';
+function expenseCategoryLabel(key) {
+  const c = EXPENSE_CATEGORIES.find(x => x.key === key);
+  return c ? c.label : 'Other';
+}
+function expenseCategoryShort(key) {
+  const c = EXPENSE_CATEGORIES.find(x => x.key === key);
+  return c ? c.short : 'Other';
+}
+
+// Name-matching rules for the one-time backfill. Order matters — the first
+// bucket whose pattern hits wins. The specific overhead buckets are checked
+// before the product buckets so "Printer Toner" files under Packaging (it
+// prints shipping labels) instead of falling through to Equipment, and
+// "Bac Water" lands in Lab Supplies rather than reading as a peptide purchase.
+const EXPENSE_CATEGORY_RULES = [
+  ['vehicle', [
+    /vehicle|\btruck\b|\bvan\b|\bcar\b|\bauto\b|dash ?cam/i,
+    /\bgas\b|\bfuel\b|mileage|\btolls?\b|parking|\btires?\b|oil change/i,
+    /registration|\bdmv\b|\buber\b|\blyft\b|car wash|roadside/i,
+    // Travel rides here too — it lands on the same transportation line.
+    /\bflights?\b|plane ticket|airfare|airline|\bbaggage\b/i,
+    /\bhotel\b|lodging|airbnb|rental car|amtrak|train ticket|\btravel\b/i,
+  ]],
+  ['software', [
+    /website|web ?site|hosting|\bdomain\b|godaddy|namecheap|vercel|netlify/i,
+    /squarespace|shopify|\bwix\b|wordpress|subscription|\bsaas\b/i,
+    /adobe|canva|google workspace|microsoft ?365|\bzoom\b|quickbooks|\bslack\b/i,
+    /software|\bapi\b|openai|anthropic|supabase/i,
+  ]],
+  ['marketing', [
+    /advertis|marketing|\bads?\b|promo(tion)?\b|sponsor|influencer/i,
+    /business cards?|flyers?|\bbanner\b|signage|giveaway/i,
+  ]],
+  ['fees', [
+    /accountant|\bcpa\b|bookkeep|tax prep|attorney|lawyer|\blegal\b/i,
+    /bank fee|merchant fee|processing fee|wire fee|\bstripe\b|paypal fee/i,
+    /\bllc\b|registered agent|\blicense\b|\bpermit\b|filing fee|franchise tax/i,
+    /\binsurance\b|consulting fee/i,
+    // Card and loan payments are transfers rather than true expenses, but
+    // filing them here puts them in front of the accountant to reclassify
+    // instead of burying them in Other.
+    /\bcc payments?\b|card payments?|credit card payment|loan payment|\binterest\b/i,
+  ]],
+  ['packaging', [
+    /\blabels?\b|toner|\bink\b|cartridges?|\bcmyk\b|\bpaper\b|thermal|sticker/i,
+    /box(es)?\b|bubble|mailer|envelope|packag|poly ?bag|pouch|shrink ?wrap/i,
+    /\btape\b|shipping suppl|postage|\bstamps?\b|\bshipping\b|\bups\b|\bfedex\b|\busps\b/i,
+  ]],
+  ['labsupply', [
+    /needle|syringe|bac(teriostatic)? ?water|sterile water|alcohol (pad|wipe|swab)/i,
+    /\bswabs?\b|\bvials?\b|stopper|crimp|\bglove/i,
+    /sharps|\bfilters?\b|desiccant|ice ?pack|dry ice|gauze|\bpipette/i,
+    /carewell|health ?warehouse|medical suppl|\bsuppl(y|ies)\b/i,
+  ]],
+  ['equipment', [
+    /freezer|fridge|refrigerat|\bprinter\b|laptop|computer|monitor|scanner/i,
+    /\bscale\b|camera|\bipad\b|\bdesk\b|\bchair\b|shelv|storage rack|\bsafe\b/i,
+    /centrifuge|heat sealer|vacuum sealer|equipment|\bhardware\b|\btoolbox\b/i,
+    // Desk peripherals and small office fit-out.
+    /\bmouse\b|keyboard|webcam|headset|\bcables?\b|charger|\busb\b|docking/i,
+    /electrical|\blight(s|ing|bulbs?)?\b|\boutlets?\b|wiring|\bfixtures?\b/i,
+  ]],
+  ['ownerdraw', [
+    /owner draw|\bpersonal\b|reimburse|withdraw(al)?\b|\bpayroll\b|\bsalary\b/i,
+    /\bsbd\b|lifting belt|\bapparel\b|clothing|\bshoes\b/i,
+    // Personal and family spend that ran through the business card.
+    /graduation|\bgifts?\b|\bdrinks?\b|birthday|\bparty\b|celebration|\bwedding\b/i,
+    /nintendo|playstation|\bxbox\b|steam deck|\bconsole\b/i,
+    /landscap|\blawn\b|\bgarden\b|\bmulch\b|top dressing|\bsod\b/i,
+  ]],
+  ['inventory', [
+    /\bgear\b|\border\b|research|\bgmr\b|\baps\b|ancillary|restock|wholesale/i,
+    /\bbulk\b|\bpeptides?\b|\braws?\b|\bkits?\b/i,
+    // Purchase-order shorthand for products we stock — R10 / R20 (Retatrutide),
+    // Tesa10, CU100 (GHK-Cu), MOT10 (MOTS-C), KLOW/GLOW blends. These never
+    // appear under the catalog name on a receipt, so the product classifier
+    // can't see them.
+    /\br-?\d{1,3}\b|\btesa-?\d*\b|\bcu-?\d{2,3}\b|\bmots?-?c?-?\d{1,3}\b/i,
+    /\bklow\s?\d*\b|\bglow\s?\d*\b/i,
+    // Resale pharma that isn't a peptide or an anabolic.
+    /modafinil|sildenafil|tadalafil|isotretinoin|accutane/i,
+  ]],
+];
+
+// Everything an expense knows about itself flattened into one searchable
+// string — vendor plus every line item — so the classifier sees the full
+// picture ("Amazon" alone says nothing, "Amazon · dashcam" says Vehicle).
+function expenseText(e) {
+  const items = Array.isArray(e && e.items) ? e.items : [];
+  return [(e && e.vendor) || '', ...items.map(it => (it && it.product) || ''), (e && e.product) || '']
+    .join(' ')
+    .trim();
+}
+
+// Best-guess bucket for an expense. Used only to seed `category` on records
+// that don't have one — never to override an explicit choice. Falls back to
+// the product classifier so anything recognizable as a peptide or gear order
+// files as Inventory even when the description is just the compound name.
+function classifyExpense(text) {
+  const t = (text || '').trim();
+  if (!t) return DEFAULT_EXPENSE_CATEGORY;
+  for (const [key, patterns] of EXPENSE_CATEGORY_RULES) {
+    if (patterns.some(re => re.test(t))) return key;
+  }
+  const guess = classifyProduct(t);
+  if (guess === 'peptides' || guess === 'gear') return 'inventory';
+  return DEFAULT_EXPENSE_CATEGORY;
+}
+
+// Read an expense's category, falling back to the name-based guess so callers
+// never have to deal with a missing value.
+function expenseCategory(e) {
+  const c = e && e.category;
+  return EXPENSE_CATEGORY_KEYS.includes(c) ? c : classifyExpense(expenseText(e));
+}
+
+// ---------- Capital / owner-funded spend ----------
+// Purchases the business books but that never came out of the business account
+// — the vehicle, owner-funded equipment. Real money, and the accountant needs
+// them, but deducting them from Net Profit misstates how the operation itself
+// is performing. Flagged expenses drop out of Operating Expenses and roll up
+// into their own line instead; All-In Position puts them back.
+function expenseExcluded(e) { return !!(e && e.excludeFromNet); }
+function expenseOperatingCost(e) { return expenseExcluded(e) ? 0 : expenseCost(e); }
+function expenseCapitalCost(e) { return expenseExcluded(e) ? expenseCost(e) : 0; }
+function sumExpenses(list) { return round2((list || []).reduce((s, e) => s + expenseCost(e), 0)); }
+function sumOperating(list) { return round2((list || []).reduce((s, e) => s + expenseOperatingCost(e), 0)); }
+function sumCapital(list) { return round2((list || []).reduce((s, e) => s + expenseCapitalCost(e), 0)); }
+
+// Per-category totals for a set of expenses, ordered by EXPENSE_CATEGORIES and
+// dropping buckets with nothing in them. Operating and capital are kept apart
+// so a category that is entirely owner-funded still reads correctly.
+function expenseCategoryTotals(list) {
+  const by = new Map();
+  for (const e of (list || [])) {
+    const key = expenseCategory(e);
+    let row = by.get(key);
+    if (!row) { row = { key, total: 0, operating: 0, capital: 0, count: 0 }; by.set(key, row); }
+    row.total += expenseCost(e);
+    row.operating += expenseOperatingCost(e);
+    row.capital += expenseCapitalCost(e);
+    row.count++;
+  }
+  return EXPENSE_CATEGORIES
+    .map(c => by.get(c.key))
+    .filter(Boolean)
+    .map(r => ({ ...r, total: round2(r.total), operating: round2(r.operating), capital: round2(r.capital) }));
+}
+
 // ---------- State ----------
 let state = loadState();
 
@@ -170,7 +339,14 @@ function findCustomerByName(name) {
 // preserved for old records (they're below the cutoff anyway, so no inventory
 // delta is applied).
 function migrateShipments(shipments) {
-  return shipments.map(s => (s.unit === 'qty' || s.unit === 'kits') ? s : { ...s, unit: 'kits' });
+  return shipments.map(s => {
+    const r = (s.unit === 'qty' || s.unit === 'kits') ? { ...s } : { ...s, unit: 'kits' };
+    // Received date postdates the original schema. Left blank for historical
+    // records — transit time simply reads as unknown rather than being faked
+    // from the order date.
+    if (typeof r.dateReceived !== 'string') r.dateReceived = '';
+    return r;
+  });
 }
 
 // Convert legacy single-product orders into multi-item orders
@@ -280,6 +456,9 @@ function migrateExpenses(expenses) {
     if (typeof r.totalCost !== 'number') {
       r.totalCost = (r.items || []).reduce((s, it) => s + (Number(it.cost) || 0), 0);
     }
+    // Backfill the bookkeeping bucket for anything that predates categories.
+    if (!EXPENSE_CATEGORY_KEYS.includes(r.category)) r.category = classifyExpense(expenseText(r));
+    r.excludeFromNet = !!r.excludeFromNet;
     return r;
   });
 }
@@ -382,17 +561,24 @@ const Adapters = {
     }),
   },
   shipments: {
-    toRow: (s) => ({
-      id: s.id, vendor: s.vendor || '',
-      date_ordered: s.dateOrdered || null,
-      delivered: !!s.delivered,
-      product: s.product || '', kits: s.kits == null ? '' : String(s.kits),
-      unit: (s.unit === 'qty' || s.unit === 'kits') ? s.unit : 'kits',
-      tracking: s.tracking || '',
-    }),
+    toRow: (s) => {
+      const row = {
+        id: s.id, vendor: s.vendor || '',
+        date_ordered: s.dateOrdered || null,
+        delivered: !!s.delivered,
+        product: s.product || '', kits: s.kits == null ? '' : String(s.kits),
+        unit: (s.unit === 'qty' || s.unit === 'kits') ? s.unit : 'kits',
+        tracking: s.tracking || '',
+      };
+      // Optional column — dropped automatically if Supabase doesn't have it
+      // yet, so the rest of the row still syncs. See ALL_OPTIONAL_COLUMNS.
+      if (orderColumnAvailable('date_received')) row.date_received = s.dateReceived || null;
+      return row;
+    },
     fromRow: (r) => ({
       id: r.id, vendor: r.vendor || '',
       dateOrdered: r.date_ordered || '',
+      dateReceived: r.date_received || '',
       delivered: !!r.delivered,
       product: r.product || '', kits: r.kits || '',
       unit: (r.unit === 'qty' || r.unit === 'kits') ? r.unit : 'kits',
@@ -409,7 +595,7 @@ const Adapters = {
       const summary = items.length
         ? items.map(it => it.product).filter(Boolean).join(', ').slice(0, 200)
         : (e.product || '');
-      return {
+      const row = {
         id: e.id,
         vendor: e.vendor || '',
         product: summary,
@@ -419,6 +605,11 @@ const Adapters = {
         cost_mode: mode,
         items,
       };
+      // Optional columns — dropped automatically if Supabase doesn't have them
+      // yet, so the rest of the row still syncs. See ALL_OPTIONAL_COLUMNS.
+      if (orderColumnAvailable('exp_category')) row.exp_category = expenseCategory(e);
+      if (orderColumnAvailable('exclude_from_net')) row.exclude_from_net = !!e.excludeFromNet;
+      return row;
     },
     fromRow: (r) => {
       const cost = Number(r.cost) || 0;
@@ -446,6 +637,10 @@ const Adapters = {
         costMode,
         totalCost: cost,
         items,
+        // Left blank when the column is missing — migrateExpenses() then fills
+        // it in from the name-based classifier.
+        category: r.exp_category || '',
+        excludeFromNet: !!r.exclude_from_net,
       };
     },
   },
@@ -462,15 +657,35 @@ function intOrNull(v) { return v == null || v === '' ? null : parseInt(v, 10); }
 // added (run the ALTER TABLE noted in the tooltip).
 const OPTIONAL_ORDER_COLUMNS = ['payments', 'discount', 'inventory_applied'];
 const OPTIONAL_STOCK_COLUMNS = ['reorder', 'original_price', 'category'];
+const OPTIONAL_EXPENSE_COLUMNS = ['exp_category', 'exclude_from_net'];
+const OPTIONAL_SHIPMENT_COLUMNS = ['date_received'];
 // Every optional column across tables, so the missing-column detector and the
 // upsert retry loop work for stock as well as orders. Column names are unique
 // across our tables, so a single localStorage flag per name is unambiguous.
-const ALL_OPTIONAL_COLUMNS = [...OPTIONAL_ORDER_COLUMNS, ...OPTIONAL_STOCK_COLUMNS];
+// `exp_category` is listed before stock's `category` because the missing-column
+// detector matches by substring — "category" would otherwise swallow it and
+// disable the wrong column.
+const ALL_OPTIONAL_COLUMNS = [
+  ...OPTIONAL_ORDER_COLUMNS, ...OPTIONAL_EXPENSE_COLUMNS,
+  ...OPTIONAL_SHIPMENT_COLUMNS, ...OPTIONAL_STOCK_COLUMNS,
+];
+// A column marked missing used to stay missing forever in that browser, so
+// running the ALTER TABLE in Supabase did nothing until site data was cleared.
+// The flag now stores when it was set and expires, so the column gets retried
+// on its own and starts syncing shortly after it exists.
+const MISSING_COLUMN_RETRY_MS = 60 * 60 * 1000;
 function orderColumnAvailable(col) {
-  try { return localStorage.getItem('lumen-supabase-missing-' + col) !== '1'; } catch { return true; }
+  try {
+    const raw = localStorage.getItem('lumen-supabase-missing-' + col);
+    if (!raw) return true;
+    const ts = Number(raw);
+    // Legacy flags were the literal '1' — treat those as due for a retry.
+    if (!Number.isFinite(ts) || ts <= 1) return true;
+    return (Date.now() - ts) > MISSING_COLUMN_RETRY_MS;
+  } catch { return true; }
 }
 function markOrderColumnMissing(col) {
-  try { localStorage.setItem('lumen-supabase-missing-' + col, '1'); } catch {}
+  try { localStorage.setItem('lumen-supabase-missing-' + col, String(Date.now())); } catch {}
 }
 // Migrate the old payments-specific flag to the generic scheme.
 (function migrateColumnFlags() {
@@ -1485,13 +1700,24 @@ function renderDashboard() {
   const grossProfit = round2(orders.reduce((s, o) => s + orderPaidProfit(o), 0));
   const pendingGross = round2(orders.reduce((s, o) => s + orderBalance(o), 0));
   const pendingNet = round2(orders.reduce((s, o) => s + orderUnpaidProfit(o), 0));
-  const expSum = round2(state.expenses.reduce((s, e) => s + expenseCost(e), 0));
+  // Operating spend only — capital / owner-funded purchases (the vehicle, and
+  // anything else the owner covered personally) get their own KPI so they never
+  // distort how the operation itself is performing.
+  const opexSum = sumOperating(state.expenses);
+  const capexSum = sumCapital(state.expenses);
 
-  // True Net Profit = Gross Profit − Total Expenses (what actually lands in the business account).
-  const trueNetProfit = round2(grossProfit - expSum);
+  // True Net Profit = Gross Profit − Operating Expenses (what actually lands in the business account).
+  const trueNetProfit = round2(grossProfit - opexSum);
+  // All-In Position folds the owner-funded spend back in — the real cash story.
+  const allInPosition = round2(trueNetProfit - capexSum);
 
   $('#kpiGross').textContent = fmt$(grossRevenue);
-  $('#kpiExp').textContent = fmt$(expSum);
+  $('#kpiExp').textContent = fmt$(opexSum);
+  $('#kpiCapital').textContent = fmt$(capexSum);
+  $('#kpiAllIn').textContent = fmt$(allInPosition);
+  // Red when the all-in picture is underwater, so "operating at a loss" reads
+  // at a glance instead of needing the minus sign to be spotted.
+  $('#kpiAllIn').closest('.kpi')?.classList.toggle('is-negative', allInPosition < 0);
   $('#kpiNet').textContent = fmt$(grossProfit);
   $('#kpiNetTrue').textContent = fmt$(trueNetProfit);
   $('#kpiPending').textContent = fmt$(pendingGross);
@@ -4152,16 +4378,442 @@ function stockModal(existing) {
   }, initial);
 }
 
+
+// ---------- Tap surfaces: menus, sheets, filter panels ----------
+// One primitive behind every tap-to-open surface in the app. On a phone it
+// presents as a bottom sheet — thumb-reachable, safe-area aware, big rows. On
+// anything wider it becomes a popover anchored to whatever was tapped. Both
+// share the same dismiss rules so the behaviour is never surprising.
+const PHONE_QUERY = '(max-width: 640px)';
+function isPhoneWidth() {
+  try { return window.matchMedia(PHONE_QUERY).matches; } catch { return window.innerWidth <= 640; }
+}
+
+let activeOverlay = null;
+
+function closeOverlay() {
+  if (!activeOverlay) return;
+  const ov = activeOverlay;
+  activeOverlay = null;
+  ov.backdrop.classList.remove('show');
+  ov.panel.classList.remove('show');
+  document.removeEventListener('keydown', ov.onKey, true);
+  window.removeEventListener('resize', ov.onReflow);
+  window.removeEventListener('scroll', ov.onReflow, true);
+  if (ov.locked) unlockBodyScroll();
+  // Let the transition finish before the nodes go, so it doesn't snap shut.
+  // onClose runs first so borrowed DOM (the live filter fields) is returned
+  // before the wrapper is removed from the document.
+  try { ov.onClose && ov.onClose(); } catch (e) { console.error('overlay onClose failed', e); }
+  setTimeout(() => {
+    ov.backdrop.remove();
+    ov.panel.remove();
+  }, 200);
+}
+
+// Keep a popover inside the viewport: prefer directly under the anchor and
+// right-aligned to it, then clamp. On a phone this is skipped entirely.
+function positionPopover(panel, anchor) {
+  if (!anchor) {
+    panel.style.top = '50%';
+    panel.style.left = '50%';
+    panel.style.transform = 'translate(-50%, -50%)';
+    return;
+  }
+  const r = anchor.getBoundingClientRect();
+  const pad = 8;
+  const pw = panel.offsetWidth;
+  const ph = panel.offsetHeight;
+  let left = r.right - pw;
+  let top = r.bottom + 6;
+  // Flip above when there isn't room below.
+  if (top + ph > window.innerHeight - pad) {
+    const above = r.top - ph - 6;
+    if (above > pad) top = above;
+    else top = Math.max(pad, window.innerHeight - ph - pad);
+  }
+  left = Math.min(Math.max(pad, left), window.innerWidth - pw - pad);
+  panel.style.top = top + 'px';
+  panel.style.left = left + 'px';
+}
+
+// buildBody(bodyEl, close) fills the panel. onClose fires exactly once, before
+// the nodes are detached.
+function openOverlayPanel({ anchor, title, subtitle, buildBody, onClose, wide }) {
+  closeOverlay();
+  const phone = isPhoneWidth();
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'ov-backdrop';
+
+  const panel = document.createElement('div');
+  panel.className = 'ov-panel ' + (phone ? 'ov-sheet' : 'ov-popover') + (wide ? ' ov-wide' : '');
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-modal', 'true');
+
+  if (phone) panel.innerHTML = '<div class="ov-grabber"></div>';
+  if (title) {
+    const head = document.createElement('div');
+    head.className = 'ov-head';
+    head.innerHTML = '<span class="ov-title">' + escapeHtml(title) + '</span>' +
+      (subtitle ? '<span class="ov-sub">' + escapeHtml(subtitle) + '</span>' : '');
+    panel.appendChild(head);
+  }
+  const body = document.createElement('div');
+  body.className = 'ov-body';
+  panel.appendChild(body);
+
+  const ov = { backdrop, panel, onClose, locked: phone };
+  ov.onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeOverlay(); } };
+  // A popover is anchored to a moving element, so it follows layout changes.
+  // The sheet is fixed to the bottom and doesn't care.
+  ov.onReflow = () => { if (phone) return; positionPopover(panel, anchor); };
+
+  buildBody(body, closeOverlay);
+
+  document.body.appendChild(backdrop);
+  document.body.appendChild(panel);
+  activeOverlay = ov;
+
+  if (phone) lockBodyScroll();
+  else positionPopover(panel, anchor);
+
+  backdrop.addEventListener('click', closeOverlay);
+  document.addEventListener('keydown', ov.onKey, true);
+  window.addEventListener('resize', ov.onReflow);
+  window.addEventListener('scroll', ov.onReflow, true);
+
+  // Force a reflow so the browser registers the closed state, then flip to
+  // open in the same tick. requestAnimationFrame would be the usual trick, but
+  // it can be throttled or skipped (background tab, nested frame) and the panel
+  // would then sit off-screen with no way back.
+  void panel.offsetHeight;
+  backdrop.classList.add('show');
+  panel.classList.add('show');
+  return closeOverlay;
+}
+
+// Row action menu. Each action is { label, hint, icon, danger, confirm, onSelect }.
+// A 'confirm' action doesn't fire on first tap — the menu swaps to an inline
+// confirm step instead. That keeps destructive taps deliberate without a native
+// confirm() dialog, which on iOS blocks the whole page.
+function openActionMenu(anchor, title, actions, subtitle) {
+  return openOverlayPanel({
+    anchor, title, subtitle,
+    buildBody: (body, close) => {
+      const draw = (confirming) => {
+        body.innerHTML = '';
+        const list = confirming ? [confirming.confirmStep] : actions;
+        for (const a of list) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'ov-item' + (a.danger ? ' danger' : '');
+          btn.innerHTML =
+            '<span class="ov-item-icon">' + (a.icon || '') + '</span>' +
+            '<span class="ov-item-text"><span class="ov-item-label">' + escapeHtml(a.label) + '</span>' +
+            (a.hint ? '<span class="ov-item-hint">' + escapeHtml(a.hint) + '</span>' : '') + '</span>';
+          btn.addEventListener('click', () => {
+            if (a.confirm) {
+              draw({
+                confirmStep: {
+                  label: a.confirm,
+                  hint: 'Tap again to confirm — this cannot be undone.',
+                  icon: a.icon,
+                  danger: true,
+                  onSelect: a.onSelect,
+                },
+              });
+              return;
+            }
+            close();
+            // Defer so the panel is visually gone before a modal opens over it.
+            setTimeout(() => a.onSelect && a.onSelect(), 0);
+          });
+          body.appendChild(btn);
+        }
+        if (confirming) {
+          const back = document.createElement('button');
+          back.type = 'button';
+          back.className = 'ov-item ov-item-quiet';
+          back.innerHTML = '<span class="ov-item-icon">‹</span><span class="ov-item-text"><span class="ov-item-label">Cancel</span></span>';
+          back.addEventListener('click', () => draw(null));
+          body.appendChild(back);
+        }
+      };
+      draw(null);
+    },
+  });
+}
+
+// ---------- Filter panels ----------
+// The real <select> elements live in a hidden host in the page and are moved
+// into the panel on open, then moved back on close. Nothing is cloned, so the
+// existing persistFilter() wiring, saved values, and change listeners all keep
+// working untouched.
+function openFilterPanel(anchor, hostId, onCleared) {
+  const fields = document.getElementById(hostId);
+  if (!fields) return;
+  const home = fields.parentNode;
+  fields.hidden = false;
+  openOverlayPanel({
+    anchor,
+    title: 'Filters',
+    wide: true,
+    buildBody: (body, close) => {
+      body.appendChild(fields);
+      const foot = document.createElement('div');
+      foot.className = 'ov-foot';
+      foot.innerHTML =
+        '<button type="button" class="btn ghost" data-ov-clear>Clear all</button>' +
+        '<button type="button" class="btn primary" data-ov-done>Done</button>';
+      foot.querySelector('[data-ov-clear]').addEventListener('click', () => {
+        onCleared && onCleared();
+      });
+      foot.querySelector('[data-ov-done]').addEventListener('click', close);
+      body.appendChild(foot);
+    },
+    onClose: () => {
+      fields.hidden = true;
+      home.appendChild(fields);
+    },
+  });
+}
+
+// Active-filter chips. \'fields\' is [{ el, label, format }]; a filter counts as
+// active when its value isn't the first option ("all"). Tapping a chip clears
+// just that one. Returns the active count so the button can show a badge.
+function renderFilterChips(container, fields, searchEl) {
+  if (!container) return 0;
+  const chips = [];
+  if (searchEl && searchEl.value.trim()) {
+    chips.push({
+      label: 'Search',
+      value: searchEl.value.trim(),
+      clear: () => { searchEl.value = ''; searchEl.dispatchEvent(new Event('input', { bubbles: true })); },
+    });
+  }
+  for (const f of fields) {
+    const el = f.el;
+    if (!el || !el.value || el.value === 'all' || el.value === '') continue;
+    const opt = el.options[el.selectedIndex];
+    chips.push({
+      label: f.label,
+      value: f.format ? f.format(el.value) : (opt ? opt.textContent : el.value),
+      clear: () => { el.value = 'all'; el.dispatchEvent(new Event('input', { bubbles: true })); },
+    });
+  }
+  container.innerHTML = chips.map((c, i) =>
+    '<button type="button" class="filter-chip" data-chip="' + i + '">' +
+      '<span class="fc-label">' + escapeHtml(c.label) + '</span>' +
+      '<span class="fc-value">' + escapeHtml(String(c.value)) + '</span>' +
+      '<span class="fc-x" aria-hidden="true">×</span>' +
+    '</button>').join('');
+  container.hidden = chips.length === 0;
+  container.querySelectorAll('[data-chip]').forEach(btn => {
+    btn.addEventListener('click', () => chips[Number(btn.dataset.chip)].clear());
+  });
+  return chips.length;
+}
+
+// Mirror the active count onto the Filters button so the state is visible
+// without opening the panel.
+function setFilterCount(btnId, n) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  const badge = btn.querySelector('.filter-count');
+  if (!badge) return;
+  badge.textContent = n ? String(n) : '';
+  btn.classList.toggle('has-filters', n > 0);
+}
+
+// ---------- Collapsible analysis cards ----------
+// The breakdown / vendor cards are useful on a desktop and just a wall to
+// scroll past on a phone. Collapsed by default under the phone breakpoint,
+// always open above it.
+function wireCollapsibleCard(cardId) {
+  const card = document.getElementById(cardId);
+  if (!card || card.dataset.collapseWired) return;
+  card.dataset.collapseWired = '1';
+  const head = card.querySelector('.card-head');
+  const bodyEl = card.querySelector('[data-collapse-body]');
+  if (!head || !bodyEl) return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'card-collapse-btn';
+  btn.setAttribute('aria-label', 'Toggle section');
+  btn.innerHTML = '<span class="cc-chevron">▾</span>';
+  head.appendChild(btn);
+  const apply = (open) => {
+    card.classList.toggle('is-collapsed', !open);
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+  // Phones start collapsed; wider screens are always open.
+  apply(!isPhoneWidth());
+  head.addEventListener('click', (e) => {
+    if (!isPhoneWidth()) return;
+    if (e.target.closest('a, select, input')) return;
+    apply(card.classList.contains('is-collapsed'));
+  });
+  window.addEventListener('resize', () => { if (!isPhoneWidth()) apply(true); });
+}
+
 // ---------- SHIPMENTS ----------
 const shipSearch = $('#shipSearch');
 const shipFilter = $('#shipFilter');
 const shipSort = $('#shipSort');
+const shipCategory = $('#shipCategory');
+const shipVendor = $('#shipVendor');
+const shipMonth = $('#shipMonth');
+const SHIP_VENDOR_KEY = 'lumen.shipments.vendor';
+const SHIP_MONTH_KEY = 'lumen.shipments.month';
+// Product categories are a fixed list, so this dropdown can be built once.
+// Vendor and month depend on the data and get rebuilt on every render.
+shipCategory.innerHTML = '<option value="all">All Categories</option>' +
+  CATEGORIES.map(c => `<option value="${c.key}">${c.label}</option>`).join('');
 persistFilter(shipSearch, 'lumen.shipments.search');
 persistFilter(shipFilter, 'lumen.shipments.filter');
 persistFilter(shipSort, 'lumen.shipments.sort');
-[shipSearch, shipFilter, shipSort].forEach(el => el.addEventListener('input', renderShipments));
-$('#shipReset').addEventListener('click', () => resetFilters([shipSearch, shipFilter, shipSort]));
+persistFilter(shipCategory, 'lumen.shipments.category');
+persistFilter(shipVendor, SHIP_VENDOR_KEY);
+persistFilter(shipMonth, SHIP_MONTH_KEY);
+wireSearchClear(shipSearch);
+const SHIP_FILTERS = [shipSearch, shipFilter, shipSort, shipCategory, shipVendor, shipMonth];
+SHIP_FILTERS.forEach(el => el.addEventListener('input', renderShipments));
+const SHIP_CHIP_FIELDS = [
+  { el: shipFilter, label: 'Status' },
+  { el: shipCategory, label: 'Category' },
+  { el: shipVendor, label: 'Vendor' },
+  { el: shipMonth, label: 'Month' },
+];
+$('#shipFilterBtn').addEventListener('click', (e) =>
+  openFilterPanel(e.currentTarget, 'shipFilterFields', () => resetFilters(SHIP_FILTERS)));
 $('#addShipBtn').addEventListener('click', () => shipModal());
+$('#shipExportBtn')?.addEventListener('click', () => exportShipmentsCSV());
+
+// ---------- Shipment status, aging, and tracking ----------
+// A pending shipment gets louder the longer it sits. Thresholds are generous
+// on purpose — international peptide vendors routinely run past a week and a
+// page full of red flags stops meaning anything.
+const SHIP_AGING_DAYS = 10;    // amber: worth a look
+const SHIP_OVERDUE_DAYS = 21;  // red: chase it
+
+// Whole days between two ISO dates, or null when either is missing. Parsed at
+// local midnight so DST shifts can't round a result off by one.
+function daysBetweenISO(fromISO, toISO) {
+  if (!fromISO || !toISO) return null;
+  const a = new Date(fromISO + 'T00:00:00');
+  const b = new Date(toISO + 'T00:00:00');
+  if (isNaN(a) || isNaN(b)) return null;
+  return Math.round((b - a) / 86400000);
+}
+
+// Actual door-to-door time, only knowable once a shipment has both dates.
+function shipmentTransitDays(s) {
+  if (!s || !s.delivered) return null;
+  const d = daysBetweenISO(s.dateOrdered, s.dateReceived);
+  return d != null && d >= 0 ? d : null;
+}
+
+// How long a still-pending shipment has been outstanding.
+function shipmentPendingDays(s) {
+  if (!s || s.delivered) return null;
+  const d = daysBetweenISO(s.dateOrdered, todayISO());
+  return d != null && d >= 0 ? d : null;
+}
+
+// One resolved status per shipment, driving the badge, the row tint, and the
+// summary tiles so all three can never disagree.
+function shipmentStatus(s) {
+  if (s && s.delivered) {
+    const days = shipmentTransitDays(s);
+    return {
+      key: 'delivered',
+      label: 'Delivered',
+      days,
+      detail: days == null ? '' : `${days}d in transit`,
+    };
+  }
+  const days = shipmentPendingDays(s);
+  if (days == null) return { key: 'transit', label: 'Pending', days: null, detail: '' };
+  if (days >= SHIP_OVERDUE_DAYS) return { key: 'overdue', label: 'Overdue', days, detail: `${days}d out` };
+  if (days >= SHIP_AGING_DAYS) return { key: 'aging', label: 'Aging', days, detail: `${days}d out` };
+  return { key: 'transit', label: 'In transit', days, detail: `${days}d out` };
+}
+
+// Keep dateReceived consistent with the delivered flag. Flipping Delivered on
+// stamps today's date (only when it's blank — never overwrite a date the user
+// typed); flipping it off clears the date, because an undelivered shipment
+// hasn't been received. Returns true when the date actually changed.
+function syncShipmentReceived(shipment, isDelivered) {
+  if (!shipment) return false;
+  if (isDelivered) {
+    if (!shipment.dateReceived) { shipment.dateReceived = todayISO(); return true; }
+    return false;
+  }
+  if (shipment.dateReceived) { shipment.dateReceived = ''; return true; }
+  return false;
+}
+
+// Product category for a shipment, resolved through inventory so a shipment
+// line reads the same as the product it restocks.
+function shipmentCategory(s) { return itemCategory(s && s.product); }
+
+// Carrier tracking link, guessed from the number's shape. Returns null when
+// nothing matches, so the caller can fall back to plain text rather than
+// sending the user to a lookup page that won't recognize the number.
+function trackingUrl(tracking) {
+  const t = String(tracking || '').replace(/[\s-]/g, '').toUpperCase();
+  if (!t) return null;
+  if (/^1Z[0-9A-Z]{16}$/.test(t)) {
+    return { carrier: 'UPS', url: `https://www.ups.com/track?tracknum=${encodeURIComponent(t)}` };
+  }
+  // USPS: 20–22 digits, and the IMpb numbers this business actually gets all
+  // start 92/93/94/95.
+  if (/^(9[2-5])\d{18,20}$/.test(t)) {
+    return { carrier: 'USPS', url: `https://tools.usps.com/go/TrackConfirmAction?tLabels=${encodeURIComponent(t)}` };
+  }
+  if (/^\d{12}$|^\d{15}$|^\d{20}$/.test(t)) {
+    return { carrier: 'FedEx', url: `https://www.fedex.com/fedextrack/?trknbr=${encodeURIComponent(t)}` };
+  }
+  if (/^\d{10}$|^\d{11}$/.test(t)) {
+    return { carrier: 'DHL', url: `https://www.dhl.com/en/express/tracking.html?AWB=${encodeURIComponent(t)}` };
+  }
+  return null;
+}
+
+// Total stock items across a set of shipments.
+function shipmentsItemTotal(list) {
+  return (list || []).reduce((sum, s) => sum + shipmentUnitCount(s), 0);
+}
+
+// Average door-to-door days across shipments that have both dates. Returns
+// null when nothing in the set has been measured yet.
+function averageTransitDays(list) {
+  const measured = (list || []).map(shipmentTransitDays).filter(d => d != null);
+  if (!measured.length) return null;
+  return measured.reduce((a, b) => a + b, 0) / measured.length;
+}
+
+// Per-vendor rollup for the vendor performance card: how much is outstanding,
+// how much has landed, and how fast that vendor actually delivers.
+function shipmentVendorStats(list) {
+  const by = new Map();
+  for (const s of (list || [])) {
+    const name = (s.vendor || '').trim() || 'No vendor';
+    let row = by.get(name);
+    if (!row) { row = { vendor: name, total: 0, pending: 0, overdue: 0, items: 0, shipments: [] }; by.set(name, row); }
+    row.total++;
+    row.items += shipmentUnitCount(s);
+    if (!s.delivered) {
+      row.pending++;
+      if (shipmentStatus(s).key === 'overdue') row.overdue++;
+    }
+    row.shipments.push(s);
+  }
+  return [...by.values()]
+    .map(r => ({ ...r, avgDays: averageTransitDays(r.shipments) }))
+    .sort((a, b) => b.total - a.total);
+}
 
 // Adjust the matching stock product's qty when a shipment's delivered state flips.
 // Returns the affected stock row (or null) so callers can sync it to the cloud.
@@ -4169,10 +4821,12 @@ $('#addShipBtn').addEventListener('click', () => shipModal());
 // Prior shipments are treated as historical and don't affect stock counts.
 const SHIPMENT_INVENTORY_CUTOFF = '2026-04-14';
 
-// 1 kit = 10 vials. Shipments default to "kits" unless explicitly set to "qty".
+// Stock units on one shipment line: a kit counts as 10, a qty line counts
+// 1:1. Called "items" everywhere in the UI, since a mixed list of kit and
+// qty lines is not a vial count.
 const KIT_TO_VIAL_MULTIPLIER = 10;
 
-function shipmentVialCount(shipment) {
+function shipmentUnitCount(shipment) {
   const n = parseInt(shipment.kits, 10);
   if (!Number.isFinite(n) || n <= 0) return 0;
   const unit = shipment.unit === 'qty' ? 'qty' : 'kits';
@@ -4183,12 +4837,12 @@ function applyShipmentInventoryDelta(shipment, isDelivered) {
   if (!shipment || !shipment.product) return null;
   // Skip shipments ordered on/before the cutoff.
   if ((shipment.dateOrdered || '') <= SHIPMENT_INVENTORY_CUTOFF) return null;
-  const vials = shipmentVialCount(shipment);
-  if (vials <= 0) return null;
+  const units = shipmentUnitCount(shipment);
+  if (units <= 0) return null;
   const target = (shipment.product || '').toLowerCase().trim();
   const product = state.stock.find(p => (p.name || '').toLowerCase().trim() === target);
   if (!product) return null;
-  const delta = isDelivered ? vials : -vials;
+  const delta = isDelivered ? units : -units;
   product.qty = Math.max(0, (Number(product.qty) || 0) + delta);
   if (product.qty > 0 && product.status !== 'ACTIVE') product.status = 'ACTIVE';
   return product;
@@ -4249,7 +4903,7 @@ function wireGroupExpand(body) {
   // column). Date / qty / total / switches / actions cells no longer trigger
   // expansion when tapped.
   function tapToExpand(cell, e) {
-    if (e.target.closest('label.switch, button, input, .pill, [data-toggle-group]')) return;
+    if (e.target.closest('label.switch, button, input, select, .cat-chip, .pill, [data-toggle-group]')) return;
     const chev = cell.closest('tr')?.querySelector('[data-toggle-group]');
     if (chev) chev.click();
   }
@@ -4270,7 +4924,33 @@ function wireGroupExpand(body) {
   }
 }
 
+// Vendor dropdown, built from whatever vendors actually appear in the data.
+function refreshShipVendorDropdown() {
+  const vendors = Array.from(new Set(
+    state.shipments.map(s => (s.vendor || '').trim()).filter(Boolean)
+  )).sort((a, b) => a.localeCompare(b));
+  const stored = (() => { try { return localStorage.getItem(SHIP_VENDOR_KEY) || ''; } catch { return ''; } })();
+  const cur = shipVendor.value || stored;
+  shipVendor.innerHTML = '<option value="all">All Vendors</option>' +
+    vendors.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+  if (cur === 'all' || vendors.includes(cur)) shipVendor.value = cur;
+  else shipVendor.value = 'all';
+}
+
+function refreshShipMonthDropdown() {
+  const months = Array.from(new Set(state.shipments.map(s => monthKey(s.dateOrdered)).filter(Boolean)))
+    .sort((a, b) => b.localeCompare(a));
+  const stored = (() => { try { return localStorage.getItem(SHIP_MONTH_KEY) || ''; } catch { return ''; } })();
+  const cur = shipMonth.value || stored;
+  shipMonth.innerHTML = '<option value="all">All Months</option>' +
+    months.map(m => `<option value="${m}">${monthName(m + '-01')}</option>`).join('');
+  if (cur === 'all' || months.includes(cur)) shipMonth.value = cur;
+  else shipMonth.value = 'all';
+}
+
 function renderShipments() {
+  refreshShipVendorDropdown();
+  refreshShipMonthDropdown();
   const q = shipSearch.value.toLowerCase().trim();
   const f = shipFilter.value;
   const shipDir = shipSort.value === 'asc' ? 1 : -1;
@@ -4280,6 +4960,13 @@ function renderShipments() {
   if (q) rows = rows.filter(s => [s.vendor, s.product, s.tracking].join(' ').toLowerCase().includes(q));
   if (f === 'pending') rows = rows.filter(s => !s.delivered);
   if (f === 'delivered') rows = rows.filter(s => s.delivered);
+  if (f === 'overdue') rows = rows.filter(s => shipmentStatus(s).key === 'overdue');
+  const cat = shipCategory.value || 'all';
+  if (cat !== 'all') rows = rows.filter(s => shipmentCategory(s) === cat);
+  const vend = shipVendor.value || 'all';
+  if (vend !== 'all') rows = rows.filter(s => (s.vendor || '').trim() === vend);
+  const mo = shipMonth.value || 'all';
+  if (mo !== 'all') rows = rows.filter(s => monthKey(s.dateOrdered) === mo);
 
   // Group by vendor + date + tracking — same vendor/day OR same tracking number
   // collapses into one row with a dropdown. Re-sort the groups to honor the
@@ -4294,13 +4981,26 @@ function renderShipments() {
     `<tr><td colspan="7" class="muted" style="padding:24px;text-align:center;">No shipments match.</td></tr>`;
   restoreGroupExpansion(body, expandedBefore);
 
+  const itemTotal = shipmentsItemTotal(rows);
+  $('#shipCount').textContent = `${rows.length} shipment${rows.length === 1 ? '' : 's'}`;
+  $('#shipItems').textContent = itemTotal > 0 ? `${fmtN(itemTotal)} items` : '';
+  renderShipSummary(rows);
+  renderShipBreakdown(rows);
+  renderShipVendors(rows);
+  setFilterCount('shipFilterBtn', renderFilterChips($('#shipChips'), SHIP_CHIP_FIELDS, shipSearch));
+  wireCollapsibleCard('shipBreakdownCard');
+  wireCollapsibleCard('shipVendorCard');
+
   body.querySelectorAll('[data-ship-delivered]').forEach(el => el.addEventListener('change', e => {
     const s = state.shipments.find(x => x.id === el.dataset.shipDelivered);
     if (!s) return;
     const wasDelivered = !!s.delivered;
     s.delivered = e.target.checked;
     let stockChanged = null;
-    if (wasDelivered !== s.delivered) stockChanged = applyShipmentInventoryDelta(s, s.delivered);
+    if (wasDelivered !== s.delivered) {
+      syncShipmentReceived(s, s.delivered);
+      stockChanged = applyShipmentInventoryDelta(s, s.delivered);
+    }
     saveState();
     cloudUpsert('shipments', s);
     if (stockChanged) {
@@ -4309,21 +5009,67 @@ function renderShipments() {
     }
     renderShipments(); renderInventory(); renderDashboard();
   }));
-  body.querySelectorAll('[data-edit-ship]').forEach(el => el.addEventListener('click', () => {
-    const s = state.shipments.find(x => x.id === el.dataset.editShip);
-    if (s) shipModal(s);
+  body.querySelectorAll('[data-ship-menu]').forEach(el => el.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    const sh = state.shipments.find(x => x.id === el.dataset.shipMenu);
+    if (!sh) return;
+    const st = shipmentStatus(sh);
+    const link = trackingUrl(sh.tracking);
+    const actions = [{ label: 'Edit shipment', icon: '✎', onSelect: () => shipModal(sh) }];
+    if (link) {
+      actions.push({
+        label: 'Track with ' + link.carrier, icon: '⤴', hint: sh.tracking,
+        onSelect: () => window.open(link.url, '_blank', 'noopener'),
+      });
+    }
+    if (sh.tracking) {
+      actions.push({
+        label: 'Copy tracking number', icon: '⧉',
+        onSelect: async () => {
+          try { await navigator.clipboard.writeText(sh.tracking); toast('Tracking number copied.'); }
+          catch { toast('Could not copy — long-press the number instead.'); }
+        },
+      });
+    }
+    actions.push({
+      label: 'Delete shipment', icon: '🗑', danger: true, confirm: 'Delete permanently',
+      onSelect: () => {
+        // Reverse the stock it contributed before removing it, same as the
+        // edit modal's delete path.
+        const touched = [];
+        if (sh.delivered) {
+          const reverted = applyShipmentInventoryDelta(sh, false);
+          if (reverted) touched.push(reverted);
+        }
+        state.shipments = state.shipments.filter(x => x.id !== sh.id);
+        saveState(); cloudDelete('shipments', sh.id);
+        if (touched.length) cloudUpsertMany('stock', touched);
+        renderShipments(); renderInventory(); renderDashboard();
+        toast('Shipment deleted.');
+      },
+    });
+    openActionMenu(el, (sh.vendor || '').trim() || 'Shipment', actions,
+      `${st.label}${st.detail ? ' · ' + st.detail : ''}`);
   }));
-  body.querySelectorAll('[data-del-ship]').forEach(el => el.addEventListener('click', () => {
-    if (!confirm('Delete this shipment?')) return;
-    const id = el.dataset.delShip;
-    state.shipments = state.shipments.filter(x => x.id !== id);
-    saveState(); cloudDelete('shipments', id); renderShipments(); toast('Shipment deleted.');
-  }));
-  body.querySelectorAll('[data-edit-ship-group]').forEach(el => el.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const ids = el.dataset.editShipGroup.split(',');
-    const groupShipments = ids.map(id => state.shipments.find(x => x.id === id)).filter(Boolean);
-    if (groupShipments.length) shipGroupModal(groupShipments);
+  body.querySelectorAll('[data-ship-group-menu]').forEach(el => el.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    const ids = el.dataset.shipGroupMenu.split(',');
+    const group = ids.map(id => state.shipments.find(x => x.id === id)).filter(Boolean);
+    if (!group.length) return;
+    const first = group[0];
+    const link = trackingUrl(first.tracking);
+    const actions = [{
+      label: 'Edit all ' + group.length + ' lines', icon: '✎',
+      onSelect: () => shipGroupModal(group),
+    }];
+    if (link) {
+      actions.push({
+        label: 'Track with ' + link.carrier, icon: '⤴', hint: first.tracking,
+        onSelect: () => window.open(link.url, '_blank', 'noopener'),
+      });
+    }
+    openActionMenu(el, (first.vendor || '').trim() || 'Shipment group', actions,
+      `${group.length} products · ${fmtN(shipmentsItemTotal(group))} items`);
   }));
   body.querySelectorAll('[data-group-ship-delivered]').forEach(el => el.addEventListener('change', () => {
     const updated = [];
@@ -4335,6 +5081,7 @@ function renderShipments() {
       s.delivered = el.checked;
       updated.push(s);
       if (wasDelivered !== s.delivered) {
+        syncShipmentReceived(s, s.delivered);
         const p = applyShipmentInventoryDelta(s, s.delivered);
         if (p && !stockUpdated.includes(p)) stockUpdated.push(p);
       }
@@ -4345,6 +5092,154 @@ function renderShipments() {
     renderShipments(); renderInventory(); renderDashboard();
   }));
   wireGroupExpand(body);
+}
+
+// Four tiles: what's still out, what's late, how much stock is riding on the
+// pending boxes, and how fast things have actually been arriving.
+function renderShipSummary(rows) {
+  const el = $('#shipSummary');
+  if (!el) return;
+  const pending = rows.filter(s => !s.delivered);
+  const overdue = pending.filter(s => shipmentStatus(s).key === 'overdue');
+  const aging = pending.filter(s => shipmentStatus(s).key === 'aging');
+  const delivered = rows.filter(s => s.delivered);
+  const pendingItems = shipmentsItemTotal(pending);
+  const avg = averageTransitDays(delivered);
+  const oldest = pending
+    .map(s => shipmentPendingDays(s))
+    .filter(d => d != null)
+    .sort((a, b) => b - a)[0];
+
+  el.innerHTML = `
+    <div class="exp-stat ship-stat-transit">
+      <div class="exp-stat-label">In Transit</div>
+      <div class="exp-stat-value">${fmtN(pending.length)}</div>
+      <div class="exp-stat-note">${oldest != null ? `Oldest ${oldest}d out` : 'Nothing outstanding'}</div>
+    </div>
+    <div class="exp-stat ship-stat-late${overdue.length ? '' : ' is-empty'}">
+      <div class="exp-stat-label">Needs Chasing</div>
+      <div class="exp-stat-value">${fmtN(overdue.length)}</div>
+      <div class="exp-stat-note">${aging.length
+        ? `${aging.length} more aging past ${SHIP_AGING_DAYS}d`
+        : `Overdue past ${SHIP_OVERDUE_DAYS}d`}</div>
+    </div>
+    <div class="exp-stat ship-stat-items">
+      <div class="exp-stat-label">Items Incoming</div>
+      <div class="exp-stat-value">${fmtN(pendingItems)}</div>
+      <div class="exp-stat-note">Not yet counted in inventory</div>
+    </div>
+    <div class="exp-stat ship-stat-avg">
+      <div class="exp-stat-label">Avg Transit</div>
+      <div class="exp-stat-value">${avg == null ? '—' : `${avg.toFixed(1)}d`}</div>
+      <div class="exp-stat-note">${avg == null
+        ? 'No received dates recorded yet'
+        : `Across ${delivered.filter(s => shipmentTransitDays(s) != null).length} delivered`}</div>
+    </div>`;
+}
+
+// Same share-bar component the Expenses page uses, counting stock items
+// rather than dollars — items are what matters for incoming stock.
+function renderShipBreakdown(rows) {
+  const el = $('#shipBreakdown');
+  if (!el) return;
+  const by = new Map();
+  for (const s of rows) {
+    const key = shipmentCategory(s);
+    let row = by.get(key);
+    if (!row) { row = { key, items: 0, count: 0, pending: 0 }; by.set(key, row); }
+    row.items += shipmentUnitCount(s);
+    row.count++;
+    if (!s.delivered) row.pending += shipmentUnitCount(s);
+  }
+  const totals = CATEGORIES.map(c => by.get(c.key)).filter(Boolean);
+  const grand = totals.reduce((sum, r) => sum + r.items, 0);
+  const note = $('#shipBreakdownNote');
+  if (note) note.textContent = grand > 0 ? `${fmtN(grand)} items` : '';
+  if (!totals.length || grand <= 0) {
+    el.innerHTML = '<p class="muted" style="margin:0;">No shipments in this range.</p>';
+    return;
+  }
+  const active = shipCategory.value || 'all';
+  const bar = totals.map(r =>
+    `<span class="exp-bar-seg" data-cat="${r.key}" style="flex:${r.items}" title="${escapeHtml(categoryLabel(r.key))} — ${fmtN(r.items)} items"></span>`
+  ).join('');
+  const legend = totals.map(r => {
+    const raw = (r.items / grand) * 100;
+    const pct = raw > 0 && raw < 0.5 ? '<1' : Math.round(raw);
+    return `<button type="button" class="exp-legend${active === r.key ? ' active' : ''}" data-filter-shipcat="${r.key}">
+        <span class="exp-legend-dot" data-cat="${r.key}"></span>
+        <span class="exp-legend-name">${escapeHtml(categoryLabel(r.key))}</span>
+        <span class="exp-legend-amt">${fmtN(r.items)}</span>
+        <span class="exp-legend-pct">${pct}%</span>
+        ${r.pending > 0 ? `<span class="exp-legend-cap" title="Still in transit">${fmtN(r.pending)} out</span>` : ''}
+      </button>`;
+  }).join('');
+  el.innerHTML = `<div class="exp-bar">${bar}</div><div class="exp-legend-grid">${legend}</div>`;
+  el.querySelectorAll('[data-filter-shipcat]').forEach(btn => btn.addEventListener('click', () => {
+    const key = btn.dataset.filterShipcat;
+    shipCategory.value = shipCategory.value === key ? 'all' : key;
+    shipCategory.dispatchEvent(new Event('input', { bubbles: true }));
+  }));
+}
+
+// Who you buy from, how much is outstanding with them, and how long they
+// actually take. Clicking a row filters the table to that vendor.
+function renderShipVendors(rows) {
+  const el = $('#shipVendors');
+  if (!el) return;
+  const stats = shipmentVendorStats(rows);
+  if (!stats.length) {
+    el.innerHTML = '<p class="muted" style="margin:0;">No shipments in this range.</p>';
+    return;
+  }
+  const active = shipVendor.value || 'all';
+  el.innerHTML = stats.map(v => `
+    <button type="button" class="ship-vendor${active === v.vendor ? ' active' : ''}" data-filter-vendor="${escapeHtml(v.vendor)}">
+      <span class="sv-name">${escapeHtml(v.vendor)}</span>
+      <span class="sv-stat"><b>${fmtN(v.total)}</b> shipment${v.total === 1 ? '' : 's'}</span>
+      <span class="sv-stat sv-avg">${v.avgDays == null ? '<span class="muted">— days</span>' : `<b>${v.avgDays.toFixed(1)}</b> days avg`}</span>
+      ${v.overdue > 0
+        ? `<span class="sv-flag overdue">${v.overdue} overdue</span>`
+        : v.pending > 0 ? `<span class="sv-flag">${v.pending} out</span>` : ''}
+    </button>`).join('');
+  el.querySelectorAll('[data-filter-vendor]').forEach(btn => btn.addEventListener('click', () => {
+    const name = btn.dataset.filterVendor;
+    shipVendor.value = shipVendor.value === name ? 'all' : name;
+    shipVendor.dispatchEvent(new Event('input', { bubbles: true }));
+  }));
+}
+
+// ---------- Shipment cell renderers ----------
+// Ordered → received on one line, with the aging/transit badge beside it. Two
+// separate date columns would have pushed the table past what fits.
+function shipTimelineCell(s) {
+  const st = shipmentStatus(s);
+  const ordered = s.dateOrdered ? fmtDateShort(s.dateOrdered) : '—';
+  const received = s.dateReceived ? fmtDateShort(s.dateReceived) : '';
+  const arrow = received
+    ? `<span class="tl-arrow">→</span><span class="tl-date">${received}</span>`
+    : '';
+  const badge = st.detail
+    ? `<span class="ship-badge" data-status="${st.key}">${escapeHtml(st.detail)}</span>`
+    : '';
+  return `<span class="ship-timeline"><span class="tl-date">${ordered}</span>${arrow}${badge}</span>`;
+}
+
+// Product category chip, read-only here — the category comes from the product
+// record, so it's changed on the Inventory page, not per shipment.
+function shipCategoryChip(s) {
+  const key = shipmentCategory(s);
+  return `<span class="cat-chip static" data-cat="${key}"><span class="cat-chip-label">${escapeHtml(categoryLabel(key))}</span></span>`;
+}
+
+// Tracking number, linked to the carrier when the number's shape identifies
+// one. Unrecognized numbers stay as plain copyable text.
+function shipTrackingCell(tracking) {
+  const t = String(tracking || '').trim();
+  if (!t) return '<span class="muted">—</span>';
+  const hit = trackingUrl(t);
+  if (!hit) return `<span class="tracking-no" title="${escapeHtml(t)}">${escapeHtml(t)}</span>`;
+  return `<a class="tracking-no tracking-link" href="${hit.url}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(t)} — track with ${hit.carrier}"><span class="tracking-digits">${escapeHtml(t)}</span><span class="tracking-carrier">${hit.carrier}</span></a>`;
 }
 
 // Group shipments into one row when they share vendor+date OR a tracking number.
@@ -4385,17 +5280,44 @@ function renderShipmentGroup(g) {
   const distinctTrackings = [...new Set(trackings)];
   const groupTracking = distinctTrackings[0] || '';
   const groupTrackingCell = groupTracking
-    ? `<span style="font-family:monospace;font-size:12px;">${escapeHtml(groupTracking)}</span>${distinctTrackings.length > 1 ? ' <span class="muted" title="Children have different tracking numbers — expand to see each">+' + (distinctTrackings.length - 1) + '</span>' : ''}`
+    ? shipTrackingCell(groupTracking) + (distinctTrackings.length > 1 ? ' <span class="muted" title="Children have different tracking numbers — expand to see each">+' + (distinctTrackings.length - 1) + '</span>' : '')
     : '<span class="muted">—</span>';
 
+  // Every line in a group shares a vendor, a date and usually a box, so the
+  // group's status is the worst status among its children — one overdue line
+  // makes the whole group worth chasing.
+  const groupStatus = g.shipments
+    .map(shipmentStatus)
+    .reduce((worst, st) => {
+      const rank = { delivered: 0, transit: 1, aging: 2, overdue: 3 };
+      return rank[st.key] > rank[worst.key] ? st : worst;
+    }, { key: 'delivered', label: 'Delivered', days: null, detail: '' });
+  // Stock items, not line count — the useful number when a box is still out.
+  const groupItems = shipmentsItemTotal(g.shipments);
+  const groupCats = Array.from(new Set(g.shipments.map(shipmentCategory)));
+  const groupCatCell = groupCats.length === 1
+    ? `<span class="cat-chip static" data-cat="${groupCats[0]}"><span class="cat-chip-label">${escapeHtml(categoryLabel(groupCats[0]))}</span></span>`
+    : `<span class="grp-badge">${groupCats.length} categories</span>`;
+
   let html = `
-    <tr class="group-row">
+    <tr class="group-row ship-row" data-status="${groupStatus.key}">
       <td><b>${escapeHtml(g.vendor || '')}</b></td>
-      <td>${fmtDateShort(g.dateOrdered)}</td>
-      <td class="items-cell"><span class="chevron" data-toggle-group="${groupId}">▶</span><span class="grp-badge">${g.shipments.length} item${g.shipments.length === 1 ? '' : 's'}</span></td>
+      <td>${shipTimelineCell({
+        ...g.shipments[0],
+        dateOrdered: g.dateOrdered,
+        delivered: allDelivered,
+        // The box is only fully received once its last line arrives, so the
+        // group shows the latest child date rather than whichever happened to
+        // sort first.
+        dateReceived: allDelivered
+          ? g.shipments.map(s => s.dateReceived || '').filter(Boolean).sort().pop() || ''
+          : '',
+      })}</td>
+      <td class="cat-cell">${groupCatCell}</td>
+      <td class="items-cell"><span class="chevron" data-toggle-group="${groupId}">▶</span><span class="grp-badge">${g.shipments.length} product${g.shipments.length === 1 ? '' : 's'}</span>${groupItems > 0 ? `<span class="grp-badge">${fmtN(groupItems)} items</span>` : ''}</td>
       <td>${groupTrackingCell}</td>
       <td>${deliveredCell}</td>
-      <td><button class="icon-btn" data-edit-ship-group="${shipIds}" title="Edit group">✎</button></td>
+      <td class="row-actions"><button class="row-menu-btn" data-ship-group-menu="${shipIds}" aria-label="Actions" title="Actions">⋯</button></td>
     </tr>`;
   html += g.shipments.map(s => {
     const n = Number(s.kits) || 0;
@@ -4406,12 +5328,13 @@ function renderShipmentGroup(g) {
     const pill = `<span class="item-pill"><span class="ip-name">${escapeHtml(s.product || '')}</span><span class="ip-qty">${amtInner}</span></span>`;
     return `
     <tr class="child-row child-row-cells" data-parent="${groupId}" hidden>
-      <td colspan="3" class="cs-product-cell"><span class="cs-label">↳</span> ${pill}</td>
+      <td colspan="2" class="cs-product-cell"><span class="cs-label">↳</span> ${pill}</td>
+      <td class="cat-cell">${shipCategoryChip(s)}</td>
+      <td class="num muted">${shipmentUnitCount(s) > 0 ? `${fmtN(shipmentUnitCount(s))} items` : ''}</td>
       <td></td>
       <td><label class="switch"><input type="checkbox" data-ship-delivered="${s.id}" ${s.delivered ? 'checked' : ''}/><span class="slider"></span></label></td>
-      <td style="white-space:nowrap;">
-        <button class="icon-btn" data-edit-ship="${s.id}" title="Edit">✎</button>
-        <button class="icon-btn danger" data-del-ship="${s.id}" title="Delete">🗑</button>
+      <td class="row-actions">
+        <button class="row-menu-btn" data-ship-menu="${s.id}" aria-label="Actions" title="Actions">⋯</button>
       </td>
     </tr>`;
   }).join('');
@@ -4425,15 +5348,16 @@ function renderSingleShipmentRow(s) {
     : '';
   // Match the dropdown child rows: product + amount as a single pill.
   const pill = `<span class="item-pill"><span class="ip-name">${escapeHtml(s.product || '')}</span>${amtInner ? `<span class="ip-qty">${amtInner}</span>` : ''}</span>`;
-  return `<tr>
-    <td>${escapeHtml(s.vendor || '')}</td>
-    <td>${fmtDateShort(s.dateOrdered)}</td>
+  const st = shipmentStatus(s);
+  return `<tr class="ship-row" data-status="${st.key}">
+    <td>${(s.vendor || '').trim() ? `<b>${escapeHtml(s.vendor)}</b>` : '<span class="muted">No vendor</span>'}</td>
+    <td>${shipTimelineCell(s)}</td>
+    <td class="cat-cell">${shipCategoryChip(s)}</td>
     <td>${pill}</td>
-    <td><span style="font-family:monospace;font-size:12px;">${escapeHtml(s.tracking || '')}</span></td>
+    <td>${shipTrackingCell(s.tracking)}</td>
     <td><label class="switch"><input type="checkbox" data-ship-delivered="${s.id}" ${s.delivered ? 'checked' : ''}/><span class="slider"></span></label></td>
-    <td style="white-space:nowrap;">
-      <button class="icon-btn" data-edit-ship="${s.id}" title="Edit">✎</button>
-      <button class="icon-btn danger" data-del-ship="${s.id}" title="Delete">🗑</button>
+    <td class="row-actions">
+      <button class="row-menu-btn" data-ship-menu="${s.id}" aria-label="Actions" title="Actions">⋯</button>
     </td>
   </tr>`;
 }
@@ -4446,6 +5370,7 @@ function shipModal(existing) {
     const ed = {
       vendor: existing.vendor || '',
       dateOrdered: existing.dateOrdered || '',
+      dateReceived: existing.dateReceived || '',
       tracking: existing.tracking || '',
       delivered: !!existing.delivered,
       product: existing.product || '',
@@ -4466,6 +5391,7 @@ function shipModal(existing) {
         <label><span class="req">Vendor</span><input type="text" name="vendor" required value="${escapeHtml(ed.vendor)}" placeholder="e.g. Lumen Peptides" /></label>
         <label><span>Date Ordered</span><input type="date" name="dateOrdered" value="${ed.dateOrdered}" /></label>
       </div>
+      <label id="shipEditReceivedWrap"><span>Date Received</span><input type="date" name="dateReceived" value="${ed.dateReceived}" /><span class="field-hint">Stamped automatically when you mark it delivered.</span></label>
       <label><span class="req">Product</span><input type="text" name="product" list="shipEditProductList" autocomplete="off" required value="${escapeHtml(ed.product)}" placeholder="Search or add product…" /></label>
       <div class="row-2">
         <label><span>Amount</span><input type="number" name="kits" min="0" step="1" value="${escapeHtml(ed.kits)}" placeholder="e.g. 5" /></label>
@@ -4494,8 +5420,17 @@ function shipModal(existing) {
       const unit = form.querySelector('[name="unit"]').value === 'qty' ? 'qty' : 'kits';
       const tracking = form.querySelector('[name="tracking"]').value.trim();
       const delivered = form.querySelector('[name="delivered"]').checked;
+      // Typed date wins; otherwise stamp today when it's newly delivered and
+      // clear it when it isn't delivered at all.
+      let dateReceived = form.querySelector('[name="dateReceived"]').value || '';
+      if (delivered && !dateReceived) dateReceived = todayISO();
+      if (!delivered) dateReceived = '';
       if (!vendor) { alert('Vendor is required.'); return; }
       if (!product) { alert('Product is required.'); return; }
+      if (dateReceived && dateOrdered && dateReceived < dateOrdered) {
+        alert('Date Received is before Date Ordered.');
+        return;
+      }
 
       const wasDelivered = !!existing.delivered;
       // Reverse the OLD inventory contribution (using the old product/kits/unit)
@@ -4506,7 +5441,7 @@ function shipModal(existing) {
         const reverted = applyShipmentInventoryDelta(existing, false);
         if (reverted && !stockTouched.includes(reverted)) stockTouched.push(reverted);
       }
-      Object.assign(existing, { vendor, dateOrdered, product, kits, unit, tracking, delivered });
+      Object.assign(existing, { vendor, dateOrdered, dateReceived, product, kits, unit, tracking, delivered });
       const saved = existing;
 
       const { product: ensuredProduct, created: createdNew } = ensureStockProduct(saved.product);
@@ -4533,6 +5468,19 @@ function shipModal(existing) {
       renderShipments(); renderInventory(); renderDashboard();
       closeModal();
     };
+
+    // Delivered drives the received field: stamp today when it's switched on
+// and the box is empty, blank it when switched off.
+    const editDeliveredBox = form.querySelector('[name="delivered"]');
+    const editReceivedInput = form.querySelector('[name="dateReceived"]');
+    const syncEditReceived = () => {
+      const on = editDeliveredBox.checked;
+      form.querySelector('#shipEditReceivedWrap').hidden = !on;
+      if (on && !editReceivedInput.value) editReceivedInput.value = todayISO();
+      if (!on) editReceivedInput.value = '';
+    };
+    editDeliveredBox.addEventListener('change', syncEditReceived);
+    syncEditReceived();
 
     form.querySelector('#shipDeleteBtn').addEventListener('click', () => {
       if (!confirm('Delete this shipment? This cannot be undone.')) return;
@@ -4562,6 +5510,7 @@ function shipModal(existing) {
   const data = {
     vendor: '',
     dateOrdered: todayISO(),
+    dateReceived: '',
     tracking: '',
     delivered: false,
     items: [{ product: '', kits: '', unit: 'kits' }],
@@ -4671,9 +5620,12 @@ function shipModal(existing) {
       if (!it.product || !it.product.trim()) { alert('Each line needs a product.'); return; }
     }
 
+    // Entering something already delivered means it landed today unless the
+    // user says otherwise — the common case for logging a box after it arrives.
+    const dateReceived = delivered ? (todayISO()) : '';
     const created = data.items.map(it => ({
       id: uid('sh'),
-      vendor, dateOrdered, tracking, delivered,
+      vendor, dateOrdered, dateReceived, tracking, delivered,
       product: it.product.trim(),
       kits: it.kits || '',
       unit: it.unit === 'qty' ? 'qty' : 'kits',
@@ -4894,12 +5846,16 @@ function shipGroupModal(groupShipments) {
         const live = state.shipments.find(s => s.id === it.id);
         if (live) {
           Object.assign(live, { vendor, dateOrdered, tracking, delivered, product, kits, unit });
+          // Preserves a per-line received date that was already recorded; only
+          // fills or clears it to match the group's delivered state.
+          syncShipmentReceived(live, delivered);
           updated.push(live);
         }
       } else {
         const fresh = {
           id: uid('sh'),
           vendor, dateOrdered, tracking, delivered,
+          dateReceived: delivered ? todayISO() : '',
           product, kits, unit,
         };
         state.shipments.push(fresh);
@@ -4946,16 +5902,36 @@ const expSearch = $('#expSearch');
 const expMonth = $('#expMonth');
 const expDay = $('#expDay');
 const expSort = $('#expSort');
+const expCategory = $('#expCategory');
+const expFunding = $('#expFunding');
 const EXP_MONTH_KEY = 'lumen.expenses.month';
 const EXP_DAY_KEY = 'lumen.expenses.day';
+// The category dropdown is built once from the canonical list — unlike month /
+// day it doesn't depend on the data, so it can be populated before the first
+// render and persistFilter() can restore a saved choice immediately.
+expCategory.innerHTML = '<option value="all">All Categories</option>' +
+  EXPENSE_CATEGORIES.map(c => `<option value="${c.key}">${c.label}</option>`).join('');
 persistFilter(expSearch, 'lumen.expenses.search');
 persistFilter(expMonth, EXP_MONTH_KEY);
 persistFilter(expDay, EXP_DAY_KEY);
 persistFilter(expSort, 'lumen.expenses.sort');
+persistFilter(expCategory, 'lumen.expenses.category');
+persistFilter(expFunding, 'lumen.expenses.funding');
 wireSearchClear(expSearch);
-[expSearch, expMonth, expDay, expSort].forEach(el => el.addEventListener('input', renderExpenses));
-$('#expReset').addEventListener('click', () => resetFilters([expSearch, expMonth, expDay, expSort]));
+const EXP_FILTERS = [expSearch, expMonth, expDay, expSort, expCategory, expFunding];
+EXP_FILTERS.forEach(el => el.addEventListener('input', renderExpenses));
+// Which filters get a chip, and what to call them. Sort is deliberately left
+// out — it's an ordering preference, not a filter that hides rows.
+const EXP_CHIP_FIELDS = [
+  { el: expCategory, label: 'Category' },
+  { el: expMonth, label: 'Month' },
+  { el: expDay, label: 'Day' },
+  { el: expFunding, label: 'Funding' },
+];
+$('#expFilterBtn').addEventListener('click', (e) =>
+  openFilterPanel(e.currentTarget, 'expFilterFields', () => resetFilters(EXP_FILTERS)));
 $('#addExpBtn').addEventListener('click', () => expModal());
+$('#expExportBtn')?.addEventListener('click', () => exportExpensesCSV());
 
 function expenseItems(e) { return Array.isArray(e.items) ? e.items : []; }
 function expenseCost(e) {
@@ -4978,6 +5954,55 @@ function expenseItemLabel(it) {
     : '';
   const amtSpan = amtInner ? `<span class="ip-qty">${amtInner}</span>` : '';
   return `<span class="item-pill"><span class="ip-name">${escapeHtml(product)}</span>${amtSpan}</span>`;
+}
+
+// Category chip. Rendered as a native select so reassigning is one tap on
+// desktop and a native picker on mobile — no custom menu to get stuck open
+// inside a scrolling table.
+function expenseCategoryChip(e) {
+  const cur = expenseCategory(e);
+  const opts = EXPENSE_CATEGORIES
+    .map(c => `<option value="${c.key}" ${c.key === cur ? 'selected' : ''}>${escapeHtml(c.label)}</option>`)
+    .join('');
+  return `<span class="cat-chip" data-cat="${cur}">
+      <span class="cat-chip-label">${escapeHtml(expenseCategoryShort(cur))}</span>
+      <select class="cat-chip-select" data-set-cat="${e.id}" aria-label="Category">${opts}</select>
+    </span>`;
+}
+
+// Vendor is optional — a lot of older records only have a description. Render
+// a muted placeholder rather than an empty cell so the column still reads as a
+// column.
+function vendorCell(vendor) {
+  const v = (vendor || '').trim();
+  return v ? `<b>${escapeHtml(v)}</b>` : '<span class="muted">No vendor</span>';
+}
+
+// Small badge marking an expense as capital / owner-funded, so a row that is
+// missing from the operating total explains itself at a glance.
+function capitalBadge(e) {
+  return expenseExcluded(e)
+    ? '<span class="cap-badge" title="Capital / owner-funded — excluded from Net Profit">Capital</span>'
+    : '';
+}
+
+// Reassigning a category writes through immediately: local state, disk, cloud,
+// then a re-render so the summary and breakdown move with it.
+function wireCategorySelects(body) {
+  body.querySelectorAll('[data-set-cat]').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const e = state.expenses.find(x => x.id === sel.dataset.setCat);
+      if (!e) return;
+      e.category = sel.value;
+      saveState();
+      cloudUpsert('expenses', e);
+      renderExpenses();
+      renderDashboard();
+      toast(`Filed under ${expenseCategoryLabel(e.category)}.`);
+    });
+    // Keep a tap on the chip from bubbling into the row's expand handler.
+    sel.addEventListener('click', ev => ev.stopPropagation());
+  });
 }
 
 function refreshExpMonthDropdown() {
@@ -5017,8 +6042,14 @@ function renderExpenses() {
   if (dy !== 'all') rows = rows.filter(e => e.dateOrdered === dy);
   if (q) rows = rows.filter(e =>
     (e.vendor || '').toLowerCase().includes(q) ||
+    expenseCategoryLabel(expenseCategory(e)).toLowerCase().includes(q) ||
     expenseItems(e).some(it => (it.product || '').toLowerCase().includes(q))
   );
+  const cat = expCategory.value || 'all';
+  if (cat !== 'all') rows = rows.filter(e => expenseCategory(e) === cat);
+  const funding = expFunding.value || 'all';
+  if (funding === 'operating') rows = rows.filter(e => !expenseExcluded(e));
+  else if (funding === 'capital') rows = rows.filter(e => expenseExcluded(e));
 
   // consolidateExpenses sorts internally desc — re-sort here so the user's
   // chosen direction wins.
@@ -5029,7 +6060,7 @@ function renderExpenses() {
   const body = $('#expBody');
   const expandedBefore = getExpandedGroupIds(body);
   body.innerHTML = groups.map(g => renderExpenseGroup(g)).join('') ||
-    `<tr><td colspan="5" class="muted" style="padding:24px;text-align:center;">No expenses match.</td></tr>`;
+    `<tr><td colspan="6" class="muted" style="padding:24px;text-align:center;">No expenses match.</td></tr>`;
   restoreGroupExpansion(body, expandedBefore);
 
   const expCount = rows.length;
@@ -5037,19 +6068,125 @@ function renderExpenses() {
   $('#expCount').textContent = itemCount === expCount
     ? `${expCount} expense${expCount === 1 ? '' : 's'}`
     : `${expCount} expense${expCount === 1 ? '' : 's'} · ${itemCount} item${itemCount === 1 ? '' : 's'}`;
-  $('#expSum').textContent = fmt$(rows.reduce((s, e) => s + expenseCost(e), 0));
 
-  body.querySelectorAll('[data-edit-exp]').forEach(el => el.addEventListener('click', () => {
-    const e = state.expenses.find(x => x.id === el.dataset.editExp);
-    if (e) expModal(e);
+  const opex = sumOperating(rows);
+  const capex = sumCapital(rows);
+  $('#expSum').textContent = fmt$(round2(opex + capex));
+  // Only spell out the split when there's actually a capital line to explain.
+  $('#expFootSplit').textContent = capex > 0
+    ? `${fmt$(opex)} operating + ${fmt$(capex)} capital`
+    : '';
+
+  renderExpenseSummary(rows, opex, capex);
+  renderExpenseBreakdown(rows);
+  setFilterCount('expFilterBtn', renderFilterChips($('#expChips'), EXP_CHIP_FIELDS, expSearch));
+  wireCollapsibleCard('expBreakdownCard');
+
+  body.querySelectorAll('[data-exp-menu]').forEach(el => el.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    const e = state.expenses.find(x => x.id === el.dataset.expMenu);
+    if (!e) return;
+    const items = expenseItems(e);
+    const what = items.length === 1 ? (items[0].product || '') : `${items.length} items`;
+    openActionMenu(el, (e.vendor || '').trim() || 'Expense', [
+      { label: 'Edit expense', icon: '✎', onSelect: () => expModal(e) },
+      {
+        label: expenseExcluded(e) ? 'Move back to operating' : 'Mark capital / owner-funded',
+        hint: expenseExcluded(e)
+          ? 'Counts against Net Profit again'
+          : 'Excluded from Net Profit, tracked separately',
+        icon: expenseExcluded(e) ? '↩' : '⚑',
+        onSelect: () => {
+          e.excludeFromNet = !expenseExcluded(e);
+          saveState(); cloudUpsert('expenses', e);
+          renderExpenses(); renderDashboard();
+          toast(expenseExcluded(e) ? 'Moved to capital / owner-funded.' : 'Moved back to operating.');
+        },
+      },
+      {
+        label: 'Delete expense', icon: '🗑', danger: true, confirm: 'Delete permanently',
+        onSelect: () => {
+          state.expenses = state.expenses.filter(x => x.id !== e.id);
+          saveState(); cloudDelete('expenses', e.id);
+          renderExpenses(); renderDashboard(); toast('Expense deleted.');
+        },
+      },
+    ], `${fmt$(expenseCost(e))}${what ? ' · ' + what : ''}`);
   }));
-  body.querySelectorAll('[data-del-exp]').forEach(el => el.addEventListener('click', () => {
-    if (!confirm('Delete this expense?')) return;
-    const id = el.dataset.delExp;
-    state.expenses = state.expenses.filter(x => x.id !== id);
-    saveState(); cloudDelete('expenses', id); renderExpenses(); toast('Expense deleted.');
-  }));
+  wireCategorySelects(body);
   wireGroupExpand(body);
+}
+
+// Three tiles above the table: what the business itself paid, what the owner
+// covered, and the two together. The capital tile stays visible even at zero so
+// the page doesn't reflow the moment something gets flagged.
+function renderExpenseSummary(rows, opex, capex) {
+  const el = $('#expSummary');
+  if (!el) return;
+  const total = round2(opex + capex);
+  const capCount = rows.filter(expenseExcluded).length;
+  const share = total > 0 ? Math.round((capex / total) * 100) : 0;
+  el.innerHTML = `
+    <div class="exp-stat exp-stat-op">
+      <div class="exp-stat-label">Operating Expenses</div>
+      <div class="exp-stat-value">${fmt$(opex)}</div>
+      <div class="exp-stat-note">Deducted from Net Profit</div>
+    </div>
+    <div class="exp-stat exp-stat-cap${capex > 0 ? '' : ' is-empty'}">
+      <div class="exp-stat-label">Capital &amp; Owner-Funded</div>
+      <div class="exp-stat-value">${fmt$(capex)}</div>
+      <div class="exp-stat-note">${capCount
+        ? `${capCount} purchase${capCount === 1 ? '' : 's'} · ${share}% of outlay`
+        : 'Nothing flagged yet'}</div>
+    </div>
+    <div class="exp-stat exp-stat-total">
+      <div class="exp-stat-label">Total Outlay</div>
+      <div class="exp-stat-value">${fmt$(total)}</div>
+      <div class="exp-stat-note">Every dollar spent, however funded</div>
+    </div>`;
+}
+
+// Horizontal share bar plus a clickable legend. Clicking a category drives the
+// toolbar filter, so the breakdown doubles as navigation.
+function renderExpenseBreakdown(rows) {
+  const el = $('#expBreakdown');
+  if (!el) return;
+  const totals = expenseCategoryTotals(rows);
+  const grand = totals.reduce((s, r) => s + r.total, 0);
+  const note = $('#expBreakdownNote');
+  if (note) {
+    note.textContent = totals.length
+      ? `${totals.length} categor${totals.length === 1 ? 'y' : 'ies'} · ${fmt$(round2(grand))}`
+      : '';
+  }
+  if (!totals.length || grand <= 0) {
+    el.innerHTML = '<p class="muted" style="margin:0;">No expenses in this range.</p>';
+    return;
+  }
+  const active = expCategory.value || 'all';
+  const bar = totals.map(r =>
+    `<span class="exp-bar-seg" data-cat="${r.key}" style="flex:${r.total}" title="${escapeHtml(expenseCategoryLabel(r.key))} — ${fmt$(r.total)}"></span>`
+  ).join('');
+  const legend = totals.map(r => {
+    const raw = (r.total / grand) * 100;
+    // Anything non-zero but under half a percent would round to 0% and read as
+    // "nothing spent here" — show it as <1% instead.
+    const pct = raw > 0 && raw < 0.5 ? '<1' : Math.round(raw);
+    return `<button type="button" class="exp-legend${active === r.key ? ' active' : ''}" data-filter-cat="${r.key}">
+        <span class="exp-legend-dot" data-cat="${r.key}"></span>
+        <span class="exp-legend-name">${escapeHtml(expenseCategoryLabel(r.key))}</span>
+        <span class="exp-legend-amt">${fmt$(r.total)}</span>
+        <span class="exp-legend-pct">${pct}%</span>
+        ${r.capital > 0 ? `<span class="exp-legend-cap" title="Capital / owner-funded portion">${fmt$(r.capital)} cap</span>` : ''}
+      </button>`;
+  }).join('');
+  el.innerHTML = `<div class="exp-bar">${bar}</div><div class="exp-legend-grid">${legend}</div>`;
+  el.querySelectorAll('[data-filter-cat]').forEach(btn => btn.addEventListener('click', () => {
+    const key = btn.dataset.filterCat;
+    // Second click on the active category clears the filter.
+    expCategory.value = expCategory.value === key ? 'all' : key;
+    expCategory.dispatchEvent(new Event('input', { bubbles: true }));
+  }));
 }
 
 // Consolidate expenses by shared vendor + date — multiple receipts on the same
@@ -5077,10 +6214,19 @@ function renderExpenseGroup(g) {
   const totalCost = g.expenses.reduce((s, e) => s + expenseCost(e), 0);
   const totalItems = g.expenses.reduce((s, e) => s + expenseItems(e).length, 0);
 
+  // A consolidated group can span several categories — show the single shared
+  // category when they agree, and a count when they don't.
+  const cats = Array.from(new Set(g.expenses.map(expenseCategory)));
+  const catCell = cats.length === 1
+    ? `<span class="cat-chip static" data-cat="${cats[0]}"><span class="cat-chip-label">${escapeHtml(expenseCategoryShort(cats[0]))}</span></span>`
+    : `<span class="grp-badge">${cats.length} categories</span>`;
+  const anyCapital = g.expenses.some(expenseExcluded);
+
   let html = `
     <tr class="group-row">
-      <td><b>${escapeHtml(g.vendor || '')}</b><span class="grp-badge">${g.expenses.length} expense${g.expenses.length === 1 ? '' : 's'}</span></td>
+      <td>${vendorCell(g.vendor)}<span class="grp-badge">${g.expenses.length} expense${g.expenses.length === 1 ? '' : 's'}</span></td>
       <td>${g.dateOrdered ? fmtDateShort(g.dateOrdered) : '<span class="muted">—</span>'}</td>
+      <td class="cat-cell">${catCell}${anyCapital ? '<span class="cap-badge">Capital</span>' : ''}</td>
       <td class="items-cell"><span class="chevron" data-toggle-group="${groupId}">▶</span><span class="grp-badge">${totalItems} item${totalItems === 1 ? '' : 's'}</span></td>
       <td class="num"><b>${fmt$(totalCost)}</b></td>
       <td></td>
@@ -5092,14 +6238,14 @@ function renderExpenseGroup(g) {
       : `<span class="grp-badge">${items.length} items</span>`;
     return `
       <tr class="child-row" data-parent="${groupId}" hidden>
-        <td colspan="5" class="child-cell">
+        <td colspan="6" class="child-cell">
           <div class="child-strip">
             <span class="cs-label">↳</span>
             <span class="cs-items">${productsCell}</span>
+            ${expenseCategoryChip(e)}${capitalBadge(e)}
             <span class="cs-total">${fmt$(expenseCost(e))}</span>
             <span class="cs-actions">
-              <button class="icon-btn" data-edit-exp="${e.id}" title="Edit">✎</button>
-              <button class="icon-btn danger" data-del-exp="${e.id}" title="Delete">🗑</button>
+              <button class="row-menu-btn" data-exp-menu="${e.id}" aria-label="Actions" title="Actions">⋯</button>
             </span>
           </div>
         </td>
@@ -5116,16 +6262,16 @@ function renderExpenseRow(e) {
   const totalCost = expenseCost(e);
 
   let html = `
-    <tr class="group-row">
-      <td><b>${escapeHtml(e.vendor || '')}</b></td>
+    <tr class="group-row${expenseExcluded(e) ? ' is-capital' : ''}">
+      <td>${vendorCell(e.vendor)}</td>
       <td>${e.dateOrdered ? fmtDateShort(e.dateOrdered) : '<span class="muted">—</span>'}</td>
+      <td class="cat-cell">${expenseCategoryChip(e)}${capitalBadge(e)}</td>
       <td class="items-cell">
         <span class="chevron" data-toggle-group="${groupId}">▶</span><span class="grp-badge">${items.length} items</span>
       </td>
       <td class="num"><b>${fmt$(totalCost)}</b></td>
-      <td style="white-space:nowrap;">
-        <button class="icon-btn" data-edit-exp="${e.id}" title="Edit">✎</button>
-        <button class="icon-btn danger" data-del-exp="${e.id}" title="Delete">🗑</button>
+      <td class="row-actions">
+        <button class="row-menu-btn" data-exp-menu="${e.id}" aria-label="Actions" title="Actions">⋯</button>
       </td>
     </tr>`;
   // Show per-item cost only when the expense is tracked per-item — in total
@@ -5133,7 +6279,7 @@ function renderExpenseRow(e) {
   const showPerItemCost = e.costMode === 'perItem';
   html += items.map(it => `
     <tr class="child-row" data-parent="${groupId}" hidden>
-      <td colspan="5" class="child-cell">
+      <td colspan="6" class="child-cell">
         <div class="child-strip">
           <span class="cs-label">↳</span>
           <span class="cs-items">${expenseItemLabel(it)}</span>
@@ -5150,14 +6296,14 @@ function renderSingleExpenseRow(e) {
   // Use expenseCost(e) instead of it.cost so total-cost-mode expenses (where
   // each line item's cost is 0 and the real amount lives on e.totalCost)
   // display correctly. Also covers per-item-mode multi-item rows.
-  return `<tr>
-    <td>${escapeHtml(e.vendor || '')}</td>
+  return `<tr${expenseExcluded(e) ? ' class="is-capital"' : ''}>
+    <td>${vendorCell(e.vendor)}</td>
     <td>${e.dateOrdered ? fmtDateShort(e.dateOrdered) : '<span class="muted">—</span>'}</td>
+    <td class="cat-cell">${expenseCategoryChip(e)}${capitalBadge(e)}</td>
     <td>${expenseItemLabel(it)}</td>
     <td class="num">${fmt$(expenseCost(e))}</td>
-    <td style="white-space:nowrap;">
-      <button class="icon-btn" data-edit-exp="${e.id}" title="Edit">✎</button>
-      <button class="icon-btn danger" data-del-exp="${e.id}" title="Delete">🗑</button>
+    <td class="row-actions">
+      <button class="row-menu-btn" data-exp-menu="${e.id}" aria-label="Actions" title="Actions">⋯</button>
     </td>
   </tr>`;
 }
@@ -5165,7 +6311,7 @@ function renderSingleExpenseRow(e) {
 function expModal(existing) {
   const data = existing
     ? JSON.parse(JSON.stringify(existing))
-    : { vendor: '', dateOrdered: todayISO(), dateReceived: '', costMode: 'total', totalCost: 0, items: [{ product: '', qty: 1, unit: 'qty', cost: 0 }] };
+    : { vendor: '', dateOrdered: todayISO(), dateReceived: '', costMode: 'total', totalCost: 0, category: '', excludeFromNet: false, items: [{ product: '', qty: 1, unit: 'qty', cost: 0 }] };
   if (!Array.isArray(data.items)) data.items = [];
   if (data.items.length === 0) data.items.push({ product: '', qty: 1, unit: 'qty', cost: 0 });
   // Backfill new fields on legacy items so the form renders cleanly.
@@ -5178,6 +6324,12 @@ function expModal(existing) {
   if (typeof data.vendor !== 'string') data.vendor = '';
   if (data.costMode !== 'total' && data.costMode !== 'perItem') data.costMode = 'total';
   if (typeof data.totalCost !== 'number') data.totalCost = 0;
+  data.excludeFromNet = !!data.excludeFromNet;
+  // A new expense has no category until the description is typed — leave it
+  // empty so autoCategory() can keep guessing as the user fills the form, and
+  // stop guessing the moment they pick one themselves.
+  let categoryTouched = EXPENSE_CATEGORY_KEYS.includes(data.category);
+  if (!categoryTouched) data.category = classifyExpense(expenseText(data));
 
   $('#modalTitle').textContent = existing ? 'Edit Expense' : 'New Expense';
   const form = $('#modalForm');
@@ -5202,6 +6354,20 @@ function expModal(existing) {
       <span class="switch"><input type="checkbox" id="expCostPerItem" ${data.costMode === 'perItem' ? 'checked' : ''} /><span class="slider"></span></span>
     </label>
     <label id="expTotalCostWrap"><span class="req">Total Cost</span><input type="number" min="0" step="any" name="totalCost" value="${data.totalCost || ''}" placeholder="0.00" /></label>
+    <label>
+      <span class="req">Category</span>
+      <select name="category" id="expCategorySelect">
+        ${EXPENSE_CATEGORIES.map(c => `<option value="${c.key}" ${c.key === data.category ? 'selected' : ''}>${escapeHtml(c.label)}</option>`).join('')}
+      </select>
+      <span class="field-hint" id="expCatHint"></span>
+    </label>
+    <label class="toggle-row">
+      <span class="toggle-row-label">
+        Capital / owner-funded
+        <span class="toggle-row-hint">On = didn't come out of the business account. Tracked separately, not deducted from Net Profit.</span>
+      </span>
+      <span class="switch"><input type="checkbox" id="expExcludeNet" ${data.excludeFromNet ? 'checked' : ''} /><span class="slider"></span></span>
+    </label>
     <div class="items-section">
       <div class="items-head">
         <span class="label">Products</span>
@@ -5211,13 +6377,39 @@ function expModal(existing) {
       <div id="itemsList"></div>
       <div class="items-summary">
         <span><span class="muted">Items</span> <b id="sumCount">0</b></span>
-        <span><span class="muted">Vials</span> <b id="sumVials">0</b></span>
+        <span><span class="muted">Items</span> <b id="sumItems">0</b></span>
         <span><span class="muted">Total</span> <b id="sumTotal">$0</b></span>
       </div>
     </div>
   `;
 
   const totalCostInput = form.querySelector('[name="totalCost"]');
+  const categorySelect = form.querySelector('#expCategorySelect');
+  const categoryHint = form.querySelector('#expCatHint');
+
+  // Keep re-guessing the category from vendor + line items while the user
+  // types, right up until they choose one by hand. After that the form stops
+  // second-guessing them.
+  function autoCategory() {
+    if (categoryTouched) return;
+    const text = expenseText(data);
+    const guess = classifyExpense(text);
+    data.category = guess;
+    categorySelect.value = guess;
+    // Nothing typed yet means nothing was actually classified — claiming
+    // "filed automatically" over an empty form would be a lie.
+    categoryHint.textContent = text
+      ? 'Filed automatically — change it if this is wrong.'
+      : '';
+  }
+  categorySelect.addEventListener('change', () => {
+    categoryTouched = true;
+    data.category = categorySelect.value;
+    categoryHint.textContent = '';
+  });
+  form.querySelector('#expExcludeNet').addEventListener('change', (ev) => {
+    data.excludeFromNet = ev.target.checked;
+  });
 
   function applyMode() {
     const perItem = data.costMode === 'perItem';
@@ -5267,6 +6459,7 @@ function expModal(existing) {
         let val = el.value;
         if (field === 'cost' || field === 'qty') val = val === '' ? null : Number(val);
         it[field] = val;
+        if (field === 'product') autoCategory();
         updateSummary();
       });
     });
@@ -5291,13 +6484,14 @@ function expModal(existing) {
 
   function updateSummary() {
     form.querySelector('#sumCount').textContent = data.items.length;
-    // Vial total — kits multiply ×10, qty stays 1:1. Mirrors the shipments rule.
-    const vials = data.items.reduce((s, it) => {
+    // Stock items — a kit counts as 10, a qty line 1:1. Mirrors the shipment
+    // rule, and is not a vial count once qty lines are in the mix.
+    const unitTotal = data.items.reduce((s, it) => {
       const q = Number(it.qty) || 0;
       const mult = it.unit === 'kits' ? KIT_TO_VIAL_MULTIPLIER : 1;
       return s + q * mult;
     }, 0);
-    form.querySelector('#sumVials').textContent = fmtN(vials);
+    form.querySelector('#sumItems').textContent = fmtN(unitTotal);
     const total = data.costMode === 'perItem'
       ? data.items.reduce((s, it) => s + (Number(it.cost) || 0), 0)
       // Read from the in-memory value (kept in sync by the input listener)
@@ -5325,6 +6519,10 @@ function expModal(existing) {
     data.totalCost = Number(totalCostInput.value) || 0;
     updateSummary();
   });
+  form.querySelector('[name="vendor"]').addEventListener('input', (ev) => {
+    data.vendor = ev.target.value;
+    autoCategory();
+  });
 
   form.querySelector('#addItemBtn').addEventListener('click', () => {
     const it = { product: '', qty: 1, unit: 'qty', cost: 0 };
@@ -5338,6 +6536,7 @@ function expModal(existing) {
   });
 
   applyMode();
+  autoCategory();
 
   modalOnSave = async () => {
     const vendorInput = form.querySelector('[name="vendor"]');
@@ -5369,7 +6568,11 @@ function expModal(existing) {
       unit: it.unit === 'kits' ? 'kits' : 'qty',
       cost: costMode === 'perItem' ? (Number(it.cost) || 0) : 0,
     }));
-    const payload = { vendor, dateOrdered, dateReceived, costMode, totalCost, items };
+    const category = EXPENSE_CATEGORY_KEYS.includes(categorySelect.value)
+      ? categorySelect.value
+      : classifyExpense([vendor, ...items.map(it => it.product)].join(' '));
+    const excludeFromNet = !!form.querySelector('#expExcludeNet').checked;
+    const payload = { vendor, dateOrdered, dateReceived, costMode, totalCost, category, excludeFromNet, items };
 
     let saved;
     if (existing && existing.id) {
@@ -5398,10 +6601,15 @@ function expModal(existing) {
     // than silently leaving local + cloud out of sync.
     if (sb) {
       try {
-        const row = Adapters.expenses.toRow(saved);
-        const { error } = await sb.from('expenses').upsert(row);
+        // Goes through upsertWithColumnRetry so a Supabase table that doesn't
+        // have exp_category / exclude_from_net yet still syncs everything else
+        // — the new fields stay in the local cache and populate cloud the
+        // moment the columns are added.
+        const error = await new Promise(resolve => {
+          upsertWithColumnRetry('expenses', [saved], ALL_OPTIONAL_COLUMNS.length, resolve);
+        });
         if (error) {
-          console.error('expense upsert failed', { row, error });
+          console.error('expense upsert failed', { id: saved.id, error });
           alert(`Saved locally, but cloud sync failed: ${error.message}\n\nReload may revert this edit. Check your Supabase schema (vendor / cost_mode / items columns).`);
           setCloudStatus('offline', 'Sync error');
           return;
@@ -5448,8 +6656,13 @@ function renderIncome() {
   const rev = round2(orders.reduce((s, o) => s + orderPaidRevenue(o), 0));
   const gross = round2(orders.reduce((s, o) => s + orderPaidProfit(o), 0));
   const cogs = round2(rev - gross);
-  const opex = round2(expenses.reduce((s, e) => s + expenseCost(e), 0));
+  // Operating expenses only — capital / owner-funded purchases are held out so
+  // Net Profit reflects how the operation itself performed. They come back in
+  // below as All-In Position.
+  const opex = sumOperating(expenses);
+  const capex = sumCapital(expenses);
   const net = round2(gross - opex);
+  const allIn = round2(net - capex);
   const margin = rev > 0 ? (net / rev * 100) : 0;
   const pendG = round2(orders.reduce((s, o) => s + orderBalance(o), 0));
   const pendN = round2(orders.reduce((s, o) => s + orderUnpaidProfit(o), 0));
@@ -5460,8 +6673,65 @@ function renderIncome() {
   $('#isOpex').textContent = fmt$(opex);
   $('#isNet').textContent = fmt$(net);
   $('#isMargin').textContent = margin.toFixed(1) + '%';
+  $('#isCapital').textContent = fmt$(capex);
+  const allInEl = $('#isAllIn');
+  allInEl.textContent = fmt$(allIn);
+  allInEl.classList.toggle('is-negative', allIn < 0);
   $('#isPendGross').textContent = fmt$(pendG);
   $('#isPendNet').textContent = fmt$(pendN);
+
+  const capCount = expenses.filter(expenseExcluded).length;
+  const capNote = $('#isCapitalNote');
+  if (capNote) {
+    capNote.textContent = capCount
+      ? `${capCount} purchase${capCount === 1 ? '' : 's'} flagged as capital or owner-funded. Held out of Net Profit; All-In Position puts ${capCount === 1 ? 'it' : 'them'} back.`
+      : 'Nothing flagged as capital or owner-funded in this period.';
+  }
+  renderIncomeCategories(expenses);
+}
+
+// The accountant-facing table: every category with its operating and capital
+// halves broken out, plus a total row that ties back to the summary cards.
+function renderIncomeCategories(expenses) {
+  const el = $('#isCatTable');
+  if (!el) return;
+  const totals = expenseCategoryTotals(expenses);
+  if (!totals.length) {
+    el.innerHTML = '<p class="muted" style="margin:0;">No expenses in this period.</p>';
+    return;
+  }
+  const anyCapital = totals.some(r => r.capital > 0);
+  const grand = { total: 0, operating: 0, capital: 0, count: 0 };
+  totals.forEach(r => {
+    grand.total += r.total; grand.operating += r.operating;
+    grand.capital += r.capital; grand.count += r.count;
+  });
+  const row = (r, cls) => `
+    <tr${cls ? ` class="${cls}"` : ''}>
+      <td>${escapeHtml(r.label)}</td>
+      <td class="num muted">${r.count}</td>
+      <td class="num">${fmt$(round2(r.operating))}</td>
+      ${anyCapital ? `<td class="num">${r.capital > 0 ? fmt$(round2(r.capital)) : '<span class="muted">—</span>'}</td>` : ''}
+      <td class="num"><b>${fmt$(round2(r.total))}</b></td>
+    </tr>`;
+  el.innerHTML = `
+    <table class="table compact">
+      <thead>
+        <tr>
+          <th>Category</th>
+          <th class="num">#</th>
+          <th class="num">Operating</th>
+          ${anyCapital ? '<th class="num">Capital</th>' : ''}
+          <th class="num">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${totals.map(r => row({ ...r, label: expenseCategoryLabel(r.key) })).join('')}
+      </tbody>
+      <tfoot>
+        ${row({ ...grand, label: 'Total' }, 'is-cat-total')}
+      </tfoot>
+    </table>`;
 }
 
 // ---------- MONTHLY (calendar view) ----------
@@ -6424,15 +7694,43 @@ function exportOrdersCSV() {
 }
 
 function exportExpensesCSV() {
-  const headers = ['Date Ordered', 'Date Received', 'Vendor', 'Description', 'Total Cost'];
+  // Operating and capital get their own columns rather than a single amount
+  // plus a flag — a bookkeeper can sum either column straight out of the sheet.
+  const headers = [
+    'Date Ordered', 'Date Received', 'Vendor', 'Category', 'Description',
+    'Operating Cost', 'Capital / Owner-Funded', 'Total Cost',
+  ];
   const rows = state.expenses.slice()
     .sort((a, b) => (a.dateOrdered || '').localeCompare(b.dateOrdered || ''))
     .map(e => [
       e.dateOrdered || '', e.dateReceived || '', e.vendor || '',
-      itemsSummary(expenseItems(e)) || (e.product || ''), round2(expenseCost(e)),
+      expenseCategoryLabel(expenseCategory(e)),
+      itemsSummary(expenseItems(e)) || (e.product || ''),
+      round2(expenseOperatingCost(e)), round2(expenseCapitalCost(e)), round2(expenseCost(e)),
     ]);
   downloadBlob(`lumen-expenses-${todayISO()}.csv`, toCSV(headers, rows), 'text/csv;charset=utf-8');
   toast(`Exported ${rows.length} expense${rows.length === 1 ? '' : 's'}.`);
+}
+
+function exportShipmentsCSV() {
+  const headers = [
+    'Date Ordered', 'Date Received', 'Transit Days', 'Vendor', 'Category',
+    'Product', 'Amount', 'Unit', 'Stock Items', 'Tracking', 'Status',
+  ];
+  const rows = state.shipments.slice()
+    .sort((a, b) => (a.dateOrdered || '').localeCompare(b.dateOrdered || ''))
+    .map(s => {
+      const st = shipmentStatus(s);
+      const transit = shipmentTransitDays(s);
+      return [
+        s.dateOrdered || '', s.dateReceived || '', transit == null ? '' : transit,
+        s.vendor || '', categoryLabel(shipmentCategory(s)),
+        s.product || '', s.kits || '', s.unit === 'qty' ? 'Qty' : 'Kits',
+        shipmentUnitCount(s), s.tracking || '', st.label,
+      ];
+    });
+  downloadBlob(`lumen-shipments-${todayISO()}.csv`, toCSV(headers, rows), 'text/csv;charset=utf-8');
+  toast(`Exported ${rows.length} shipment${rows.length === 1 ? '' : 's'}.`);
 }
 
 function exportInventoryCSV() {
@@ -6504,6 +7802,7 @@ function restoreFromBackup(file) {
 
 $('#exportOrdersBtn')?.addEventListener('click', exportOrdersCSV);
 $('#exportExpensesBtn')?.addEventListener('click', exportExpensesCSV);
+$('#exportShipmentsBtn')?.addEventListener('click', exportShipmentsCSV);
 $('#exportInventoryBtn')?.addEventListener('click', exportInventoryCSV);
 $('#backupBtn')?.addEventListener('click', backupAllJSON);
 (function wireRestore() {

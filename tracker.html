@@ -27,7 +27,7 @@
      fresh JS/CSS instead of serving the cached copy. iOS standalone mode
      caches scripts indefinitely once installed; a query-string change is the
      only thing that reliably busts it without removing/re-adding the bookmark. -->
-<link rel="stylesheet" href="styles.css?v=20260617-58" />
+<link rel="stylesheet" href="styles.css?v=20260617-59" />
 <!-- Preload the Zelle QR so it's already in the browser cache when the first
      invoice opens — guarantees a screenshot captures the image, no race. -->
 <link rel="preload" as="image" href="public/zelle-qr.png" />
@@ -110,10 +110,12 @@
       <div class="kpi-grid">
         <div class="kpi kpi-revenue" title="Cash collected, including partial payments"><div class="kpi-label">Gross Revenue</div><div class="kpi-value" id="kpiGross">$0</div></div>
         <div class="kpi kpi-net" title="Revenue − COGS"><div class="kpi-label">Gross Profit</div><div class="kpi-value" id="kpiNet">$0</div></div>
-        <div class="kpi kpi-net" title="Gross Profit − Expenses"><div class="kpi-label">True Net Profit</div><div class="kpi-value" id="kpiNetTrue">$0</div></div>
-        <div class="kpi kpi-expenses" title="All-time expenses"><div class="kpi-label">Total Expenses</div><div class="kpi-value" id="kpiExp">$0</div></div>
+        <div class="kpi kpi-net" title="Gross Profit − Operating Expenses. Capital / owner-funded purchases are excluded."><div class="kpi-label">True Net Profit</div><div class="kpi-value" id="kpiNetTrue">$0</div></div>
+        <div class="kpi kpi-expenses" title="All-time expenses paid out of the business account"><div class="kpi-label">Operating Expenses</div><div class="kpi-value" id="kpiExp">$0</div></div>
         <div class="kpi kpi-pending" title="Unpaid balances"><div class="kpi-label">Pending Gross</div><div class="kpi-value" id="kpiPending">$0</div></div>
         <div class="kpi kpi-pending" title="Profit waiting on payment"><div class="kpi-label">Pending Net</div><div class="kpi-value" id="kpiPendingNet">$0</div></div>
+        <div class="kpi kpi-capital" title="Capital / owner-funded purchases — tracked, but not deducted from Net Profit"><div class="kpi-label">Capital Outlay</div><div class="kpi-value" id="kpiCapital">$0</div></div>
+        <div class="kpi kpi-capital" title="True Net Profit − Capital Outlay. Every dollar in and out, however it was funded."><div class="kpi-label">All-In Position</div><div class="kpi-value" id="kpiAllIn">$0</div></div>
       </div>
 
       <div class="dash-grid">
@@ -156,6 +158,7 @@
           <div class="export-actions">
             <button type="button" class="btn ghost" id="exportOrdersBtn">Orders (CSV)</button>
             <button type="button" class="btn ghost" id="exportExpensesBtn">Expenses (CSV)</button>
+            <button type="button" class="btn ghost" id="exportShipmentsBtn">Shipments (CSV)</button>
             <button type="button" class="btn ghost" id="exportInventoryBtn">Inventory (CSV)</button>
             <button type="button" class="btn ghost" id="backupBtn">Backup All (JSON)</button>
             <button type="button" class="btn danger-outline" id="restoreBtn">Restore from Backup…</button>
@@ -328,32 +331,81 @@
       <header class="view-head">
         <div>
           <h1>Shipments Coming In</h1>
+          <p class="view-sub">Inbound stock · Aging flagged at 10 days, overdue at 21</p>
         </div>
-        <button class="btn primary" id="addShipBtn">+ New Shipment</button>
+        <div class="view-head-actions">
+          <button type="button" class="btn ghost" id="shipExportBtn">Export CSV</button>
+          <button class="btn primary" id="addShipBtn">+ New Shipment</button>
+        </div>
       </header>
 
-      <div class="toolbar">
-        <input type="text" id="shipSearch" placeholder="Search vendor, product, tracking…" />
-        <select id="shipFilter">
-          <option value="all">All</option>
-          <option value="pending">Pending</option>
-          <option value="delivered">Delivered</option>
-        </select>
-        <select id="shipSort">
-          <option value="desc">Newest first</option>
-          <option value="asc">Oldest first</option>
-        </select>
-        <button type="button" class="btn ghost btn-reset" id="shipReset">Reset</button>
+      <!-- What's still out, what's late, how much stock is riding on it. -->
+      <div class="exp-summary" id="shipSummary"></div>
+
+      <div class="ship-cards">
+        <div class="card exp-breakdown-card" id="shipBreakdownCard">
+          <div class="card-head">
+            <h3>Incoming by Category</h3>
+            <span class="muted" id="shipBreakdownNote"></span>
+          </div>
+          <div class="exp-breakdown" id="shipBreakdown" data-collapse-body></div>
+        </div>
+        <div class="card" id="shipVendorCard">
+          <div class="card-head">
+            <h3>Vendor Performance</h3>
+            <span class="muted card-note-desc">Average door-to-door</span>
+          </div>
+          <div class="ship-vendors" id="shipVendors" data-collapse-body></div>
+        </div>
+      </div>
+
+      <div class="filterbar">
+        <div class="search-wrap">
+          <input type="text" id="shipSearch" placeholder="Search vendor, product, tracking…" />
+          <button type="button" class="search-clear" data-clear="shipSearch" aria-label="Clear">×</button>
+        </div>
+        <button type="button" class="btn ghost filter-btn" id="shipFilterBtn">
+          <span class="filter-ico" aria-hidden="true">☰</span>
+          <span class="filter-btn-text">Filters</span>
+          <span class="filter-count"></span>
+        </button>
+      </div>
+      <div class="filter-chips" id="shipChips" hidden></div>
+      <div class="filter-fields" id="shipFilterFields" hidden>
+        <label class="filter-field"><span>Status</span>
+          <select id="shipFilter">
+            <option value="all">All Statuses</option>
+            <option value="pending">Pending</option>
+            <option value="overdue">Overdue only</option>
+            <option value="delivered">Delivered</option>
+          </select>
+        </label>
+        <label class="filter-field"><span>Category</span><select id="shipCategory"></select></label>
+        <label class="filter-field"><span>Vendor</span><select id="shipVendor"></select></label>
+        <label class="filter-field"><span>Month</span><select id="shipMonth"></select></label>
+        <label class="filter-field"><span>Sort</span>
+          <select id="shipSort">
+            <option value="desc">Newest first</option>
+            <option value="asc">Oldest first</option>
+          </select>
+        </label>
       </div>
 
       <div class="card">
-        <table class="table">
+        <table class="table ship-table">
           <thead>
             <tr>
-              <th>Vendor</th><th>Date Ordered</th><th>Product</th><th>Tracking</th><th>Delivered</th><th></th>
+              <th>Vendor</th><th>Timeline</th><th>Category</th><th>Product</th><th>Tracking</th><th>Delivered</th><th></th>
             </tr>
           </thead>
           <tbody id="shipBody"></tbody>
+          <tfoot>
+            <tr>
+              <td colspan="5" class="muted" id="shipCount">0 shipments</td>
+              <td class="num" id="shipItems"></td>
+              <td></td>
+            </tr>
+          </tfoot>
         </table>
       </div>
     </section>
@@ -363,34 +415,75 @@
       <header class="view-head">
         <div>
           <h1>Expenses</h1>
+          <p class="view-sub">Categorized for bookkeeping · Capital tracked separately</p>
         </div>
-        <button class="btn primary" id="addExpBtn">+ New Expense</button>
+        <div class="view-head-actions">
+          <button type="button" class="btn ghost" id="expExportBtn">Export CSV</button>
+          <button class="btn primary" id="addExpBtn">+ New Expense</button>
+        </div>
       </header>
 
-      <div class="toolbar">
+      <!-- Money story for the current filter: what the business paid for out of
+           its own account, what the owner covered, and the two combined. -->
+      <div class="exp-summary" id="expSummary"></div>
+
+      <div class="card exp-breakdown-card" id="expBreakdownCard">
+        <div class="card-head">
+          <h3>By Category</h3>
+          <span class="muted" id="expBreakdownNote"></span>
+        </div>
+        <div class="exp-breakdown" id="expBreakdown" data-collapse-body></div>
+      </div>
+
+      <!-- Search stays inline; every other control lives behind one Filters
+           tap so the bar is a single row on any screen. The selects below are
+           the live elements — the panel borrows and returns them. -->
+      <div class="filterbar">
         <div class="search-wrap">
-          <input type="text" id="expSearch" placeholder="Search expense…" />
+          <input type="text" id="expSearch" placeholder="Search vendor or product…" />
           <button type="button" class="search-clear" data-clear="expSearch" aria-label="Clear">×</button>
         </div>
-        <select id="expMonth"></select>
-        <select id="expDay"></select>
-        <select id="expSort">
-          <option value="desc">Newest first</option>
-          <option value="asc">Oldest first</option>
-        </select>
-        <button type="button" class="btn ghost btn-reset" id="expReset">Reset</button>
+        <button type="button" class="btn ghost filter-btn" id="expFilterBtn">
+          <span class="filter-ico" aria-hidden="true">☰</span>
+          <span class="filter-btn-text">Filters</span>
+          <span class="filter-count"></span>
+        </button>
+      </div>
+      <div class="filter-chips" id="expChips" hidden></div>
+      <div class="filter-fields" id="expFilterFields" hidden>
+        <label class="filter-field"><span>Category</span><select id="expCategory"></select></label>
+        <label class="filter-field"><span>Month</span><select id="expMonth"></select></label>
+        <label class="filter-field"><span>Day</span><select id="expDay"></select></label>
+        <label class="filter-field"><span>Funding</span>
+          <select id="expFunding">
+            <option value="all">All Funding</option>
+            <option value="operating">Operating only</option>
+            <option value="capital">Capital / owner-funded only</option>
+          </select>
+        </label>
+        <label class="filter-field"><span>Sort</span>
+          <select id="expSort">
+            <option value="desc">Newest first</option>
+            <option value="asc">Oldest first</option>
+          </select>
+        </label>
       </div>
 
       <div class="card">
-        <table class="table">
+        <table class="table exp-table">
           <thead>
             <tr>
-              <th>Vendor</th><th>Date Ordered</th><th>Products</th><th class="num">Total Cost</th><th></th>
+              <th>Vendor</th><th>Date</th><th>Category</th><th>Products</th><th class="num">Cost</th><th></th>
             </tr>
           </thead>
           <tbody id="expBody"></tbody>
           <tfoot>
-            <tr><td colspan="3" class="muted" id="expCount">0 expenses</td><td class="num" id="expSum">$0</td><td></td></tr>
+            <tr>
+              <td colspan="3" class="muted" id="expCount">0 expenses</td>
+              <td class="num muted" id="expFootSplit"></td>
+              <td class="num" id="expSum">$0</td>
+              <td></td>
+            </tr>
           </tfoot>
         </table>
       </div>
@@ -423,6 +516,23 @@
           <hr />
           <div class="is-row strong"><span>Net Profit</span><b id="isNet">$0</b></div>
           <div class="is-row"><span>Net Margin</span><b id="isMargin">0%</b></div>
+        </div>
+        <div class="card span-2 is-capital-card">
+          <div class="card-head">
+            <h3>Capital &amp; Owner-Funded</h3>
+            <span class="muted">Outside Net Profit — money that didn't leave the business account</span>
+          </div>
+          <div class="is-row"><span>Capital Outlay</span><b id="isCapital">$0</b></div>
+          <hr />
+          <div class="is-row strong"><span>All-In Position</span><b id="isAllIn">$0</b></div>
+          <p class="muted is-note" id="isCapitalNote">Nothing flagged as capital or owner-funded in this period.</p>
+        </div>
+        <div class="card span-2">
+          <div class="card-head">
+            <h3>Expenses by Category</h3>
+            <span class="muted">Hand this to your accountant</span>
+          </div>
+          <div class="is-cat-table" id="isCatTable"></div>
         </div>
         <div class="card span-2">
           <h3>Pending (Unpaid Orders)</h3>
@@ -539,8 +649,8 @@
      more reliable on iOS Safari than html-to-image (which uses SVG
      foreignObject internally and trips on WebKit's CORS quirks). ~50 KB. -->
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-<script src="config.js?v=20260617-58"></script>
-<script src="seed.js?v=20260617-58"></script>
-<script src="app.js?v=20260617-58"></script>
+<script src="config.js?v=20260617-59"></script>
+<script src="seed.js?v=20260617-59"></script>
+<script src="app.js?v=20260617-59"></script>
 </body>
 </html>
