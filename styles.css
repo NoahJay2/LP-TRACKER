@@ -5924,3 +5924,129 @@ html, body { overscroll-behavior-y: none; }
   .cat-chip { padding: 4px 10px; font-size: 12px; }
   .filter-chip { min-height: 34px; font-size: 12.5px; }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   DELIVERY DATE · tap the timeline to record when it landed
+   ═══════════════════════════════════════════════════════════════ */
+button.ship-timeline {
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 3px 7px;
+  margin: -3px -7px;
+  border-radius: var(--radius);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: background .12s var(--ease), border-color .12s var(--ease);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+button.ship-timeline:hover,
+button.ship-timeline:active {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+
+/* Inline date picker inside the delivery menu. */
+.ov-datefield {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 9px 11px 11px;
+}
+.ov-datefield > span {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted);
+  font-weight: 600;
+}
+.ov-datefield input {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-weight: 500;
+  outline: none;
+}
+.ov-datefield input:focus { border-color: var(--primary); }
+
+/* ═══════════════════════════════════════════════════════════════
+   VENDOR NAME MERGE REVIEW
+   ═══════════════════════════════════════════════════════════════ */
+.vendor-tidy-btn {
+  margin-left: 10px;
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  cursor: pointer;
+}
+.vendor-tidy-btn[hidden] { display: none; }
+
+.ov-empty {
+  margin: 4px 6px 10px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.vm-group {
+  padding: 10px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  margin: 0 4px 8px;
+}
+.vm-names {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 9px;
+}
+.vm-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.vm-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-weight: 600;
+}
+.vm-join {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted-2);
+}
+.vm-picks { display: flex; flex-wrap: wrap; gap: 6px; }
+.vm-pick {
+  flex: 1 1 auto;
+  justify-content: center;
+  font-size: 12px;
+  padding: 7px 10px;
+  min-height: 36px;
+}
+
+@media (max-width: 640px) {
+  .vm-picks { flex-direction: column; }
+  .vm-pick { width: 100%; min-height: 44px; font-size: 13.5px; }
+  .ov-datefield input { font-size: 16px; }
+  /* The tidy link would push the collapsed header onto a second line. */
+  .is-collapsed .vendor-tidy-btn { display: none; }
+}

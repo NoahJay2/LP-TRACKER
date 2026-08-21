@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-06-17.59';
+const BUILD_VERSION = '2026-06-17.60';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -927,6 +927,9 @@ async function initCloud() {
       cloud.orders = mergeCloudOrders(cloud.orders);
       state = { ...state, ...cloud };
       saveState();
+      // Cloud rows can carry spellings this device has never seen, so tidy
+      // them before the first paint and push the corrections back up.
+      normalizeVendorNames({ push: true, announce: true });
       renderAll();
       backfillStockCategories();
     }
@@ -4657,6 +4660,418 @@ function wireCollapsibleCard(cardId) {
   window.addEventListener('resize', () => { if (!isPhoneWidth()) apply(true); });
 }
 
+
+
+// Mark a shipment delivered or not from anywhere in the UI. Owns the whole
+// side-effect chain so the row toggle, the timeline menu and the modals cannot
+// drift apart: set the flag, stamp or clear the received date, move inventory,
+// then sync. Pass an explicit date to record a delivery that happened on a day
+// other than today.
+function setShipmentsDelivered(list, delivered, dateISO) {
+  const shipments = (Array.isArray(list) ? list : [list]).filter(Boolean);
+  if (!shipments.length) return;
+  const stockTouched = [];
+  for (const sh of shipments) {
+    const was = !!sh.delivered;
+    sh.delivered = !!delivered;
+    if (sh.delivered) {
+      // An explicit date always wins; otherwise stamp today, but never
+      // clobber a date already recorded.
+      if (dateISO) sh.dateReceived = dateISO;
+      else if (!sh.dateReceived) sh.dateReceived = todayISO();
+    } else {
+      sh.dateReceived = '';
+    }
+    if (was !== sh.delivered) {
+      const p = applyShipmentInventoryDelta(sh, sh.delivered);
+      if (p && !stockTouched.includes(p)) stockTouched.push(p);
+    }
+  }
+  saveState();
+  cloudUpsertMany('shipments', shipments);
+  if (stockTouched.length) {
+    cloudUpsertMany('stock', stockTouched);
+    toast('Inventory updated: ' + stockTouched.map(p => p.name + ' now ' + fmtN(p.qty)).join(', ') + '.');
+  } else if (delivered) {
+    const when = shipments[0].dateReceived;
+    toast('Marked delivered' + (when ? ' ' + fmtDateShort(when) : '') + '.');
+  } else {
+    toast('Moved back to in transit.');
+  }
+  renderShipments(); renderInventory(); renderDashboard();
+}
+// Single-shipment convenience, so call sites read naturally.
+function setShipmentDelivered(sh, delivered, dateISO) {
+  setShipmentsDelivered([sh], delivered, dateISO);
+}
+
+// Tap the timeline cell to say when something actually landed. The common
+// cases are one tap; the date picker is there for anything older. On iOS the
+// date input opens the native wheel.
+function openDeliveryDateMenu(anchor, list) {
+  const shipments = (Array.isArray(list) ? list : [list]).filter(Boolean);
+  if (!shipments.length) return;
+  const sh = shipments[0];
+  const many = shipments.length > 1;
+  // A group counts as delivered only when every line in it is.
+  const allDelivered = shipments.every(x => x.delivered);
+  const iso = (daysAgo) => {
+    const d = new Date();
+    d.setDate(d.getDate() - daysAgo);
+    return d.toISOString().slice(0, 10);
+  };
+  const received = shipments.map(x => x.dateReceived || '').filter(Boolean).sort().pop() || '';
+  const base = allDelivered
+    ? (received ? 'Received ' + fmtDateShort(received) : 'Delivered, no date recorded')
+    : shipmentStatus(sh).detail || 'In transit';
+  const label = many ? base + ' · ' + shipments.length + ' products' : base;
+
+  openOverlayPanel({
+    anchor,
+    title: (sh.vendor || '').trim() || 'Shipment',
+    subtitle: label,
+    buildBody: (body, close) => {
+      const add = (text, hint, icon, onSelect, danger) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'ov-item' + (danger ? ' danger' : '');
+        b.innerHTML = '<span class="ov-item-icon">' + icon + '</span>' +
+          '<span class="ov-item-text"><span class="ov-item-label">' + escapeHtml(text) + '</span>' +
+          (hint ? '<span class="ov-item-hint">' + escapeHtml(hint) + '</span>' : '') + '</span>';
+        b.addEventListener('click', () => { close(); setTimeout(onSelect, 0); });
+        body.appendChild(b);
+      };
+
+      const applyTo = many ? shipments.length + ' products' : '';
+      add('Delivered today', [fmtDateShort(iso(0)), applyTo].filter(Boolean).join(' · '), '✓',
+        () => setShipmentsDelivered(shipments, true, iso(0)));
+      add('Delivered yesterday', [fmtDateShort(iso(1)), applyTo].filter(Boolean).join(' · '), '✓',
+        () => setShipmentsDelivered(shipments, true, iso(1)));
+
+      // Inline date picker for anything further back.
+      const wrap = document.createElement('label');
+      wrap.className = 'ov-datefield';
+      wrap.innerHTML = '<span>Another date</span>';
+      const input = document.createElement('input');
+      input.type = 'date';
+      input.max = todayISO();
+      if (sh.dateOrdered) input.min = sh.dateOrdered;
+      input.value = received;
+      input.addEventListener('change', () => {
+        if (!input.value) return;
+        const picked = input.value;
+        closeOverlay();
+        setTimeout(() => setShipmentsDelivered(shipments, true, picked), 0);
+      });
+      wrap.appendChild(input);
+      body.appendChild(wrap);
+
+      if (shipments.some(x => x.delivered)) {
+        add('Not delivered yet', 'Clears the date and takes the stock back out',
+          '↩', () => setShipmentsDelivered(shipments, false), true);
+      }
+    },
+  });
+}
+
+// ---------- Vendor name normalization ----------
+// The same supplier gets typed several ways over a year — "Tracy QST",
+// "TRACY QST", "QST Tracy" — and every variant used to count as its own vendor
+// in the filter and the performance card. Two tiers here, on purpose:
+//
+//   Automatic: variants that are unmistakably the same string — identical once
+//   case, spacing and punctuation are ignored, or the same words in a different
+//   order. Those are rewritten to one spelling without asking.
+//
+//   Suggested: abbreviations and one-name-inside-another ("SBL" vs "Silverback
+//   Labs", "APS" vs "Andy Peps Studio (APS)"). Those are a guess about the
+//   business rather than about the text, so they are offered for review and
+//   merged only on an explicit tap.
+const VENDOR_TABLES = ['shipments', 'expenses'];
+
+// Case, spacing and punctuation all collapse away. "PCTZone" and "PCT Zone"
+// share a key; "Tracy QST" and "Health Warehouse" do not.
+function vendorKey(name) {
+  return String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+// Same words in any order: catches "QST Tracy" against "Tracy QST".
+function vendorTokenKey(name) {
+  const parts = String(name || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  return parts.length > 1 ? parts.slice().sort().join(' ') : '';
+}
+function isAllCapsName(name) {
+  const letters = String(name || '').replace(/[^A-Za-z]/g, '');
+  return letters.length > 1 && letters === letters.toUpperCase();
+}
+
+// Choose which spelling survives a merge. Most-used wins, because that is the
+// one already recognizable across the history. Ties fall to the more readable
+// form: mixed case over shouting, spaced words over run-together, then longer,
+// then alphabetical so the result never depends on iteration order.
+function pickCanonicalVendor(counts) {
+  const entries = [...counts.entries()];
+  entries.sort((a, b) => {
+    if (b[1] !== a[1]) return b[1] - a[1];
+    const capsA = isAllCapsName(a[0]) ? 1 : 0, capsB = isAllCapsName(b[0]) ? 1 : 0;
+    if (capsA !== capsB) return capsA - capsB;
+    const wordsA = a[0].trim().split(/\s+/).length, wordsB = b[0].trim().split(/\s+/).length;
+    if (wordsA !== wordsB) return wordsB - wordsA;
+    if (b[0].length !== a[0].length) return b[0].length - a[0].length;
+    return a[0].localeCompare(b[0]);
+  });
+  return entries[0][0];
+}
+
+// Every vendor spelling in use, counted across both tables so a name used
+// mostly on expenses still wins on shipments.
+function collectVendorCounts() {
+  const counts = new Map();
+  for (const table of VENDOR_TABLES) {
+    for (const row of (state[table] || [])) {
+      const raw = String(row.vendor || '').trim();
+      if (!raw) continue;
+      counts.set(raw, (counts.get(raw) || 0) + 1);
+    }
+  }
+  return counts;
+}
+
+// Map each spelling to the one it should become. Only unmistakable variants
+// are included; anything needing judgement is left out and surfaced instead.
+function buildVendorRenameMap() {
+  const counts = collectVendorCounts();
+  const groups = new Map();
+  for (const [name, n] of counts) {
+    const k = vendorKey(name);
+    if (!k) continue;
+    if (!groups.has(k)) groups.set(k, new Map());
+    groups.get(k).set(name, n);
+  }
+  // Second pass: fold together buckets whose names are the same words
+  // reordered, so a swap lands in the same group as a casing variant.
+  const byTokens = new Map();
+  for (const [k, members] of groups) {
+    for (const name of members.keys()) {
+      const tk = vendorTokenKey(name);
+      if (!tk) continue;
+      if (!byTokens.has(tk)) byTokens.set(tk, new Set());
+      byTokens.get(tk).add(k);
+    }
+  }
+  for (const keys of byTokens.values()) {
+    if (keys.size < 2) continue;
+    const [first, ...rest] = [...keys];
+    const target = groups.get(first);
+    if (!target) continue;
+    for (const k of rest) {
+      const members = groups.get(k);
+      if (!members) continue;
+      for (const [n, c] of members) target.set(n, (target.get(n) || 0) + c);
+      groups.delete(k);
+    }
+  }
+
+  const renames = new Map();
+  for (const members of groups.values()) {
+    if (members.size < 2) continue;
+    const canonical = pickCanonicalVendor(members);
+    for (const name of members.keys()) {
+      if (name !== canonical) renames.set(name, canonical);
+    }
+  }
+  return renames;
+}
+
+// Apply the automatic renames. Idempotent — once the data is clean this finds
+// nothing and does nothing. Returns a summary so the caller can report it.
+function normalizeVendorNames(opts) {
+  const push = !!(opts && opts.push);
+  const announce = !!(opts && opts.announce);
+  const renames = buildVendorRenameMap();
+  if (!renames.size) return { changed: 0, merges: [] };
+  const touched = { shipments: [], expenses: [] };
+  for (const table of VENDOR_TABLES) {
+    for (const row of (state[table] || [])) {
+      const raw = String(row.vendor || '').trim();
+      const target = renames.get(raw);
+      if (target && target !== row.vendor) {
+        row.vendor = target;
+        touched[table].push(row);
+      }
+    }
+  }
+  const changed = touched.shipments.length + touched.expenses.length;
+  if (!changed) return { changed: 0, merges: [] };
+
+  saveState();
+  if (push && sb) {
+    if (touched.shipments.length) cloudUpsertMany('shipments', touched.shipments);
+    if (touched.expenses.length) cloudUpsertMany('expenses', touched.expenses);
+  }
+  const merges = [...new Set(renames.values())].map(canonical => ({
+    canonical,
+    from: [...renames.entries()].filter(([, t]) => t === canonical).map(([f]) => f),
+  }));
+  if (announce) {
+    const first = merges[0];
+    const extra = merges.length > 1 ? ' and ' + (merges.length - 1) + ' more' : '';
+    toast('Vendor names tidied: ' + first.from.map(f => '"' + f + '"').join(', ') +
+      ' now "' + first.canonical + '"' + extra + '.');
+  }
+  console.log('vendor names normalized', { changed, merges });
+  return { changed, merges };
+}
+
+// ---------- Suggested merges (need a human) ----------
+// Abbreviations and containment. Deliberately not automatic: "SBL" is probably
+// Silverback Labs, but that is a claim about the business, and an unwanted
+// merge is tedious to unpick by hand.
+// Words in a name, with CamelCase split apart so "SilverBack Labs" yields
+// silver / back / labs — which is what makes its initials "SBL".
+function vendorWords(name) {
+  return String(name || '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map(w => w.toLowerCase());
+}
+function vendorInitials(name) {
+  const w = vendorWords(name);
+  return w.length >= 2 ? w.map(x => x[0]).join('') : '';
+}
+
+// Score every plausible pair, strongest signal first, then take them greedily.
+// Ranking matters: "SBL" is a candidate for both "SilverBack Labs" (its
+// initials) and "SBL Group Order" (word containment). The initials pairing is
+// the more meaningful one, so it gets to claim the name first.
+const VENDOR_MATCH_INITIALS = 0;
+const VENDOR_MATCH_WORDS = 1;
+const VENDOR_MATCH_PREFIX = 2;
+
+function vendorMatchRank(long, short) {
+  const longKey = vendorKey(long), shortKey = vendorKey(short);
+  if (!shortKey || shortKey.length < 2) return null;
+  if (vendorInitials(long).length >= 2 && shortKey === vendorInitials(long)) {
+    return VENDOR_MATCH_INITIALS;
+  }
+  const longWords = new Set(vendorWords(long));
+  const shortWords = vendorWords(short);
+  // Whole-word containment. A bare substring test was matching "SBL" inside
+  // "Shoe(s Bl)ack Stone Cover".
+  if (shortWords.length && shortWords.every(w => longWords.has(w))) return VENDOR_MATCH_WORDS;
+  // The short name is how the long one starts — covers "Bac Water" against
+  // "Bacwater.com".
+  if (shortKey.length >= 4 && longKey.startsWith(shortKey)) return VENDOR_MATCH_PREFIX;
+  return null;
+}
+
+function suggestedVendorMerges() {
+  const counts = collectVendorCounts();
+  const names = [...counts.keys()];
+  const pairs = [];
+  for (const long of names) {
+    for (const short of names) {
+      if (short === long) continue;
+      // Only consider the shorter name as the abbreviation of the longer one,
+      // so each pair is examined once in one direction.
+      if (short.length > long.length) continue;
+      const rank = vendorMatchRank(long, short);
+      if (rank == null) continue;
+      pairs.push({ long, short, rank, weight: (counts.get(long) || 0) + (counts.get(short) || 0) });
+    }
+  }
+  pairs.sort((a, b) => a.rank - b.rank || b.weight - a.weight || a.long.localeCompare(b.long));
+
+  const used = new Set();
+  const groups = [];
+  for (const p of pairs) {
+    if (used.has(p.long) || used.has(p.short)) continue;
+    used.add(p.long); used.add(p.short);
+    const all = [p.long, p.short]
+      // Most-used first: that is the name most likely worth keeping, and it
+      // becomes the leading button in the review sheet.
+      .sort((a, b) => (counts.get(b) || 0) - (counts.get(a) || 0) || a.localeCompare(b));
+    groups.push({
+      keep: all[0],
+      others: all.slice(1),
+      counts: Object.fromEntries(all.map(n => [n, counts.get(n) || 0])),
+    });
+  }
+  return groups;
+}
+
+// Rewrite every row using any name in from[] to use to, then sync.
+function mergeVendorInto(from, to) {
+  const set = new Set(from.map(f => String(f).trim()));
+  const touched = { shipments: [], expenses: [] };
+  for (const table of VENDOR_TABLES) {
+    for (const row of (state[table] || [])) {
+      if (set.has(String(row.vendor || '').trim()) && row.vendor !== to) {
+        row.vendor = to;
+        touched[table].push(row);
+      }
+    }
+  }
+  const changed = touched.shipments.length + touched.expenses.length;
+  if (!changed) return 0;
+  saveState();
+  if (sb) {
+    if (touched.shipments.length) cloudUpsertMany('shipments', touched.shipments);
+    if (touched.expenses.length) cloudUpsertMany('expenses', touched.expenses);
+  }
+  return changed;
+}
+
+// Review sheet: one card per suspected duplicate, tap the name to keep.
+function openVendorMergeSheet(anchor) {
+  const groups = suggestedVendorMerges();
+  openOverlayPanel({
+    anchor,
+    title: 'Tidy vendor names',
+    subtitle: groups.length ? groups.length + ' to review' : 'Nothing to review',
+    wide: true,
+    buildBody: (body, close) => {
+      if (!groups.length) {
+        body.innerHTML = '<p class="ov-empty">Every vendor name is already distinct. ' +
+          'Spelling and capitalisation variants are merged automatically.</p>';
+        return;
+      }
+      const note = document.createElement('p');
+      note.className = 'ov-empty';
+      note.textContent = 'These may be the same supplier written two ways. ' +
+        'Pick the name to keep — nothing changes until you tap.';
+      body.appendChild(note);
+      for (const g of groups) {
+        const all = [g.keep, ...g.others];
+        const row = document.createElement('div');
+        row.className = 'vm-group';
+        row.innerHTML = '<div class="vm-names">' + all.map(n =>
+          '<span class="vm-name">' + escapeHtml(n) +
+          '<span class="vm-count">' + (g.counts[n] || 0) + '</span></span>'
+        ).join('<span class="vm-join">or</span>') + '</div>';
+        const picks = document.createElement('div');
+        picks.className = 'vm-picks';
+        for (const keep of all) {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'btn ghost vm-pick';
+          b.textContent = 'Keep ' + keep;
+          b.addEventListener('click', () => {
+            const n = mergeVendorInto(all.filter(x => x !== keep), keep);
+            renderShipments(); renderExpenses(); renderDashboard();
+            toast(n ? 'Merged ' + n + ' record' + (n === 1 ? '' : 's') + ' into "' + keep + '".'
+                    : 'Nothing to merge.');
+            close();
+          });
+          picks.appendChild(b);
+        }
+        row.appendChild(picks);
+        body.appendChild(row);
+      }
+    },
+  });
+}
+
 // ---------- SHIPMENTS ----------
 const shipSearch = $('#shipSearch');
 const shipFilter = $('#shipFilter');
@@ -4988,26 +5403,36 @@ function renderShipments() {
   renderShipBreakdown(rows);
   renderShipVendors(rows);
   setFilterCount('shipFilterBtn', renderFilterChips($('#shipChips'), SHIP_CHIP_FIELDS, shipSearch));
+  // Only offer the review when there is actually something ambiguous left —
+  // the unmistakable variants have already been merged automatically.
+  const tidyBtn = $('#shipVendorTidy');
+  if (tidyBtn) {
+    const pending = suggestedVendorMerges().length;
+    tidyBtn.hidden = pending === 0;
+    tidyBtn.textContent = pending ? `Tidy names (${pending})` : 'Tidy names';
+    if (!tidyBtn.dataset.wired) {
+      tidyBtn.dataset.wired = '1';
+      tidyBtn.addEventListener('click', (e) => { e.stopPropagation(); openVendorMergeSheet(e.currentTarget); });
+    }
+  }
   wireCollapsibleCard('shipBreakdownCard');
   wireCollapsibleCard('shipVendorCard');
 
   body.querySelectorAll('[data-ship-delivered]').forEach(el => el.addEventListener('change', e => {
-    const s = state.shipments.find(x => x.id === el.dataset.shipDelivered);
-    if (!s) return;
-    const wasDelivered = !!s.delivered;
-    s.delivered = e.target.checked;
-    let stockChanged = null;
-    if (wasDelivered !== s.delivered) {
-      syncShipmentReceived(s, s.delivered);
-      stockChanged = applyShipmentInventoryDelta(s, s.delivered);
-    }
-    saveState();
-    cloudUpsert('shipments', s);
-    if (stockChanged) {
-      cloudUpsert('stock', stockChanged);
-      toast(`Inventory updated: ${stockChanged.name} now ${fmtN(stockChanged.qty)}.`);
-    }
-    renderShipments(); renderInventory(); renderDashboard();
+    const sh = state.shipments.find(x => x.id === el.dataset.shipDelivered);
+    if (sh) setShipmentDelivered(sh, e.target.checked);
+  }));
+  // Tapping the dates opens the "when did it land" menu.
+  body.querySelectorAll('[data-ship-when]').forEach(el => el.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    const sh = state.shipments.find(x => x.id === el.dataset.shipWhen);
+    if (sh) openDeliveryDateMenu(el, [sh]);
+  }));
+  body.querySelectorAll('[data-ship-group-when]').forEach(el => el.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    const group = el.dataset.shipGroupWhen.split(',')
+      .map(id => state.shipments.find(x => x.id === id)).filter(Boolean);
+    if (group.length) openDeliveryDateMenu(el, group);
   }));
   body.querySelectorAll('[data-ship-menu]').forEach(el => el.addEventListener('click', (ev) => {
     ev.stopPropagation();
@@ -5072,24 +5497,9 @@ function renderShipments() {
       `${group.length} products · ${fmtN(shipmentsItemTotal(group))} items`);
   }));
   body.querySelectorAll('[data-group-ship-delivered]').forEach(el => el.addEventListener('change', () => {
-    const updated = [];
-    const stockUpdated = [];
-    el.dataset.groupShipDelivered.split(',').forEach(id => {
-      const s = state.shipments.find(x => x.id === id);
-      if (!s) return;
-      const wasDelivered = !!s.delivered;
-      s.delivered = el.checked;
-      updated.push(s);
-      if (wasDelivered !== s.delivered) {
-        syncShipmentReceived(s, s.delivered);
-        const p = applyShipmentInventoryDelta(s, s.delivered);
-        if (p && !stockUpdated.includes(p)) stockUpdated.push(p);
-      }
-    });
-    saveState();
-    cloudUpsertMany('shipments', updated);
-    if (stockUpdated.length) cloudUpsertMany('stock', stockUpdated);
-    renderShipments(); renderInventory(); renderDashboard();
+    const group = el.dataset.groupShipDelivered.split(',')
+      .map(id => state.shipments.find(x => x.id === id)).filter(Boolean);
+    if (group.length) setShipmentsDelivered(group, el.checked);
   }));
   wireGroupExpand(body);
 }
@@ -5212,7 +5622,7 @@ function renderShipVendors(rows) {
 // ---------- Shipment cell renderers ----------
 // Ordered → received on one line, with the aging/transit badge beside it. Two
 // separate date columns would have pushed the table past what fits.
-function shipTimelineCell(s) {
+function shipTimelineCell(s, tappable, groupIds) {
   const st = shipmentStatus(s);
   const ordered = s.dateOrdered ? fmtDateShort(s.dateOrdered) : '—';
   const received = s.dateReceived ? fmtDateShort(s.dateReceived) : '';
@@ -5222,7 +5632,15 @@ function shipTimelineCell(s) {
   const badge = st.detail
     ? `<span class="ship-badge" data-status="${st.key}">${escapeHtml(st.detail)}</span>`
     : '';
-  return `<span class="ship-timeline"><span class="tl-date">${ordered}</span>${arrow}${badge}</span>`;
+  const inner = `<span class="tl-date">${ordered}</span>${arrow}${badge}`;
+  // The dates are a button — tap to record when it actually arrived. A group
+  // header carries every id in the box, so one tap dates the whole delivery.
+  if (groupIds) {
+    return `<button type="button" class="ship-timeline is-tappable" data-ship-group-when="${groupIds}" title="Set delivery date for this whole shipment">${inner}</button>`;
+  }
+  return tappable && s && s.id
+    ? `<button type="button" class="ship-timeline is-tappable" data-ship-when="${s.id}" title="Set delivery date">${inner}</button>`
+    : `<span class="ship-timeline">${inner}</span>`;
 }
 
 // Product category chip, read-only here — the category comes from the product
@@ -5312,7 +5730,7 @@ function renderShipmentGroup(g) {
         dateReceived: allDelivered
           ? g.shipments.map(s => s.dateReceived || '').filter(Boolean).sort().pop() || ''
           : '',
-      })}</td>
+      }, false, shipIds)}</td>
       <td class="cat-cell">${groupCatCell}</td>
       <td class="items-cell"><span class="chevron" data-toggle-group="${groupId}">▶</span><span class="grp-badge">${g.shipments.length} product${g.shipments.length === 1 ? '' : 's'}</span>${groupItems > 0 ? `<span class="grp-badge">${fmtN(groupItems)} items</span>` : ''}</td>
       <td>${groupTrackingCell}</td>
@@ -5351,7 +5769,7 @@ function renderSingleShipmentRow(s) {
   const st = shipmentStatus(s);
   return `<tr class="ship-row" data-status="${st.key}">
     <td>${(s.vendor || '').trim() ? `<b>${escapeHtml(s.vendor)}</b>` : '<span class="muted">No vendor</span>'}</td>
-    <td>${shipTimelineCell(s)}</td>
+    <td>${shipTimelineCell(s, true)}</td>
     <td class="cat-cell">${shipCategoryChip(s)}</td>
     <td>${pill}</td>
     <td>${shipTrackingCell(s.tracking)}</td>
