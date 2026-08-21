@@ -2,24 +2,32 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<!-- maximum-scale=1 + user-scalable=no: the app is a fixed-size tool — this
+     stops iOS from auto-zooming into focused form fields (and pinch-zoom in
+     general), which left the layout stuck zoomed-in after editing orders. -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <title>Lumen Peptides — Order Tracker</title>
 <link rel="icon" type="image/png" href="public/lplogo.png" />
 <link rel="apple-touch-icon" href="public/lplogo.png" />
 <link rel="apple-touch-icon" sizes="180x180" href="public/lplogo.png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
-<!-- Use `default` (NOT black-translucent) — black-translucent has a long
-     history of triggering input-focus bugs in iOS standalone PWAs because it
-     extends the page under the status bar where touches can be intercepted. -->
-<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<!-- `black-translucent` — required so iOS reports the REAL
+     env(safe-area-inset-top). With `default`, modern iOS still draws the
+     page edge-to-edge but reports inset 0, so the topbar's notch padding
+     and the fixed notch-shield strip both collapse to nothing and content
+     visibly scrolls through the camera/status-bar zone. If the old
+     input-focus quirks ever resurface (taps near the top being eaten),
+     revisit — but the shield strip is pointer-events:none, so it can't
+     intercept touches itself. -->
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Lumen Tracker" />
 <meta name="theme-color" content="#050608" />
 <!-- Bump these version strings on every deploy so the home-screen PWA fetches
      fresh JS/CSS instead of serving the cached copy. iOS standalone mode
      caches scripts indefinitely once installed; a query-string change is the
      only thing that reliably busts it without removing/re-adding the bookmark. -->
-<link rel="stylesheet" href="styles.css?v=20260617-51" />
+<link rel="stylesheet" href="styles.css?v=20260617-58" />
 <!-- Preload the Zelle QR so it's already in the browser cache when the first
      invoice opens — guarantees a screenshot captures the image, no race. -->
 <link rel="preload" as="image" href="public/zelle-qr.png" />
@@ -285,6 +293,12 @@
           <option value="oos">Out of Stock</option>
           <option value="low">Needs Reorder</option>
         </select>
+        <select id="stkCategory">
+          <option value="all">All Categories</option>
+          <option value="peptides">Peptides</option>
+          <option value="gear">Gear</option>
+          <option value="other">Other</option>
+        </select>
         <button type="button" class="btn ghost btn-reset" id="stkReset">Reset</button>
       </div>
 
@@ -457,6 +471,12 @@
             </select>
             <select id="tpMonth"></select>
             <select id="tpDay"></select>
+            <select id="tpCategory">
+              <option value="all">All Categories</option>
+              <option value="peptides">Peptides Only</option>
+              <option value="gear">Gear Only</option>
+              <option value="other">Other Only</option>
+            </select>
             <select id="tpSort">
               <option value="gross">By Gross</option>
               <option value="net">By Net Profit</option>
@@ -474,18 +494,18 @@
             <thead>
               <tr>
                 <th>Product</th>
+                <th class="num">Qty Sold</th>
                 <th class="num">Total Gross</th>
-                <th class="num">Total Net</th>
-                <th class="num">Quantity Sold</th>
+                <th class="num">Net Profit</th>
               </tr>
             </thead>
             <tbody id="monthlyTopProducts"></tbody>
             <tfoot>
               <tr class="strong">
-                <td>Grand Total</td>
+                <td id="tpGrandLabel">Grand Total — All Categories</td>
+                <td class="num" id="tpQty">0</td>
                 <td class="num" id="tpGross">$0</td>
                 <td class="num" id="tpNet">$0</td>
-                <td class="num" id="tpQty">0</td>
               </tr>
             </tfoot>
           </table>
@@ -519,8 +539,8 @@
      more reliable on iOS Safari than html-to-image (which uses SVG
      foreignObject internally and trips on WebKit's CORS quirks). ~50 KB. -->
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-<script src="config.js?v=20260617-51"></script>
-<script src="seed.js?v=20260617-51"></script>
-<script src="app.js?v=20260617-51"></script>
+<script src="config.js?v=20260617-58"></script>
+<script src="seed.js?v=20260617-58"></script>
+<script src="app.js?v=20260617-58"></script>
 </body>
 </html>

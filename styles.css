@@ -4700,3 +4700,283 @@ body::after {
   animation: pulse 2.4s ease-in-out infinite;
   flex: 0 0 auto;
 }
+
+/* ── NOTCH SHIELD (iOS) ──────────────────────────────────────
+   The sticky topbar repaints a frame behind fast scrolls on iOS,
+   letting content flash through the status-bar / front-camera
+   strip. This fixed, opaque strip is compositor-pinned over that
+   zone so nothing ever shows through it, regardless of scroll
+   momentum. Height is 0 on devices without a safe-area inset,
+   so desktop and Android are unaffected.
+   (Re-enables body::before, which the theme had parked.) */
+body::before {
+  content: '' !important;
+  display: block !important;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: env(safe-area-inset-top, 0px);
+  background: var(--bg);
+  z-index: 2000;
+  pointer-events: none;
+}
+
+/* ── TOPBAR: FIXED, NOT STICKY (mobile) ──────────────────────
+   Sticky bars ride the scroller and can lag or expose page
+   around themselves during scroll/bounce — which read as "the
+   page moving in the header." Fixed pins the bar to the visual
+   viewport: edge-to-edge, always covering the top, no gap
+   possible. The drawer + backdrop already sit at the same
+   calc(56px + inset) offset, so they line up unchanged. */
+@media (max-width: 900px) {
+  .topbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 95;
+  }
+  /* Content no longer flows below a sticky bar — pad for it. */
+  .main {
+    padding-top: calc(76px + env(safe-area-inset-top));
+  }
+}
+/* No rubber-band reveal above the header on overscroll
+   (Windows/Android bounce; recent iOS respects it too). */
+html, body { overscroll-behavior-y: none; }
+
+/* ── PANE TITLE BARS on table cards (phones) ─────────────────
+   Phone table-cards use padding 4px 0 0 (tables run edge-to-edge),
+   but the pane title-bar rule assumes the regular 14px card padding
+   and over-pulls the header, clipping it against the card's
+   overflow-x scroller ("PENDING ORDERS" showed half-cut). Match the
+   pull to the actual padding. */
+@media (max-width: 640px) {
+  .card:has(> .table) > .card-head {
+    margin: -4px 0 8px;
+    padding: 10px 12px;
+    border-radius: 0;
+  }
+}
+
+/* Struck-through original line amount on discounted/sale lines in the
+   day/week drill-down popups. */
+.dd-item-was { color: var(--muted-2); margin-right: 3px; font-weight: 400; }
+
+/* ── NO-ZOOM INPUTS (phones) ─────────────────────────────────
+   iOS auto-zooms any focused control whose font-size is under
+   16px. Belt-and-braces with the viewport maximum-scale=1:
+   every form control on phones renders at 16px so Safari never
+   has a reason to zoom, even if the viewport rule is ignored
+   (older iOS versions ignore user-scalable). !important because
+   several theme rules set smaller per-control sizes. */
+@media (max-width: 900px) {
+  input, select, textarea { font-size: 16px !important; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   PRODUCT CATEGORIES
+   Peptides / Gear / Other. Two places consume them: the Top
+   Products table on Monthly (grouped sections with subtotals) and
+   the Inventory list (a tag on each row + a filter). Each line
+   gets its own accent so the split reads at a glance.
+   ═══════════════════════════════════════════════════════════════ */
+.cat-peptides, .tp-cat-peptides {
+  --cat: var(--cyan);
+  --cat-wash: rgba(6, 182, 212, 0.09);
+  --cat-line: rgba(6, 182, 212, 0.35);
+  --cat-rail: rgba(6, 182, 212, 0.45);
+}
+.cat-gear, .tp-cat-gear {
+  --cat: var(--amber);
+  --cat-wash: rgba(245, 158, 11, 0.09);
+  --cat-line: rgba(245, 158, 11, 0.35);
+  --cat-rail: rgba(245, 158, 11, 0.45);
+}
+.cat-other, .tp-cat-other {
+  --cat: var(--muted);
+  --cat-wash: rgba(107, 114, 128, 0.10);
+  --cat-line: rgba(107, 114, 128, 0.35);
+  --cat-rail: rgba(107, 114, 128, 0.45);
+}
+
+/* ── Top Products · category header row ──────────────────────
+   A full-width band above each group carrying that category's
+   own Units / Gross / Net subtotal. */
+.tp-cat-row td {
+  padding: 0 !important;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-strong);
+}
+.tp-cat-row:hover td { background: var(--surface-2); }
+.tp-cat-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 11px 14px;
+  border-left: 3px solid var(--cat);
+  background: linear-gradient(90deg, var(--cat-wash), transparent 42%);
+}
+.tp-cat-name {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--cat);
+}
+.tp-cat-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.tp-cat-stats { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+.tp-cat-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  min-width: 78px;
+  padding: 3px 10px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.tp-cat-stat span {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+.tp-cat-stat b {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Top Products · item rows ───────────────────────────────── */
+.tp-item-row td:first-child {
+  box-shadow: inset 3px 0 0 var(--cat-rail);
+}
+.tp-rank {
+  display: inline-block;
+  width: 20px;
+  margin-right: 9px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted-2);
+  text-align: right;
+}
+.tp-net { color: var(--up); }
+
+/* ── Category tag on inventory rows ─────────────────────────── */
+.cat-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--cat-line);
+  background: var(--cat-wash);
+  color: var(--cat);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+/* ── Inventory · tap-to-open detail strip ────────────────────
+   Desktop shows all ten columns, so the strip and its caret stay
+   hidden there; the whole mechanism only switches on at phone
+   width, where Cost / Reorder At / Margin / both Stock Value
+   columns are dropped from the table. */
+.inv-caret { display: none; }
+#view-inventory .inv-detail { display: none; }
+
+@media (max-width: 640px) {
+  #view-inventory .inv-row { cursor: pointer; }
+  #view-inventory .inv-row td:first-child { position: relative; padding-left: 24px; }
+  .inv-caret {
+    display: inline-block;
+    position: absolute;
+    left: 9px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 9px;
+    color: var(--muted-2);
+    transition: transform 0.18s var(--ease), color 0.18s var(--ease);
+  }
+  #view-inventory .inv-row.open .inv-caret {
+    transform: translateY(-50%) rotate(90deg);
+    color: var(--primary);
+  }
+  #view-inventory .inv-row.open td {
+    background: rgba(34, 197, 94, 0.07);
+    border-bottom-color: transparent;
+  }
+  /* [hidden] on the row still governs — this only un-does the
+     desktop display:none for the rows that are open. */
+  #view-inventory .inv-detail:not([hidden]) { display: table-row; }
+  #view-inventory .inv-detail td { padding: 0 !important; background: var(--surface-2); }
+  .inv-strip {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border-strong);
+  }
+  .inv-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 9px 10px;
+    background: var(--surface);
+  }
+  .inv-cell span {
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--muted-2);
+  }
+  .inv-cell b {
+    font-family: var(--font-mono);
+    font-size: 13.5px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+  }
+  .inv-cell.hl { background: linear-gradient(180deg, rgba(34, 197, 94, 0.07), transparent), var(--surface); }
+  .inv-pos { color: var(--up); }
+
+  /* Category tag is noise next to a long product name on a phone. */
+  #view-inventory .cat-tag { display: none; }
+
+  /* Top Products category bar stacks its subtotals under the label. */
+  .tp-cat-bar { padding: 9px 10px; gap: 8px; }
+  .tp-cat-stats { width: 100%; margin-left: 0; }
+  .tp-cat-stat { flex: 1; min-width: 0; padding: 3px 8px; }
+
+  /* The rank gutter costs more than it's worth once product names wrap. */
+  .tp-rank { display: none; }
+
+  /* These two toolbars carry enough dropdowns that the shared base rule
+     (.toolbar select { flex: 1 1 0 }) crushes them to arrow-only stubs.
+     Two per row keeps every filter label readable. */
+  .top-products-body .toolbar select,
+  #view-inventory .toolbar select {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
+  }
+  .top-products-body .toolbar .btn-reset,
+  #view-inventory .toolbar .btn-reset { flex: 1 1 100%; }
+}

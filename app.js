@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-06-17.51';
+const BUILD_VERSION = '2026-06-17.58';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -13,6 +13,97 @@ const $$ = (s, ctx = document) => Array.from(ctx.querySelectorAll(s));
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', set);
   else set();
 })();
+
+// ---------- Product categories ----------
+// Products split three ways so reporting can separate the two real product
+// lines from the things that aren't products at all (syringes, bac water, the
+// loyalty discount line item). Every product carries an explicit `category`;
+// items created before this existed get one from classifyProduct() on load and
+// the user can override any of them in the product editor.
+const CATEGORIES = [
+  { key: 'peptides', label: 'Peptides' },
+  { key: 'gear',     label: 'Gear' },
+  { key: 'other',    label: 'Other' },
+];
+const CATEGORY_KEYS = CATEGORIES.map(c => c.key);
+const DEFAULT_CATEGORY = 'other';
+function categoryLabel(key) {
+  const c = CATEGORIES.find(x => x.key === key);
+  return c ? c.label : 'Other';
+}
+
+// Name-matching rules for the one-time backfill. Order matters: the first
+// list whose pattern matches wins, so `other` is checked first to keep
+// supplies out of the product lines (e.g. "Hospira Bac Water" must not fall
+// through to a peptide match).
+const CATEGORY_RULES = [
+  // Not products: injection supplies, solvents, and the discount line item.
+  ['other', [
+    /syringe/i, /needle/i, /bac\s*water/i, /bacteriostatic/i, /luer|leur/i,
+    /loyalty/i, /discount/i, /shipping/i, /^other$/i,
+    // Ancillary pharma that is neither a peptide nor an anabolic.
+    /isotretinoin|accutane/i, /modafinil/i, /sildenafil|viagra/i, /tadalafil|cialis/i,
+  ]],
+  // Anabolics, orals, and cycle ancillaries.
+  ['gear', [
+    /\btest\s*(c|e|p|cyp|prop|enanth)/i, /testosterone/i, /sustanon/i,
+    /\btren\b|trenbolone/i, /\bnpp\b/i, /\bdeca\b|nandrolone/i,
+    /anavar|oxandrolone/i, /\bdbol\b|dianabol|methandrostenolone/i,
+    /winstrol|stanozolol/i, /masteron|drostanolone/i, /primo|methenolone/i,
+    /\beq\b|boldenone|equipoise/i, /anadrol|oxymetholone/i,
+    /superdrol|methasterone/i, /turinabol/i, /halotestin/i, /proviron/i,
+    // Aromatase inhibitors / SERMs / PCT — bought and sold with a cycle.
+    /\badex\b|anastrozole|arimidex/i, /aromasin|exemestane/i, /letro|letrozole/i,
+    /nolva|tamoxifen/i, /clomid|clomiphene/i, /\bhcg\b/i,
+    // Orally active non-peptide performance compounds.
+    /mk-?677|ibutamoren/i, /gw-?50156|cardarine/i, /rad-?140|lgd-?4033|ostarine|mk-?2866|s-?23|yk-?11/i,
+  ]],
+  // Everything else that is an actual peptide / peptide-hormone product.
+  ['peptides', [
+    /bpc-?157/i, /tb-?500|thymosin/i, /\bkpv\b/i, /ghk-?cu/i, /larazotide/i,
+    /retatrutide|tirzepatide|semaglutide|glp/i, /tesamorelin/i, /ipamorelin|cjc/i,
+    /sermorelin/i, /ghrp/i, /hexarelin/i, /pt-?141|bremelanotide/i,
+    /\bmt-?2\b|melanotan/i, /mots-?c/i, /ss-?31|elamipretide/i, /epitalon/i,
+    /selank|semax/i, /dsip/i, /aod-?9604/i, /igf-?1|lr3/i, /\bhgh\b|somatropin/i,
+    /klow/i, /glow/i, /wolverine/i,
+    // Injectable wellness items sold as part of the peptide line.
+    /nad\+?/i, /\bb-?12\b/i,
+  ]],
+];
+
+// Best-guess category for a product name. Used only to seed `category` on
+// products that don't have one yet — never to override an explicit choice.
+function classifyProduct(name) {
+  const n = (name || '').trim();
+  if (!n) return DEFAULT_CATEGORY;
+  for (const [key, patterns] of CATEGORY_RULES) {
+    if (patterns.some(re => re.test(n))) return key;
+  }
+  return DEFAULT_CATEGORY;
+}
+
+// Read a product's category, falling back to the name-based guess so callers
+// never have to deal with a missing value.
+function stockCategory(s) {
+  const c = s && s.category;
+  return CATEGORY_KEYS.includes(c) ? c : classifyProduct(s && s.name);
+}
+
+// Backfill `category` on any product that predates the field.
+function migrateStock(stock) {
+  return (stock || []).map(s => (
+    CATEGORY_KEYS.includes(s && s.category) ? s : { ...s, category: classifyProduct(s && s.name) }
+  ));
+}
+
+// Category of a sold item, resolved through the inventory record so historical
+// order lines pick up whatever the product is categorized as today. Falls back
+// to the name guess for products that have since been deleted from inventory.
+function itemCategory(productName) {
+  const target = (productName || '').toLowerCase().trim();
+  const product = state.stock.find(p => (p.name || '').toLowerCase().trim() === target);
+  return product ? stockCategory(product) : classifyProduct(productName);
+}
 
 // ---------- State ----------
 let state = loadState();
@@ -27,6 +118,7 @@ function loadState() {
   s.orders = migrateOrders(s.orders || []);
   s.expenses = migrateExpenses(s.expenses || []);
   s.shipments = migrateShipments(s.shipments || []);
+  s.stock = migrateStock(s.stock || []);
   if (!Array.isArray(s.customers)) s.customers = [];
   s.customers = migrateCustomers(s.customers);
   // Auto-create stub customer profiles for any name on an order that doesn't
@@ -235,6 +327,9 @@ const Adapters = {
       // active selling price. When original > price, the item is on sale.)
       if (orderColumnAvailable('reorder')) row.reorder = intOrNull(s.reorder);
       if (orderColumnAvailable('original_price')) row.original_price = numOrNull(s.originalPrice);
+      // Product line (peptides / gear / other). Older schemas without the
+      // column keep working — the value is re-derived from the name on load.
+      if (orderColumnAvailable('category')) row.category = stockCategory(s);
       return row;
     },
     fromRow: (r) => ({
@@ -243,6 +338,7 @@ const Adapters = {
       qty: r.qty ?? 0, status: r.status || 'ACTIVE',
       reorder: r.reorder == null ? null : (Number(r.reorder) || 0),
       originalPrice: r.original_price == null ? null : (Number(r.original_price) || 0),
+      category: CATEGORY_KEYS.includes(r.category) ? r.category : classifyProduct(r.name),
     }),
   },
   orders: {
@@ -365,7 +461,7 @@ function intOrNull(v) { return v == null || v === '' ? null : parseInt(v, 10); }
 // data stays in the local cache and repopulates cloud the moment the column is
 // added (run the ALTER TABLE noted in the tooltip).
 const OPTIONAL_ORDER_COLUMNS = ['payments', 'discount', 'inventory_applied'];
-const OPTIONAL_STOCK_COLUMNS = ['reorder', 'original_price'];
+const OPTIONAL_STOCK_COLUMNS = ['reorder', 'original_price', 'category'];
 // Every optional column across tables, so the missing-column detector and the
 // upsert retry loop work for stock as well as orders. Column names are unique
 // across our tables, so a single localStorage flag per name is unambiguous.
@@ -408,6 +504,22 @@ function setCloudStatus(kind, text) {
   t.textContent = text;
 }
 
+// Ids of stock rows that came back from Supabase without a stored category —
+// they predate the column, so `fromRow` gave them a name-based guess. Recorded
+// on fetch and written back once by backfillStockCategories() below.
+let pendingCategoryBackfill = [];
+
+// Persist the guessed categories for those rows, so every device agrees on the
+// split and a manual override has a stored value to replace. Runs at most once
+// per fetch: after the write the rows come back with a category and drop out.
+function backfillStockCategories() {
+  const ids = pendingCategoryBackfill;
+  pendingCategoryBackfill = [];
+  if (!sb || !ids.length || !orderColumnAvailable('category')) return;
+  const rows = state.stock.filter(p => ids.includes(p.id));
+  if (rows.length) cloudUpsertMany('stock', rows);
+}
+
 async function cloudFetchAll() {
   if (!sb) throw new Error('Supabase not configured');
   const [stock, orders, shipments, expenses, customers] = await Promise.all([
@@ -427,8 +539,11 @@ async function cloudFetchAll() {
   const customerRows = (customers && !customers.error && Array.isArray(customers.data))
     ? customers.data
     : [];
+  pendingCategoryBackfill = stock.data
+    .filter(r => !CATEGORY_KEYS.includes(r.category))
+    .map(r => r.id);
   return {
-    stock: stock.data.map(Adapters.stock.fromRow),
+    stock: migrateStock(stock.data.map(Adapters.stock.fromRow)),
     orders: migrateOrders(orders.data.map(Adapters.orders.fromRow)),
     shipments: migrateShipments(shipments.data.map(Adapters.shipments.fromRow)),
     expenses: migrateExpenses(expenses.data.map(Adapters.expenses.fromRow)),
@@ -598,6 +713,7 @@ async function initCloud() {
       state = { ...state, ...cloud };
       saveState();
       renderAll();
+      backfillStockCategories();
     }
     setCloudStatus('online', 'Synced');
   } catch (err) {
@@ -616,6 +732,7 @@ async function manualSync() {
     state = { ...state, ...cloud };
     saveState();
     renderAll();
+    backfillStockCategories();
     setCloudStatus('online', 'Synced');
     toast('Pulled latest from cloud.');
   } catch (err) {
@@ -3797,11 +3914,13 @@ function customerModal(existing) {
 // ---------- INVENTORY ----------
 const stkSearch = $('#stkSearch');
 const stkFilter = $('#stkFilter');
+const stkCategory = $('#stkCategory');
 persistFilter(stkSearch, 'lumen.stock.search');
 persistFilter(stkFilter, 'lumen.stock.filter');
+persistFilter(stkCategory, 'lumen.stock.category');
 wireSearchClear(stkSearch);
-[stkSearch, stkFilter].forEach(el => el.addEventListener('input', renderInventory));
-$('#stkReset').addEventListener('click', () => resetFilters([stkSearch, stkFilter]));
+[stkSearch, stkFilter, stkCategory].forEach(el => el.addEventListener('input', renderInventory));
+$('#stkReset').addEventListener('click', () => resetFilters([stkSearch, stkFilter, stkCategory]));
 $('#addStockBtn').addEventListener('click', () => stockModal());
 
 // Apply a delta to stock for a list of order items.
@@ -3845,6 +3964,8 @@ function renderInventory() {
   if (f === 'active') rows = rows.filter(p => p.status === 'ACTIVE');
   if (f === 'oos') rows = rows.filter(p => p.status !== 'ACTIVE' || Number(p.qty) === 0);
   if (f === 'low') rows = rows.filter(p => stockNeedsReorder(p));
+  const cat = stkCategory.value;
+  if (cat !== 'all') rows = rows.filter(p => stockCategory(p) === cat);
 
   // sort: active first, then qty desc
   rows.sort((a, b) => (a.status === 'ACTIVE' ? 0 : 1) - (b.status === 'ACTIVE' ? 0 : 1) || (b.qty - a.qty));
@@ -3872,8 +3993,17 @@ function renderInventory() {
     const priceCell = onSale
       ? `<span class="inv-price-was">${fmt$(origPrice)}</span><span class="inv-price-now">${fmt$(p.price)}</span><span class="pill amber inv-sale-pill">Sale</span>`
       : fmt$(p.price);
-    return `<tr${needs ? ' class="row-reorder"' : ''}>
-      <td><b>${escapeHtml(p.name)}</b></td>
+    const cat = stockCategory(p);
+    // Detail row carries the columns that get hidden on phones (cost, reorder
+    // level, margin, and both stock values) so the same numbers are reachable
+    // there by tapping the row. CSS keeps it out of the way on desktop, where
+    // every column is already on screen.
+    return `<tr class="inv-row${needs ? ' row-reorder' : ''}" data-stock-row="${p.id}">
+      <td>
+        <span class="inv-caret" aria-hidden="true">▶</span>
+        <b>${escapeHtml(p.name)}</b>
+        <span class="cat-tag cat-${cat}">${escapeHtml(categoryLabel(cat))}</span>
+      </td>
       <td class="num">${fmt$(p.cost)}</td>
       <td class="num">${priceCell}</td>
       <td class="num"><b>${fmtN(p.qty)}</b></td>
@@ -3885,6 +4015,18 @@ function renderInventory() {
       <td style="white-space:nowrap;">
         <button class="icon-btn" data-edit-stock="${p.id}" title="Edit">✎</button>
         <button class="icon-btn danger" data-del-stock="${p.id}" title="Delete">🗑</button>
+      </td>
+    </tr>
+    <tr class="inv-detail" data-stock-detail="${p.id}" hidden>
+      <td colspan="10">
+        <div class="inv-strip">
+          <div class="inv-cell"><span>Cost</span><b>${fmt$(p.cost)}</b></div>
+          <div class="inv-cell"><span>Margin / Unit</span><b class="inv-pos">${fmt$(margin)}</b></div>
+          <div class="inv-cell hl"><span>Stock Value (Gross)</span><b>${fmt$(valGross)}</b></div>
+          <div class="inv-cell hl"><span>Stock Value (Net)</span><b class="inv-pos">${fmt$(valNet)}</b></div>
+          <div class="inv-cell"><span>Reorder At</span><b>${fmtN(lvl)}</b></div>
+          <div class="inv-cell"><span>Category</span><b>${escapeHtml(categoryLabel(cat))}</b></div>
+        </div>
       </td>
     </tr>`;
   }).join('') || `<tr><td colspan="10" class="muted" style="padding:24px;text-align:center;">No products match.</td></tr>`;
@@ -3899,6 +4041,17 @@ function renderInventory() {
   $('#invKpiNet').textContent = fmt$(sumNet);
   $('#invKpiMargin').textContent = `${margin.toFixed(1)}%`;
 
+  // Tap a product row to open its detail strip. Only meaningful on phones —
+  // desktop shows every column already, so CSS keeps the strip collapsed there.
+  $$('#stockBody [data-stock-row]').forEach(row => row.addEventListener('click', (e) => {
+    if (e.target.closest('button')) return;   // edit / delete handle themselves
+    const detail = $(`#stockBody [data-stock-detail="${row.dataset.stockRow}"]`);
+    if (!detail) return;
+    const open = detail.hidden;
+    detail.hidden = !open;
+    row.classList.toggle('open', open);
+  }));
+
   $$('#stockBody [data-edit-stock]').forEach(el => el.addEventListener('click', () => {
     const p = state.stock.find(x => x.id === el.dataset.editStock);
     if (p) stockModal(p);
@@ -3912,12 +4065,17 @@ function renderInventory() {
 }
 
 function stockModal(existing) {
-  const initial = existing ? { ...existing } : { name: '', cost: 0, price: 0, originalPrice: '', qty: 0, status: 'ACTIVE', reorder: '' };
+  const initial = existing
+    ? { ...existing }
+    : { name: '', cost: 0, price: 0, originalPrice: '', qty: 0, status: 'ACTIVE', reorder: '', category: DEFAULT_CATEGORY };
   // Normalize originalPrice for the form: '' shows blank when there's no sale,
   // and a number shows when one is set.
   if (existing && (initial.originalPrice == null || Number(initial.originalPrice) <= 0)) initial.originalPrice = '';
+  initial.category = stockCategory(initial);
   openModal(existing ? 'Edit Product' : 'New Product', [
     { name: 'name', label: 'Product Name', required: true },
+    { name: 'category', label: 'Category', type: 'select',
+      options: CATEGORIES.map(c => ({ value: c.key, label: c.label })) },
     { type: 'row', fields: [
       { name: 'cost', label: 'Purchase Price (Cost)', type: 'number', min: 0 },
       { name: 'price', label: 'Selling Price', type: 'number', min: 0 },
@@ -5414,13 +5572,14 @@ const TP_OPEN_KEY = 'lumen.topProducts.open';
 persistFilter($('#tpStatus'), 'lumen.topProducts.status');
 persistFilter(tpMonth, TP_MONTH_KEY);
 persistFilter(tpDay, TP_DAY_KEY);
+persistFilter($('#tpCategory'), 'lumen.topProducts.category');
 persistFilter($('#tpSort'), 'lumen.topProducts.sort');
 persistFilter($('#tpLimit'), 'lumen.topProducts.limit');
-[$('#tpStatus'), tpMonth, tpDay, $('#tpSort'), $('#tpLimit')].forEach(el =>
+[$('#tpStatus'), tpMonth, tpDay, $('#tpCategory'), $('#tpSort'), $('#tpLimit')].forEach(el =>
   el.addEventListener('input', renderTopProducts)
 );
 $('#tpReset').addEventListener('click', () => resetFilters(
-  [$('#tpStatus'), tpMonth, tpDay, $('#tpSort'), $('#tpLimit')]
+  [$('#tpStatus'), tpMonth, tpDay, $('#tpCategory'), $('#tpSort'), $('#tpLimit')]
 ));
 const tpToggleBtn = $('#topProductsToggle');
 const tpBody = $('#topProductsBody');
@@ -5465,6 +5624,7 @@ function renderTopProducts() {
   const status = $('#tpStatus').value;
   const mo = tpMonth.value;
   const dy = tpDay.value;
+  const cat = $('#tpCategory').value;
   const sort = $('#tpSort').value;
   const limit = $('#tpLimit').value;
 
@@ -5483,35 +5643,67 @@ function renderTopProducts() {
       const qty = Number(it.qty) || 0;
       const price = Number(it.price) || 0;
       const cogs = Number(it.cogs) || 0;
-      if (!byProduct[name]) byProduct[name] = { gross: 0, net: 0, qty: 0 };
+      if (!byProduct[name]) byProduct[name] = { gross: 0, net: 0, qty: 0, cat: itemCategory(name) };
       byProduct[name].gross += qty * price;
       byProduct[name].net += qty * (price - cogs);
       byProduct[name].qty += qty;
     });
   });
-  let rows = Object.entries(byProduct).map(([name, v]) => ({ name, ...v }));
-  rows.sort((a, b) => b[sort] - a[sort]);
-  if (limit !== 'all') rows = rows.slice(0, Number(limit) || rows.length);
+  const all = Object.entries(byProduct).map(([name, v]) => ({ name, ...v }));
+
+  // Group into category sections. The limit applies PER category, so "Top 10"
+  // means the top 10 peptides and the top 10 gear — not 10 rows total.
+  const sections = CATEGORIES
+    .filter(c => cat === 'all' || cat === c.key)
+    .map(c => {
+      let rows = all.filter(r => r.cat === c.key).sort((a, b) => b[sort] - a[sort]);
+      if (limit !== 'all') rows = rows.slice(0, Number(limit) || rows.length);
+      // Subtotals cover the rows actually displayed, so a limited view still
+      // adds up to what's on screen.
+      const sub = rows.reduce(
+        (acc, r) => { acc.gross += r.gross; acc.net += r.net; acc.qty += r.qty; return acc; },
+        { gross: 0, net: 0, qty: 0 }
+      );
+      return { ...c, rows, sub };
+    })
+    .filter(s => s.rows.length);
 
   const body = $('#monthlyTopProducts');
-  body.innerHTML = rows.length
-    ? rows.map(r => `<tr>
-        <td><b>${escapeHtml(r.name)}</b></td>
-        <td class="num">${fmt$(r.gross)}</td>
-        <td class="num">${fmt$(r.net)}</td>
-        <td class="num">${fmtN(r.qty)}</td>
-      </tr>`).join('')
+  body.innerHTML = sections.length
+    ? sections.map(s => `
+        <tr class="tp-cat-row tp-cat-${s.key}">
+          <td colspan="4">
+            <div class="tp-cat-bar">
+              <span class="tp-cat-name">${escapeHtml(s.label)}</span>
+              <span class="tp-cat-count">${fmtN(s.rows.length)} ${s.rows.length === 1 ? 'item' : 'items'}</span>
+              <div class="tp-cat-stats">
+                <div class="tp-cat-stat"><span>Units</span><b>${fmtN(s.sub.qty)}</b></div>
+                <div class="tp-cat-stat"><span>Gross</span><b>${fmt$(s.sub.gross)}</b></div>
+                <div class="tp-cat-stat"><span>Net Profit</span><b class="tp-net">${fmt$(s.sub.net)}</b></div>
+              </div>
+            </div>
+          </td>
+        </tr>
+        ${s.rows.map((r, i) => `<tr class="tp-item-row tp-cat-${s.key}">
+          <td><span class="tp-rank">${i + 1}</span><b>${escapeHtml(r.name)}</b></td>
+          <td class="num">${fmtN(r.qty)}</td>
+          <td class="num">${fmt$(r.gross)}</td>
+          <td class="num tp-net">${fmt$(r.net)}</td>
+        </tr>`).join('')}
+      `).join('')
     : `<tr><td colspan="4" class="muted" style="padding:18px;text-align:center;">No data.</td></tr>`;
 
-  // Footer = totals across the rows actually displayed (after the limit slice),
-  // so "Top 5" totals match what the user sees.
-  const totals = rows.reduce(
-    (acc, v) => { acc.gross += v.gross; acc.net += v.net; acc.qty += v.qty; return acc; },
+  // Footer = the combined total across every section shown.
+  const totals = sections.reduce(
+    (acc, s) => { acc.gross += s.sub.gross; acc.net += s.sub.net; acc.qty += s.sub.qty; return acc; },
     { gross: 0, net: 0, qty: 0 }
   );
+  $('#tpQty').textContent = fmtN(totals.qty);
   $('#tpGross').textContent = fmt$(totals.gross);
   $('#tpNet').textContent = fmt$(totals.net);
-  $('#tpQty').textContent = fmtN(totals.qty);
+  $('#tpGrandLabel').textContent = cat === 'all'
+    ? 'Grand Total — All Categories'
+    : `Grand Total — ${categoryLabel(cat)}`;
 }
 
 function renderMonthly() {
@@ -5944,6 +6136,26 @@ function renderCalendar(mk, dayBuckets) {
 }
 
 // Read-only modal showing every sale on a given day, grouped by customer.
+// Shared line-item row for the day/week drill-down popups. Uses the
+// post-discount line total (itemLineTotal) — NOT raw qty × price — so the
+// popup agrees with the order totals when line discounts or sale prices
+// apply. Discounted/sale lines show the original line amount struck through.
+function ddItemRowHtml(it) {
+  const qty = Number(it.qty) || 0;
+  const price = Number(it.price) || 0;
+  const orig = Number(it.originalPrice) || 0;
+  const lineDisc = itemDiscountAmount(it);
+  const lineTotal = itemLineTotal(it);
+  const strikeSrc = orig > price ? orig : price;
+  const wasAmount = round2(qty * strikeSrc);
+  const showStrike = (orig > price || lineDisc > 0) && wasAmount > round2(lineTotal);
+  return `<div class="dd-item">
+    <span class="dd-item-name">${escapeHtml(it.product || '')}</span>
+    <span class="dd-item-qty muted">×${fmtN(qty)}</span>
+    <span class="dd-item-total">${showStrike ? `<s class="dd-item-was">${fmt$(wasAmount)}</s> ` : ''}${fmt$(round2(lineTotal))}</span>
+  </div>`;
+}
+
 function openDayDetail(dateKey) {
   const b = __monthlyDayBuckets[dateKey];
   const pendingOrdersList = Array.isArray(b && b.pendingOrders) ? b.pendingOrders : [];
@@ -6022,14 +6234,7 @@ function openDayDetail(dateKey) {
                   <span class="dd-customer-totals">${fmt$(round2(c.total))} <span class="muted">· ${fmt$(round2(c.profit))} profit</span></span>
                 </div>
                 <div class="dd-items">
-                  ${c.items.map(it => {
-                    const qty = Number(it.qty) || 0, price = Number(it.price) || 0;
-                    return `<div class="dd-item">
-                      <span class="dd-item-name">${escapeHtml(it.product || '')}</span>
-                      <span class="dd-item-qty muted">×${fmtN(qty)}</span>
-                      <span class="dd-item-total">${fmt$(round2(qty * price))}</span>
-                    </div>`;
-                  }).join('')}
+                  ${c.items.map(it => ddItemRowHtml(it)).join('')}
                 </div>
               </div>
             `).join('')}
@@ -6047,14 +6252,7 @@ function openDayDetail(dateKey) {
                   <span class="dd-customer-totals"><span class="dd-pending-amt">${fmt$(round2(c.balance))} due</span> <span class="muted">· ${fmt$(round2(c.profit))} potential</span></span>
                 </div>
                 <div class="dd-items">
-                  ${c.items.map(it => {
-                    const qty = Number(it.qty) || 0, price = Number(it.price) || 0;
-                    return `<div class="dd-item">
-                      <span class="dd-item-name">${escapeHtml(it.product || '')}</span>
-                      <span class="dd-item-qty muted">×${fmtN(qty)}</span>
-                      <span class="dd-item-total">${fmt$(round2(qty * price))}</span>
-                    </div>`;
-                  }).join('')}
+                  ${c.items.map(it => ddItemRowHtml(it)).join('')}
                 </div>
               </div>
             `).join('')}
@@ -6137,14 +6335,7 @@ function openWeekDetail(mk, weekNum, startDay, endDay) {
                   <span class="dd-customer-totals">${fmt$(round2(c.total))} <span class="muted">· ${fmt$(round2(c.profit))} profit</span></span>
                 </div>
                 <div class="dd-items">
-                  ${c.items.map(it => {
-                    const qN = Number(it.qty) || 0, price = Number(it.price) || 0;
-                    return `<div class="dd-item">
-                      <span class="dd-item-name">${escapeHtml(it.product || '')}</span>
-                      <span class="dd-item-qty muted">×${fmtN(qN)}</span>
-                      <span class="dd-item-total">${fmt$(round2(qN * price))}</span>
-                    </div>`;
-                  }).join('')}
+                  ${c.items.map(it => ddItemRowHtml(it)).join('')}
                 </div>
               </div>
             `).join('')}
@@ -6165,14 +6356,7 @@ function openWeekDetail(mk, weekNum, startDay, endDay) {
                   <span class="dd-customer-totals"><span class="dd-pending-amt">${fmt$(round2(bal))} due</span> <span class="muted">· ${fmt$(round2(prof))} potential</span></span>
                 </div>
                 <div class="dd-items">
-                  ${its.map(it => {
-                    const qN = Number(it.qty) || 0, price = Number(it.price) || 0;
-                    return `<div class="dd-item">
-                      <span class="dd-item-name">${escapeHtml(it.product || '')}</span>
-                      <span class="dd-item-qty muted">×${fmtN(qN)}</span>
-                      <span class="dd-item-total">${fmt$(round2(qN * price))}</span>
-                    </div>`;
-                  }).join('')}
+                  ${its.map(it => ddItemRowHtml(it)).join('')}
                 </div>
               </div>`;
             }).join('')}
@@ -6301,7 +6485,7 @@ function restoreFromBackup(file) {
       `If you're not sure, download a backup of your current data first.`
     )) return;
 
-    state.stock = Array.isArray(d.stock) ? d.stock : [];
+    state.stock = migrateStock(Array.isArray(d.stock) ? d.stock : []);
     state.orders = migrateOrders(Array.isArray(d.orders) ? d.orders : []);
     state.shipments = migrateShipments(Array.isArray(d.shipments) ? d.shipments : []);
     state.expenses = migrateExpenses(Array.isArray(d.expenses) ? d.expenses : []);
