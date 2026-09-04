@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-09-04.1';
+const BUILD_VERSION = '2026-09-04.2';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -3185,17 +3185,36 @@ function voiceNormalize(s) { return (s || '').toLowerCase().replace(/[^a-z0-9]+/
 function voiceTitleCase(s) {
   return (s || '').replace(/\s+/g, ' ').trim().replace(/\b\w/g, c => c.toUpperCase());
 }
+// Pulls a strength/dosage token ("10mg", "5000iu", "2ml") out of a name, if
+// any — deliberately excludes container words like "vial"/"kit" so a spoken
+// quantity ("two vials") never gets mistaken for a dosage.
+function voiceExtractDosage(s) {
+  const m = (s || '').toLowerCase().match(/(\d+(?:\.\d+)?)\s*(mg|mcg|ug|iu|ml|g)\b/);
+  return m ? `${m[1]}${m[2]}` : null;
+}
 // Best fuzzy match for a spoken phrase against a list of known names (customers
 // or products). Favors an exact match, then a known name fully contained in
 // the phrase (or vice versa), then falls back to word-overlap scoring. Returns
 // null — leaving the raw heard text in place — rather than guess wildly.
+// Two safety rules matter a lot for inventory with multiple strengths of the
+// same peptide (e.g. "Retatrutide 5mg" / "10mg" / "15mg"):
+//   1. A candidate whose stated dosage CONTRADICTS a dosage the speaker said
+//      is disqualified outright, even if the peptide name matches well —
+//      "10mg retatrutide" must never resolve to the 5mg vial.
+//   2. If the speaker gave no dosage and several strengths tie for best
+//      match ("reta" alone), refuse to silently pick one — return null so
+//      the raw heard text stays visible on the review screen instead of a
+//      confident-looking but possibly wrong SKU.
 function voiceBestMatch(phrase, candidates) {
   const norm = voiceNormalize(phrase);
   if (!norm || !candidates || !candidates.length) return null;
-  let best = null, bestScore = 0;
+  const phraseDosage = voiceExtractDosage(phrase);
+  let best = null, bestScore = 0, tieCount = 0;
   for (const c of candidates) {
     const cn = voiceNormalize(c);
     if (!cn) continue;
+    const candDosage = voiceExtractDosage(c);
+    if (phraseDosage && candDosage && phraseDosage !== candDosage) continue;
     let score = 0;
     if (cn === norm) score = 100;
     else if (norm.includes(cn)) score = 80 + cn.length;
@@ -3211,9 +3230,14 @@ function voiceBestMatch(phrase, candidates) {
       const denom = Math.min(cTokens.length, pTokens.length);
       if (overlap > 0 && denom) score = (overlap / denom) * 50;
     }
-    if (score > bestScore) { bestScore = score; best = c; }
+    if (score <= 0) continue;
+    if (phraseDosage && candDosage && phraseDosage === candDosage) score += 15;
+    if (score > bestScore) { bestScore = score; best = c; tieCount = 0; }
+    else if (score === bestScore) { tieCount++; }
   }
-  return bestScore >= 28 ? best : null;
+  if (bestScore < 28) return null;
+  if (tieCount > 0 && !phraseDosage) return null;
+  return best;
 }
 function parseVoiceOrderText(raw) {
   let text = ' ' + (raw || '').trim() + ' ';
@@ -3223,26 +3247,12 @@ function parseVoiceOrderText(raw) {
   // Drop a leading trigger phrase ("new order", "create an order", …) so it
   // doesn't get mistaken for a customer name or product below.
   text = text.replace(/^\s*(?:hey\s+)?(?:new\s+order|create\s+an\s+order|create\s+order|start\s+an\s+order|place\s+an\s+order|order)\b\s*/i, ' ');
-
-  // ---- discount: "10 percent off" / "ten percent off" / "10% discount" / "$5 off" / "five dollars off" ----
   const numAlt = `\\d+(?:\\.\\d+)?|${Object.keys(VOICE_NUMBER_WORDS).join('|')}`;
-  let m = text.match(new RegExp(`(${numAlt})\\s*(?:%|percent)\\s*(?:off|discount)?`, 'i'));
-  if (m) {
-    draft.discount = { type: 'percent', value: voiceWordsToNumber(m[1]) };
-    text = text.slice(0, m.index) + ' ' + text.slice(m.index + m[0].length);
-  } else {
-    m = text.match(new RegExp(`\\$\\s*(${numAlt})\\s*(?:dollars?)?\\s*off`, 'i')) ||
-        text.match(new RegExp(`(${numAlt})\\s*dollars?\\s*off`, 'i'));
-    if (m) {
-      draft.discount = { type: 'amount', value: voiceWordsToNumber(m[1]) };
-      text = text.slice(0, m.index) + ' ' + text.slice(m.index + m[0].length);
-    }
-  }
 
   // ---- customer: "for <name>" (stops at a comma/and/with/plus or end) ----
   const knownCustomers = [...new Set((state.customers || []).map(c => c.name).filter(Boolean))];
   let customerPhrase = null;
-  m = text.match(/\bfor\s+([a-z][a-z .'-]*?)(?=(?:,|\band\b|\bwith\b|\bplus\b|$))/i);
+  let m = text.match(/\bfor\s+([a-z][a-z .'-]*?)(?=(?:,|\band\b|\bwith\b|\bplus\b|$))/i);
   if (m) {
     customerPhrase = m[1].trim();
     text = text.slice(0, m.index) + ' ' + text.slice(m.index + m[0].length);
@@ -3267,14 +3277,73 @@ function parseVoiceOrderText(raw) {
   // fallback scan fired instead of the regex above).
   text = text.replace(/\bfor\b/gi, ' ').replace(/\b(?:wants?|needs?|gets?|buys?|would\s+like|ordering|orders?)\b/gi, ' ');
 
-  // ---- items: whatever's left, split on and/plus/comma ----
+  // ---- items: whatever's left, split on and/plus/comma. Each segment is
+  // checked for its OWN discount phrase first ("ten dollars off the
+  // retatrutide") so a discount tied to one product doesn't bleed into the
+  // whole order or another line. ----
   const knownProducts = [...new Set((state.stock || []).map(s => s.name).filter(Boolean))];
   const segments = text.split(/\band\b|\bplus\b|,/i).map(s => s.trim()).filter(Boolean);
   // Closing phrases that read as a trailing clause, not another item —
   // "...and one TB-500, no discount" shouldn't spawn a bogus "No Discount" line.
   const closerRe = /^(?:no\s+discount|nothing\s+else|that'?s\s+(?:it|all)|no\s+discounts?)$/i;
-  for (const seg of segments) {
-    if (closerRe.test(seg.trim())) continue;
+  const wholeOrderRe = /\b(?:whole\s+order|entire\s+order|everything|whole\s+thing|the\s+order)\b/i;
+  for (const seg0 of segments) {
+    let seg = seg0.trim();
+    if (closerRe.test(seg)) continue;
+
+    // Pull a discount phrase out of THIS segment, if any (percent first, then $).
+    let segDiscount = null;
+    let dm = seg.match(new RegExp(`(${numAlt})\\s*(?:%|percent)\\s*(?:off|discount)?`, 'i'));
+    if (dm) {
+      segDiscount = { type: 'percent', value: voiceWordsToNumber(dm[1]) };
+      seg = (seg.slice(0, dm.index) + ' ' + seg.slice(dm.index + dm[0].length)).trim();
+    } else {
+      dm = seg.match(new RegExp(`\\$\\s*(${numAlt})\\s*(?:dollars?)?\\s*off`, 'i')) ||
+           seg.match(new RegExp(`(${numAlt})\\s*dollars?\\s*off`, 'i'));
+      if (dm) {
+        segDiscount = { type: 'amount', value: voiceWordsToNumber(dm[1]) };
+        seg = (seg.slice(0, dm.index) + ' ' + seg.slice(dm.index + dm[0].length)).trim();
+      }
+    }
+
+    // "ten percent off the whole order" — an explicit whole-order discount,
+    // regardless of which segment it landed in after splitting on commas.
+    if (segDiscount && wholeOrderRe.test(seg)) {
+      if (!draft.discount) draft.discount = segDiscount;
+      continue;
+    }
+    // Trim connector words left dangling around the discount phrase, e.g.
+    // "ten dollars off the retatrutide" → "the retatrutide" → "retatrutide".
+    seg = seg.replace(/^(?:on|for|off|of|the|that|just|only)\s+/i, '').trim();
+    // An explicit backreference ("...ten dollars off just that one") means the
+    // discount is scoped to whichever item was named right before it — attach
+    // it there. A bare trailing discount with no product AND no backreference
+    // ("...two BPC-157, ten percent off") stays an overall order discount,
+    // same as before — it's the far more common phrasing and shouldn't
+    // silently narrow to just the last-mentioned item.
+    const backref = /^(?:that one|this one|it)$/i.test(seg);
+    if (backref) seg = '';
+
+    if (!seg) {
+      if (segDiscount) {
+        const last = draft.items[draft.items.length - 1];
+        if (backref && last) last.discount = segDiscount;
+        else if (!draft.discount) draft.discount = segDiscount;
+      }
+      continue;
+    }
+    // Discount phrase that re-names a product already in this order ("one
+    // Retatrutide 10mg, ten dollars off THE RETATRUTIDE") rather than using a
+    // pronoun — match it against items already parsed so it scopes the
+    // discount there instead of spawning a duplicate line.
+    if (segDiscount && draft.items.length) {
+      const sameAsExisting = voiceBestMatch(seg, draft.items.map(it => it.product));
+      if (sameAsExisting) {
+        const target = draft.items.find(it => it.product === sameAsExisting);
+        if (target) { target.discount = segDiscount; continue; }
+      }
+    }
+
     let qty = 1;
     let productPhrase = seg;
     const qm = seg.match(/^(\d+|[a-z]+)\b/i);
@@ -3294,7 +3363,7 @@ function parseVoiceOrderText(raw) {
       price,
       cogs: stockItem ? (Number(stockItem.cost) || 0) : 0,
       originalPrice: origPrice > price ? origPrice : null,
-      discount: null,
+      discount: segDiscount,
     });
   }
   if (!draft.items.length) draft.items.push(blankVoiceItem());
@@ -3319,7 +3388,7 @@ function voiceOrderModal() {
         : 'Tap the mic icon on your keyboard to dictate the order, or type it — then review it on the next screen before saving.'}
     </p>
     ${hasSpeechApi ? `<button type="button" class="btn primary" id="voiceMicBtn" style="width:100%;margin-bottom:12px;">🎤 Tap to Speak</button>` : ''}
-    <label><span>Order</span><textarea id="voiceText" rows="4" placeholder="e.g. New order for Andrea, two BPC-157, ten percent off"></textarea></label>
+    <label><span>Order</span><textarea id="voiceText" rows="4" placeholder="e.g. New order for Andrea, two BPC-157 and one Retatrutide 10mg, ten dollars off the retatrutide"></textarea></label>
     <p class="muted" id="voiceHint" style="margin-top:8px;font-size:12.5px;min-height:16px;"></p>
   `;
 
