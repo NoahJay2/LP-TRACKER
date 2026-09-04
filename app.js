@@ -1,4 +1,4 @@
-// Lumen Peptides Tracker — single-file frontend app
+// Lumen Research Tracker — single-file frontend app
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
@@ -298,7 +298,7 @@ function loadState() {
 }
 // Normalize customer records and snap fields to consistent shapes.
 function migrateCustomers(customers) {
-  return (customers || []).map(c => ({
+  const normalized = (customers || []).map(c => ({
     id: c && c.id ? c.id : 'c-' + Math.random().toString(36).slice(2, 10),
     name: (c && c.name) || '',
     phone: (c && c.phone) || '',
@@ -307,10 +307,34 @@ function migrateCustomers(customers) {
     notes: (c && c.notes) || '',
     createdAt: (c && c.createdAt) || null,
   })).filter(c => (c.name || '').trim());
+  // Historically, ensureCustomersFromOrders (below) minted a random id per
+  // device/session for any order customer missing a profile — on a fresh
+  // browser that hadn't yet pulled the cloud copy, that meant the same person
+  // got a brand-new duplicate row instead of reusing the existing one. Collapse
+  // same-name records down to one here (keeping whichever copy has the most
+  // filled-in detail) so old duplicate rows already in Supabase don't show up
+  // as repeated entries in the customer list or search.
+  const byKey = new Map();
+  const filledCount = (c) => ['phone', 'email', 'address', 'notes'].filter(f => (c[f] || '').trim()).length;
+  for (const c of normalized) {
+    const key = customerKey(c.name);
+    const prev = byKey.get(key);
+    if (!prev || filledCount(c) > filledCount(prev)) byKey.set(key, c);
+  }
+  return [...byKey.values()];
 }
 // Match customers to orders by lower-cased trimmed name so a customer record
 // and the customer field on orders stay linked even if capitalization varies.
 function customerKey(name) { return (name || '').toLowerCase().trim(); }
+// Deterministic id derived from the customer's name, used when auto-creating
+// a profile from order history (see ensureCustomersFromOrders). Independent
+// sessions that each need to backfill the same missing customer land on the
+// same id and upsert onto the same Supabase row instead of each minting a new
+// random id and creating a duplicate.
+function customerIdFromName(name) {
+  const slug = customerKey(name).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return 'c-auto-' + (slug || 'customer');
+}
 function ensureCustomersFromOrders(customers, orders) {
   const existing = new Set((customers || []).map(c => customerKey(c.name)));
   const out = [...customers];
@@ -321,7 +345,7 @@ function ensureCustomersFromOrders(customers, orders) {
     if (existing.has(key)) continue;
     existing.add(key);
     out.push({
-      id: 'c-' + Math.random().toString(36).slice(2, 10),
+      id: customerIdFromName(name),
       name, phone: '', email: '', address: '', notes: '',
       createdAt: o.date || null,
     });
@@ -4118,12 +4142,20 @@ function customerModal(existing) {
       Object.assign(existing, { name, phone, email, address, notes });
       saved = existing;
     } else {
-      saved = {
-        id: 'c-' + Math.random().toString(36).slice(2, 10),
-        name, phone, email, address, notes,
-        createdAt: todayISO(),
-      };
-      state.customers.push(saved);
+      // A profile with this name may already exist (e.g. auto-created from
+      // an order) — update it in place instead of creating a duplicate row.
+      const dupe = findCustomerByName(name);
+      if (dupe) {
+        Object.assign(dupe, { name, phone, email, address, notes });
+        saved = dupe;
+      } else {
+        saved = {
+          id: 'c-' + Math.random().toString(36).slice(2, 10),
+          name, phone, email, address, notes,
+          createdAt: todayISO(),
+        };
+        state.customers.push(saved);
+      }
     }
     saveState();
     cloudUpsert('customers', saved);
@@ -5806,7 +5838,7 @@ function shipModal(existing) {
     form.innerHTML = `
       <datalist id="shipEditProductList">${productOptions}</datalist>
       <div class="row-2">
-        <label><span class="req">Vendor</span><input type="text" name="vendor" required value="${escapeHtml(ed.vendor)}" placeholder="e.g. Lumen Peptides" /></label>
+        <label><span class="req">Vendor</span><input type="text" name="vendor" required value="${escapeHtml(ed.vendor)}" placeholder="e.g. Lumen Research" /></label>
         <label><span>Date Ordered</span><input type="date" name="dateOrdered" value="${ed.dateOrdered}" /></label>
       </div>
       <label id="shipEditReceivedWrap"><span>Date Received</span><input type="date" name="dateReceived" value="${ed.dateReceived}" /><span class="field-hint">Stamped automatically when you mark it delivered.</span></label>
@@ -5946,7 +5978,7 @@ function shipModal(existing) {
   form.innerHTML = `
     <datalist id="shipProductList">${productOptions}</datalist>
     <div class="row-2">
-      <label><span class="req">Vendor</span><input type="text" name="vendor" required placeholder="e.g. Lumen Peptides" /></label>
+      <label><span class="req">Vendor</span><input type="text" name="vendor" required placeholder="e.g. Lumen Research" /></label>
       <label><span>Date Ordered</span><input type="date" name="dateOrdered" value="${data.dateOrdered}" /></label>
     </div>
     <div class="row-2">
@@ -6130,7 +6162,7 @@ function shipGroupModal(groupShipments) {
   form.innerHTML = `
     <datalist id="shipGroupProductList">${productOptions}</datalist>
     <div class="row-2">
-      <label><span class="req">Vendor</span><input type="text" name="vendor" required value="${escapeHtml(ed.vendor)}" placeholder="e.g. Lumen Peptides" /></label>
+      <label><span class="req">Vendor</span><input type="text" name="vendor" required value="${escapeHtml(ed.vendor)}" placeholder="e.g. Lumen Research" /></label>
       <label><span>Date Ordered</span><input type="date" name="dateOrdered" value="${ed.dateOrdered}" /></label>
     </div>
     <div class="row-2">
@@ -6760,7 +6792,7 @@ function expModal(existing) {
   form.innerHTML = `
     <datalist id="expProductList">${productOptions}</datalist>
     <div class="row-2">
-      <label><span class="req">Vendor / Site</span><input type="text" name="vendor" required value="${escapeHtml(data.vendor || '')}" placeholder="e.g. Amazon, Lumen Peptides" /></label>
+      <label><span class="req">Vendor / Site</span><input type="text" name="vendor" required value="${escapeHtml(data.vendor || '')}" placeholder="e.g. Amazon, Lumen Research" /></label>
       <label><span>Date Ordered</span><input type="date" name="dateOrdered" value="${data.dateOrdered || ''}" /></label>
     </div>
     <label><span>Date Received</span><input type="date" name="dateReceived" value="${data.dateReceived || ''}" /></label>

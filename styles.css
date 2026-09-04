@@ -1,4 +1,4 @@
-/* Lumen Peptides Tracker — Terminal Pro theme */
+/* Lumen Research Tracker — Terminal Pro theme */
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
@@ -759,7 +759,7 @@ body.discount-popup-open { overflow: hidden; }
   padding: 22px 22px 26px;
   box-shadow: 0 6px 20px rgba(0,0,0,0.25);
 }
-/* Lumen Peptides watermark — rendered as a real <img> (not a CSS pseudo)
+/* Lumen Research watermark — rendered as a real <img> (not a CSS pseudo)
    because html-to-image embeds <img> elements far more reliably than
    ::before background-image with relative URLs. Sits centered behind content. */
 .invoice-watermark {
