@@ -2833,6 +2833,7 @@ persistFilter(ordSort, 'lumen.orders.sort');
 $('#ordReset').addEventListener('click', () => resetFilters([ordSearch, ordFilter, ordMonth, ordDay, ordSort]));
 
 $('#addOrderBtn').addEventListener('click', () => orderModal());
+$('#voiceOrderBtn').addEventListener('click', () => voiceOrderModal());
 
 function refreshMonthDropdown() {
   const months = Array.from(new Set(state.orders.map(o => monthKey(o.date)).filter(Boolean))).sort();
@@ -3160,6 +3161,231 @@ function renderSingleOrderRow(o) {
       </td>
     </tr>`).join('');
   return html;
+}
+
+// ---------- Voice order ----------
+// Speak (or dictate/type) a whole order in one go — "New order for Andrea,
+// two BPC-157, ten percent off" — and pre-fill the New Order form with a best
+// guess at customer / items / discount. Never saves anything itself: the
+// parsed result opens the normal, fully-editable order form (via orderModal's
+// `draft` param) so the user always reviews against the "Heard:" text before
+// hitting Save.
+const VOICE_NUMBER_WORDS = {
+  zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
+  ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16,
+  seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20, dozen: 12, couple: 2, few: 3,
+};
+function voiceWordsToNumber(s) {
+  const key = (s || '').toLowerCase().trim();
+  if (VOICE_NUMBER_WORDS[key] != null) return VOICE_NUMBER_WORDS[key];
+  const n = parseFloat(key);
+  return Number.isFinite(n) ? n : null;
+}
+function voiceNormalize(s) { return (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ''); }
+function voiceTitleCase(s) {
+  return (s || '').replace(/\s+/g, ' ').trim().replace(/\b\w/g, c => c.toUpperCase());
+}
+// Best fuzzy match for a spoken phrase against a list of known names (customers
+// or products). Favors an exact match, then a known name fully contained in
+// the phrase (or vice versa), then falls back to word-overlap scoring. Returns
+// null — leaving the raw heard text in place — rather than guess wildly.
+function voiceBestMatch(phrase, candidates) {
+  const norm = voiceNormalize(phrase);
+  if (!norm || !candidates || !candidates.length) return null;
+  let best = null, bestScore = 0;
+  for (const c of candidates) {
+    const cn = voiceNormalize(c);
+    if (!cn) continue;
+    let score = 0;
+    if (cn === norm) score = 100;
+    else if (norm.includes(cn)) score = 80 + cn.length;
+    else if (cn.includes(norm) && norm.length >= 3) score = 60 + norm.length;
+    else {
+      const cTokens = c.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+      const pTokens = phrase.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+      const overlap = cTokens.filter(t => pTokens.includes(t)).length;
+      // Score against the SHORTER token list so a spoken phrase that drops a
+      // trailing detail (e.g. a dosage suffix the candidate has but the
+      // speaker didn't say) isn't penalized as if every candidate word had
+      // to be heard.
+      const denom = Math.min(cTokens.length, pTokens.length);
+      if (overlap > 0 && denom) score = (overlap / denom) * 50;
+    }
+    if (score > bestScore) { bestScore = score; best = c; }
+  }
+  return bestScore >= 28 ? best : null;
+}
+function parseVoiceOrderText(raw) {
+  let text = ' ' + (raw || '').trim() + ' ';
+  const draft = { customer: '', date: todayISO(), items: [], discount: null };
+  if (!text.trim()) return draft;
+
+  // Drop a leading trigger phrase ("new order", "create an order", …) so it
+  // doesn't get mistaken for a customer name or product below.
+  text = text.replace(/^\s*(?:hey\s+)?(?:new\s+order|create\s+an\s+order|create\s+order|start\s+an\s+order|place\s+an\s+order|order)\b\s*/i, ' ');
+
+  // ---- discount: "10 percent off" / "ten percent off" / "10% discount" / "$5 off" / "five dollars off" ----
+  const numAlt = `\\d+(?:\\.\\d+)?|${Object.keys(VOICE_NUMBER_WORDS).join('|')}`;
+  let m = text.match(new RegExp(`(${numAlt})\\s*(?:%|percent)\\s*(?:off|discount)?`, 'i'));
+  if (m) {
+    draft.discount = { type: 'percent', value: voiceWordsToNumber(m[1]) };
+    text = text.slice(0, m.index) + ' ' + text.slice(m.index + m[0].length);
+  } else {
+    m = text.match(new RegExp(`\\$\\s*(${numAlt})\\s*(?:dollars?)?\\s*off`, 'i')) ||
+        text.match(new RegExp(`(${numAlt})\\s*dollars?\\s*off`, 'i'));
+    if (m) {
+      draft.discount = { type: 'amount', value: voiceWordsToNumber(m[1]) };
+      text = text.slice(0, m.index) + ' ' + text.slice(m.index + m[0].length);
+    }
+  }
+
+  // ---- customer: "for <name>" (stops at a comma/and/with/plus or end) ----
+  const knownCustomers = [...new Set((state.customers || []).map(c => c.name).filter(Boolean))];
+  let customerPhrase = null;
+  m = text.match(/\bfor\s+([a-z][a-z .'-]*?)(?=(?:,|\band\b|\bwith\b|\bplus\b|$))/i);
+  if (m) {
+    customerPhrase = m[1].trim();
+    text = text.slice(0, m.index) + ' ' + text.slice(m.index + m[0].length);
+  }
+  if (customerPhrase) {
+    draft.customer = voiceBestMatch(customerPhrase, knownCustomers) || voiceTitleCase(customerPhrase);
+  } else {
+    // No clean "for <name>," break (or no "for" at all) — fall back to
+    // scanning the whole phrase for a known customer name, e.g.
+    // "Andrea wants two BPC-157" or "for andrea two bpc157 five off".
+    const found = knownCustomers
+      .filter(n => voiceNormalize(text).includes(voiceNormalize(n)))
+      .sort((a, b) => b.length - a.length)[0];
+    if (found) {
+      draft.customer = found;
+      text = text.replace(new RegExp(found.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), ' ');
+    }
+  }
+  // Strip leftover connector words next to wherever the customer name came
+  // from, so they don't get mistaken for the start of a product ("wants
+  // three BPC-157" → "three BPC-157"; a stray "for" left behind when the
+  // fallback scan fired instead of the regex above).
+  text = text.replace(/\bfor\b/gi, ' ').replace(/\b(?:wants?|needs?|gets?|buys?|would\s+like|ordering|orders?)\b/gi, ' ');
+
+  // ---- items: whatever's left, split on and/plus/comma ----
+  const knownProducts = [...new Set((state.stock || []).map(s => s.name).filter(Boolean))];
+  const segments = text.split(/\band\b|\bplus\b|,/i).map(s => s.trim()).filter(Boolean);
+  // Closing phrases that read as a trailing clause, not another item —
+  // "...and one TB-500, no discount" shouldn't spawn a bogus "No Discount" line.
+  const closerRe = /^(?:no\s+discount|nothing\s+else|that'?s\s+(?:it|all)|no\s+discounts?)$/i;
+  for (const seg of segments) {
+    if (closerRe.test(seg.trim())) continue;
+    let qty = 1;
+    let productPhrase = seg;
+    const qm = seg.match(/^(\d+|[a-z]+)\b/i);
+    if (qm) {
+      const n = voiceWordsToNumber(qm[1]);
+      if (n != null && n > 0) { qty = n; productPhrase = seg.slice(qm[0].length).trim(); }
+    }
+    productPhrase = productPhrase.replace(/^of\s+/i, '').replace(/\border\b/gi, '').trim();
+    if (!productPhrase) continue;
+    const matched = voiceBestMatch(productPhrase, knownProducts);
+    const product = matched || voiceTitleCase(productPhrase);
+    const stockItem = matched ? state.stock.find(s => s.name === matched) : null;
+    const price = stockItem ? (Number(stockItem.price) || 0) : 0;
+    const origPrice = stockItem ? (Number(stockItem.originalPrice) || 0) : 0;
+    draft.items.push({
+      product, qty,
+      price,
+      cogs: stockItem ? (Number(stockItem.cost) || 0) : 0,
+      originalPrice: origPrice > price ? origPrice : null,
+      discount: null,
+    });
+  }
+  if (!draft.items.length) draft.items.push(blankVoiceItem());
+
+  return draft;
+}
+function blankVoiceItem() { return { product: '', qty: 1, price: 0, cogs: 0, discount: null }; }
+
+function voiceOrderModal() {
+  $('#modalTitle').textContent = 'Voice Order';
+  modal.classList.remove('modal-readonly');
+  $('#modalCancel').textContent = 'Cancel';
+  $('#modalSave').textContent = 'Fill Order Form';
+  const form = $('#modalForm');
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const hasSpeechApi = !!SR;
+
+  form.innerHTML = `
+    <p class="muted" style="margin:0 0 12px;line-height:1.5;">
+      ${hasSpeechApi
+        ? 'Tap the mic and say the whole order — customer, item, quantity, and any discount — then review it on the next screen before saving.'
+        : 'Tap the mic icon on your keyboard to dictate the order, or type it — then review it on the next screen before saving.'}
+    </p>
+    ${hasSpeechApi ? `<button type="button" class="btn primary" id="voiceMicBtn" style="width:100%;margin-bottom:12px;">🎤 Tap to Speak</button>` : ''}
+    <label><span>Order</span><textarea id="voiceText" rows="4" placeholder="e.g. New order for Andrea, two BPC-157, ten percent off"></textarea></label>
+    <p class="muted" id="voiceHint" style="margin-top:8px;font-size:12.5px;min-height:16px;"></p>
+  `;
+
+  const textarea = form.querySelector('#voiceText');
+  const hint = form.querySelector('#voiceHint');
+
+  if (hasSpeechApi) {
+    const micBtn = form.querySelector('#voiceMicBtn');
+    const rec = new SR();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = 'en-US';
+    let listening = false;
+    let baseText = '';
+    rec.onstart = () => {
+      listening = true;
+      micBtn.textContent = '⏹ Stop';
+      micBtn.classList.add('danger');
+      hint.textContent = 'Listening…';
+    };
+    rec.onend = () => {
+      listening = false;
+      micBtn.textContent = '🎤 Tap to Speak';
+      micBtn.classList.remove('danger');
+      hint.textContent = '';
+    };
+    rec.onerror = (e) => {
+      hint.textContent = e.error === 'not-allowed'
+        ? 'Microphone permission denied — check your browser/site settings.'
+        : `Mic error: ${e.error}`;
+    };
+    rec.onresult = (e) => {
+      let interim = '', final = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) final += t; else interim += t;
+      }
+      if (final) baseText = (baseText ? baseText + ' ' : '') + final.trim();
+      textarea.value = (baseText + ' ' + interim).trim();
+    };
+    micBtn.addEventListener('click', () => {
+      if (listening) { rec.stop(); return; }
+      baseText = textarea.value.trim();
+      try { rec.start(); } catch {}
+    });
+    // Stop the mic if this screen is torn down (Cancel, or Fill Order Form
+    // swaps in the order form) while still listening.
+    const stopIfGone = new MutationObserver(() => {
+      if (!document.body.contains(textarea)) {
+        try { rec.stop(); } catch {}
+        stopIfGone.disconnect();
+      }
+    });
+    stopIfGone.observe(document.body, { childList: true, subtree: true });
+  }
+
+  modalOnSave = () => {
+    const heard = textarea.value.trim();
+    if (!heard) { alert('Say or type the order first.'); return; }
+    const draft = parseVoiceOrderText(heard);
+    $('#modalSave').textContent = 'Save';
+    orderModal(null, draft);
+  };
+
+  showModal();
+  setTimeout(() => textarea.focus(), 50);
 }
 
 function orderModal(existing, draft) {
