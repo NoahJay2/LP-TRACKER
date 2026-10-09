@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-10-09.2';
+const BUILD_VERSION = '2026-10-09.3';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -2369,6 +2369,7 @@ function renderInvoiceView({ formEl, orders, customerName, dateKey, onBack, allo
       </div>
       <div class="invoice-actions">
         <button type="button" class="btn ghost" id="invoiceBackBtn">← Back</button>
+        ${invoiceSmsNumber(customerName) ? '<button type="button" class="btn ghost" id="invoiceShareBtn">Share…</button>' : ''}
         <button type="button" class="btn primary" id="invoiceSendBtn">Send Invoice</button>
       </div>
     </div>
@@ -2432,121 +2433,171 @@ function renderInvoiceView({ formEl, orders, customerName, dateKey, onBack, allo
     });
     return window.__html2canvasLoading;
   }
-  // Send Invoice — rasterizes the invoice paper into a PNG and either:
-  //   - On mobile: invokes the device share sheet with the PNG attached, so
-  //     the user can text/iMessage it in one tap without ever screenshotting.
-  //   - On desktop: downloads the PNG to the user's Downloads folder.
+  // Send Invoice — rasterizes the invoice paper into a PNG and then:
+  //   - If the customer has a phone number saved: copies the PNG to the
+  //     clipboard and opens Messages straight to that customer's thread
+  //     (sms: link), so it's one long-press → Paste. iOS doesn't let a web
+  //     page attach an image to a specific chat, so this is the closest
+  //     thing to "send to this person".
+  //   - Otherwise (or via the "Share…" button): the device share sheet with
+  //     the PNG attached; on desktop, a download.
   // Uses html2canvas (instead of html-to-image) because it's more reliable on
   // iOS Safari — html-to-image renders via SVG foreignObject which WebKit
   // handles inconsistently when there are any cross-origin or QR-style images.
+  const smsNumber = invoiceSmsNumber(customerName);
   const sendBtn = formEl.querySelector('#invoiceSendBtn');
-  if (sendBtn) {
-    sendBtn.addEventListener('click', async () => {
-      const paper = formEl.querySelector('.invoice-paper');
-      if (!paper) {
-        toast('No invoice to send.');
-        return;
+  const shareBtn = formEl.querySelector('#invoiceShareBtn');
+
+  async function renderInvoiceBlob(paper, btn) {
+    try {
+      // Lazy-load the rasterization library if it didn't come down with the
+      // page (cached HTML, blocked CDN, etc.). One-shot, then cached.
+      if (typeof html2canvas === 'undefined') {
+        btn.textContent = 'Loading…';
+        const ok = await loadHtml2Canvas();
+        if (!ok || typeof html2canvas === 'undefined') {
+          throw new Error('Image library failed to load — check your internet connection.');
+        }
+        btn.textContent = 'Preparing…';
       }
-      const originalText = sendBtn.textContent;
-      sendBtn.disabled = true;
-      sendBtn.textContent = 'Preparing…';
+      // Make sure every <img> inside the paper has finished loading before
+      // html2canvas walks the DOM — otherwise their natural size is 0 and
+      // they render blank in the captured image.
+      const imgs = paper.querySelectorAll('img');
+      await Promise.all(Array.from(imgs).map(img =>
+        (img.complete && img.naturalWidth > 0)
+          ? Promise.resolve()
+          : new Promise(res => { img.addEventListener('load', res, { once: true }); img.addEventListener('error', res, { once: true }); })
+      ));
+
+      // Hide author-only controls (the Add Notes / Edit notes buttons, the
+      // notes editor while open) for the duration of the capture so the
+      // customer's PNG doesn't include any of our editing chrome. Restored
+      // in the `finally` block below regardless of how we exit.
+      paper.querySelectorAll('[data-no-export]').forEach(el => { el.style.display = 'none'; });
+
+      // Adaptive scale — target an output that's at least ~1280 px wide so
+      // the PNG is crisp regardless of viewport. Mobile invoices are
+      // narrower (~340–400 px) so they need a higher scale than desktop
+      // (~500–540 px) to hit the same final resolution. Capped at 5× as a
+      // safety margin against canvas memory limits on older phones.
+      const paperWidth = paper.getBoundingClientRect().width || 400;
+      const TARGET_WIDTH = 1280;
+      const scale = Math.max(2, Math.min(5, Math.ceil(TARGET_WIDTH / paperWidth)));
+      const canvas = await html2canvas(paper, {
+        scale,
+        backgroundColor: '#ffffff',  // white background even outside the paper
+        useCORS: true,               // allow cross-origin images taint-free
+        allowTaint: false,
+        logging: false,
+        imageTimeout: 8000,
+      });
+      return await new Promise((resolve, reject) => {
+        canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob returned null')), 'image/png');
+      });
+    } finally {
+      // Restore any author-only controls we hid for the capture.
       try {
-        // Lazy-load the rasterization library if it didn't come down with the
-        // page (cached HTML, blocked CDN, etc.). One-shot, then cached.
-        if (typeof html2canvas === 'undefined') {
-          sendBtn.textContent = 'Loading…';
-          const ok = await loadHtml2Canvas();
-          if (!ok || typeof html2canvas === 'undefined') {
-            throw new Error('Image library failed to load — check your internet connection.');
-          }
-          sendBtn.textContent = 'Preparing…';
-        }
-        // Make sure every <img> inside the paper has finished loading before
-        // html2canvas walks the DOM — otherwise their natural size is 0 and
-        // they render blank in the captured image.
-        const imgs = paper.querySelectorAll('img');
-        await Promise.all(Array.from(imgs).map(img =>
-          (img.complete && img.naturalWidth > 0)
-            ? Promise.resolve()
-            : new Promise(res => { img.addEventListener('load', res, { once: true }); img.addEventListener('error', res, { once: true }); })
-        ));
-
-        // Hide author-only controls (the Add Notes / Edit notes buttons, the
-        // notes editor while open) for the duration of the capture so the
-        // customer's PNG doesn't include any of our editing chrome. Restored
-        // in the `finally` block below regardless of how we exit.
-        paper.querySelectorAll('[data-no-export]').forEach(el => { el.style.display = 'none'; });
-
-        // Adaptive scale — target an output that's at least ~1280 px wide so
-        // the PNG is crisp regardless of viewport. Mobile invoices are
-        // narrower (~340–400 px) so they need a higher scale than desktop
-        // (~500–540 px) to hit the same final resolution. Capped at 5× as a
-        // safety margin against canvas memory limits on older phones.
-        const paperWidth = paper.getBoundingClientRect().width || 400;
-        const TARGET_WIDTH = 1280;
-        const scale = Math.max(2, Math.min(5, Math.ceil(TARGET_WIDTH / paperWidth)));
-        const canvas = await html2canvas(paper, {
-          scale,
-          backgroundColor: '#ffffff',  // white background even outside the paper
-          useCORS: true,               // allow cross-origin images taint-free
-          allowTaint: false,
-          logging: false,
-          imageTimeout: 8000,
-        });
-        const blob = await new Promise((resolve, reject) => {
-          canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob returned null')), 'image/png');
-        });
-
-        const safeDate = (dateKey || todayISO()).replace(/[^0-9-]/g, '');
-        // Keep the shared title / filename anonymized — no customer name.
-        // "Invoice · YYYY-MM-DD · XXXXXX" so recipients see a neutral header
-        // in the share sheet and the saved filename is sortable by date.
-        const shareTitle = `Invoice · ${safeDate} · ${invoiceNumber}`;
-        const filename = `Invoice-${safeDate}-${invoiceNumber}.png`;
-        const file = new File([blob], filename, { type: 'image/png' });
-
-        // Try the native share sheet first (mobile). canShare confirms the
-        // browser actually supports file sharing — desktop Chrome/Firefox
-        // generally return false and we fall through to download.
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          try {
-            await navigator.share({
-              files: [file],
-              title: shareTitle,
-            });
-            return;            // user picked an app — done
-          } catch (err) {
-            if (err && err.name === 'AbortError') return;  // user cancelled
-            // Any other share error → fall through to download
-          }
-        }
-
-        // Download fallback (desktop, or browsers without file-share support).
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 100);
-        toast('Invoice saved to your downloads.');
-      } catch (err) {
-        console.error('Send Invoice failed', err);
-        // Surface a hint of the underlying error so we can debug from a
-        // screenshot if the rendering still fails on a particular device.
-        const detail = (err && err.message) ? `: ${String(err.message).slice(0, 80)}` : '';
-        toast(`Could not render the invoice${detail}`);
-      } finally {
-        // Restore any author-only controls we hid for the capture.
-        try {
-          const hiddenForExport = Array.from(paper.querySelectorAll('[data-no-export]'));
-          hiddenForExport.forEach(el => { el.style.display = ''; });
-        } catch {}
-        sendBtn.disabled = false;
-        sendBtn.textContent = originalText;
-      }
-    });
+        paper.querySelectorAll('[data-no-export]').forEach(el => { el.style.display = ''; });
+      } catch {}
+    }
   }
+
+  async function shareOrDownload(blob) {
+    const safeDate = (dateKey || todayISO()).replace(/[^0-9-]/g, '');
+    // Keep the shared title / filename anonymized — no customer name.
+    // "Invoice · YYYY-MM-DD · XXXXXX" so recipients see a neutral header
+    // in the share sheet and the saved filename is sortable by date.
+    const shareTitle = `Invoice · ${safeDate} · ${invoiceNumber}`;
+    const filename = `Invoice-${safeDate}-${invoiceNumber}.png`;
+    const file = new File([blob], filename, { type: 'image/png' });
+
+
+    // Try the native share sheet first (mobile). canShare confirms the
+    // browser actually supports file sharing — desktop Chrome/Firefox
+    // generally return false and we fall through to download.
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: shareTitle });
+        return;            // user picked an app — done
+      } catch (err) {
+        if (err && err.name === 'AbortError') return;  // user cancelled
+        // Any other share error → fall through to download
+      }
+    }
+
+    // Download fallback (desktop, or browsers without file-share support).
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 100);
+    toast('Invoice saved to your downloads.');
+  }
+
+  async function sendInvoice(btn, { toCustomer }) {
+    const paper = formEl.querySelector('.invoice-paper');
+    if (!paper) {
+      toast('No invoice to send.');
+      return;
+    }
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Preparing…';
+    try {
+      const blobPromise = renderInvoiceBlob(paper, btn);
+      // Touch devices only — on a desktop the sms: link has nowhere useful to go.
+      if (toCustomer && smsNumber && navigator.maxTouchPoints > 0) {
+        // clipboard.write must be called synchronously inside the tap (Safari
+        // drops the user gesture after the first await), so hand it the
+        // still-rendering PNG as a promise rather than awaiting it first.
+        let copied = false;
+        if (navigator.clipboard && navigator.clipboard.write && typeof ClipboardItem !== 'undefined') {
+          try {
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blobPromise })]);
+            copied = true;
+          } catch (err) {
+            console.warn('Clipboard image write failed', err);
+          }
+        }
+        if (copied) {
+          toast('Invoice copied — long-press the message box and tap Paste.');
+          window.location.href = 'sms:' + smsNumber;
+          return;
+        }
+      }
+      await shareOrDownload(await blobPromise);
+    } catch (err) {
+      console.error('Send Invoice failed', err);
+      // Surface a hint of the underlying error so we can debug from a
+      // screenshot if the rendering still fails on a particular device.
+      const detail = (err && err.message) ? `: ${String(err.message).slice(0, 80)}` : '';
+      toast(`Could not render the invoice${detail}`);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  }
+
+  if (sendBtn) sendBtn.addEventListener('click', () => sendInvoice(sendBtn, { toCustomer: true }));
+  if (shareBtn) shareBtn.addEventListener('click', () => sendInvoice(shareBtn, { toCustomer: false }));
+}
+
+// Phone number for the invoice's customer in a form the sms: scheme accepts,
+// or '' if none is saved. Bare 10-digit US numbers get +1 so Messages matches
+// the existing thread/contact instead of starting a new one.
+function invoiceSmsNumber(customerName) {
+  const c = findCustomerByName(customerName);
+  const raw = ((c && c.phone) || '').trim();
+  if (!raw) return '';
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length < 7) return '';
+  if (raw.startsWith('+')) return '+' + digits;
+  if (digits.length === 10) return '+1' + digits;
+  if (digits.length === 11 && digits[0] === '1') return '+' + digits;
+  return digits;
 }
 
 // Read-only popup invoked from the dashboard's Today card. Shows a quick summary
@@ -2731,10 +2782,10 @@ function openTodayOrderDetail(customerKey, dateKey) {
     // the customer detail to the share sheet without an extra tap.
     form.querySelector('#sendInvoiceDirectBtn').addEventListener('click', () => {
       renderInvoice();
-      requestAnimationFrame(() => {
-        const sendBtn = form.querySelector('#invoiceSendBtn');
-        if (sendBtn) sendBtn.click();
-      });
+      // Click synchronously (not in a rAF) — the clipboard copy in the send
+      // flow only works while we're still inside the user's tap.
+      const sendBtn = form.querySelector('#invoiceSendBtn');
+      if (sendBtn) sendBtn.click();
     });
     const editPaymentsBtn = form.querySelector('#editPaymentsBtn');
     if (editPaymentsBtn) {
