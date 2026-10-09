@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-09-04.3';
+const BUILD_VERSION = '2026-10-09.1';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -996,11 +996,20 @@ function resetState() {
 // Whole dollars everywhere — totals, KPIs, invoice lines, exports. The user
 // works in whole dollars (no cents) so the display rounds at format time so a
 // stray fractional cent from floating-point math never surfaces.
+// "Hide numbers" mode — for showing the app to someone without revealing
+// dollar figures. Every money value goes through fmt$, so masking there covers
+// the whole UI; margins are masked via fmtPct. Remembered per device.
+const HIDE_NUMBERS_KEY = 'lumen-hide-numbers';
+let hideNumbers = false;
+try { hideNumbers = localStorage.getItem(HIDE_NUMBERS_KEY) === '1'; } catch (e) {}
+const MASK = '•••';
 const fmt$ = (n) => {
+  if (hideNumbers) return '$' + MASK;
   const v = Math.round(Number(n) || 0);
   return (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString('en-US');
 };
 const fmtN = (n) => Number(n || 0).toLocaleString('en-US');
+const fmtPct = (n) => hideNumbers ? MASK + '%' : (Number(n) || 0).toFixed(1) + '%';
 const uid = (p) => p + '-' + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-3);
 // Snap a value to whole cents — defends against floating-point noise like
 // 0.1 + 0.2 = 0.30000000000000004 that would otherwise surface in pending
@@ -4300,7 +4309,7 @@ function renderInventory() {
   $('#invKpiCount').textContent = fmtN(rows.length);
   $('#invKpiGross').textContent = fmt$(sumGross);
   $('#invKpiNet').textContent = fmt$(sumNet);
-  $('#invKpiMargin').textContent = `${margin.toFixed(1)}%`;
+  $('#invKpiMargin').textContent = fmtPct(margin);
 
   // Tap a product row to open its detail strip. Only meaningful on phones —
   // desktop shows every column already, so CSS keeps the strip collapsed there.
@@ -7122,7 +7131,7 @@ function renderIncome() {
   $('#isGross').textContent = fmt$(gross);
   $('#isOpex').textContent = fmt$(opex);
   $('#isNet').textContent = fmt$(net);
-  $('#isMargin').textContent = margin.toFixed(1) + '%';
+  $('#isMargin').textContent = fmtPct(margin);
   $('#isCapital').textContent = fmt$(capex);
   const allInEl = $('#isAllIn');
   allInEl.textContent = fmt$(allIn);
@@ -8267,6 +8276,20 @@ $('#backupBtn')?.addEventListener('click', backupAllJSON);
 
 $('#resetBtn').addEventListener('click', resetState);
 $('#syncNowBtn').addEventListener('click', manualSync);
+
+function syncHideNumbersBtn() {
+  const btn = $('#hideNumbersBtn');
+  if (btn) btn.textContent = hideNumbers ? 'Show numbers' : 'Hide numbers';
+  document.body.classList.toggle('numbers-hidden', hideNumbers);
+}
+$('#hideNumbersBtn').addEventListener('click', () => {
+  hideNumbers = !hideNumbers;
+  try { localStorage.setItem(HIDE_NUMBERS_KEY, hideNumbers ? '1' : '0'); } catch (e) {}
+  syncHideNumbersBtn();
+  renderAll();
+  toast(hideNumbers ? 'Numbers hidden.' : 'Numbers visible.');
+});
+syncHideNumbersBtn();
 
 // ---------- Mobile drawer ----------
 const sidebarEl = $('#sidebar');
