@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-10-09.3';
+const BUILD_VERSION = '2026-10-09.4';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -2367,6 +2367,11 @@ function renderInvoiceView({ formEl, orders, customerName, dateKey, onBack, allo
         })()}
         <div class="invoice-notes-block" id="invoiceNotesBlock"></div>
       </div>
+      ${invoiceSmsNumber(customerName) ? '' : `
+      <label class="invoice-phone">
+        <span>Customer's phone — saves to their profile</span>
+        <input type="tel" id="invoicePhoneInput" inputmode="tel" autocomplete="off" placeholder="Optional — opens their text thread" />
+      </label>`}
       <div class="invoice-actions">
         <button type="button" class="btn ghost" id="invoiceBackBtn">← Back</button>
         ${invoiceSmsNumber(customerName) ? '<button type="button" class="btn ghost" id="invoiceShareBtn">Share…</button>' : ''}
@@ -2444,7 +2449,8 @@ function renderInvoiceView({ formEl, orders, customerName, dateKey, onBack, allo
   // Uses html2canvas (instead of html-to-image) because it's more reliable on
   // iOS Safari — html-to-image renders via SVG foreignObject which WebKit
   // handles inconsistently when there are any cross-origin or QR-style images.
-  const smsNumber = invoiceSmsNumber(customerName);
+  let smsNumber = invoiceSmsNumber(customerName);
+  const phoneInput = formEl.querySelector('#invoicePhoneInput');
   const sendBtn = formEl.querySelector('#invoiceSendBtn');
   const shareBtn = formEl.querySelector('#invoiceShareBtn');
 
@@ -2543,6 +2549,17 @@ function renderInvoiceView({ formEl, orders, customerName, dateKey, onBack, allo
       toast('No invoice to send.');
       return;
     }
+    // A number typed into the invoice's phone field gets saved to the
+    // customer's profile, so next time it's already there.
+    if (phoneInput && phoneInput.value.trim()) {
+      if (!saveInvoiceCustomerPhone(customerName, phoneInput.value.trim())) {
+        toast('That phone number looks incomplete.');
+        return;
+      }
+      smsNumber = invoiceSmsNumber(customerName);
+      const label = phoneInput.closest('.invoice-phone');
+      if (label) label.remove();
+    }
     const originalText = btn.textContent;
     btn.disabled = true;
     btn.textContent = 'Preparing…';
@@ -2583,6 +2600,28 @@ function renderInvoiceView({ formEl, orders, customerName, dateKey, onBack, allo
 
   if (sendBtn) sendBtn.addEventListener('click', () => sendInvoice(sendBtn, { toCustomer: true }));
   if (shareBtn) shareBtn.addEventListener('click', () => sendInvoice(shareBtn, { toCustomer: false }));
+}
+
+// Save a phone number typed on the invoice screen to the customer's profile
+// (creating the profile if somehow missing). Returns false if it's not a
+// usable number. Synchronous apart from the background cloud sync, so the
+// send flow stays inside the user's tap.
+function saveInvoiceCustomerPhone(customerName, phone) {
+  if (phone.replace(/\D/g, '').length < 7) return false;
+  let c = findCustomerByName(customerName);
+  if (!c) {
+    c = {
+      id: 'c-' + Math.random().toString(36).slice(2, 10),
+      name: customerName, phone: '', email: '', address: '', notes: '',
+      createdAt: todayISO(),
+    };
+    state.customers.push(c);
+  }
+  c.phone = phone;
+  saveState();
+  cloudUpsert('customers', c);
+  renderCustomers();
+  return true;
 }
 
 // Phone number for the invoice's customer in a form the sms: scheme accepts,

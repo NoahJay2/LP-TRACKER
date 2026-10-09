@@ -1029,6 +1029,8 @@ a.invoice-payment-value { color: #1d4ed8; }
   font-weight: 500;
 }
 .invoice-notes-add { align-self: flex-start; }
+.invoice-phone { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 12px; font-size: 12px; color: var(--muted); }
+.invoice-phone input { font-size: 16px; }
 .invoice-actions { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .invoice-actions .btn { flex: 0 0 auto; }
 .invoice-actions .btn:disabled { opacity: .65; cursor: progress; }
