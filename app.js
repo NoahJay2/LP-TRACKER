@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-10-09.4';
+const BUILD_VERSION = '2026-10-09.5';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -2370,7 +2370,10 @@ function renderInvoiceView({ formEl, orders, customerName, dateKey, onBack, allo
       ${invoiceSmsNumber(customerName) ? '' : `
       <label class="invoice-phone">
         <span>Customer's phone — saves to their profile</span>
-        <input type="tel" id="invoicePhoneInput" inputmode="tel" autocomplete="off" placeholder="Optional — opens their text thread" />
+        <span class="invoice-phone-row">
+          <input type="tel" id="invoicePhoneInput" name="tel" inputmode="tel" autocomplete="tel" placeholder="Tap, then AutoFill Contact" />
+          ${('contacts' in navigator && 'select' in navigator.contacts) ? '<button type="button" class="btn ghost" id="invoicePickContactBtn">Contacts</button>' : ''}
+        </span>
       </label>`}
       <div class="invoice-actions">
         <button type="button" class="btn ghost" id="invoiceBackBtn">← Back</button>
@@ -2451,6 +2454,21 @@ function renderInvoiceView({ formEl, orders, customerName, dateKey, onBack, allo
   // handles inconsistently when there are any cross-origin or QR-style images.
   let smsNumber = invoiceSmsNumber(customerName);
   const phoneInput = formEl.querySelector('#invoicePhoneInput');
+  // Contact Picker (Android Chrome; iOS only behind a Safari feature flag).
+  // On iPhone the usual route is the keyboard's "AutoFill Contact" button,
+  // which the autocomplete="tel" attribute on the field enables.
+  const pickContactBtn = formEl.querySelector('#invoicePickContactBtn');
+  if (pickContactBtn && phoneInput) {
+    pickContactBtn.addEventListener('click', async () => {
+      try {
+        const [picked] = await navigator.contacts.select(['tel'], { multiple: false });
+        const tel = picked && picked.tel && picked.tel[0];
+        if (tel) phoneInput.value = tel;
+      } catch (err) {
+        console.warn('Contact picker failed', err);
+      }
+    });
+  }
   const sendBtn = formEl.querySelector('#invoiceSendBtn');
   const shareBtn = formEl.querySelector('#invoiceShareBtn');
 
