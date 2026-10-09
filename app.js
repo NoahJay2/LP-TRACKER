@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-10-09.1';
+const BUILD_VERSION = '2026-10-09.2';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -2247,7 +2247,7 @@ function renderInvoiceView({ formEl, orders, customerName, dateKey, onBack, allo
   formEl.innerHTML = `
     <div class="invoice-view">
       <div class="invoice-paper">
-        <img class="invoice-watermark" src="public/lplogo.png" alt="" crossorigin="anonymous" />
+        <img class="invoice-watermark" src="public/lr-logo.png" alt="" crossorigin="anonymous" />
         <div class="invoice-header">
           <div class="invoice-title">Order Invoice</div>
           <div class="invoice-meta">
