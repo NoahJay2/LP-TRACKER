@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-10-09.5';
+const BUILD_VERSION = '2026-10-09.6';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -8313,6 +8313,133 @@ function exportInventoryCSV() {
   toast(`Exported ${rows.length} product${rows.length === 1 ? '' : 's'}.`);
 }
 
+// Everything in one Excel workbook, a tab per kind of record — for moving the
+// data into another tool. Line items and payments get their own tabs (one row
+// each) so nothing is squashed into a single cell. Raw numbers, never masked
+// by "Hide numbers". SheetJS is lazy-loaded the first time it's needed.
+function loadSheetJS() {
+  if (typeof XLSX !== 'undefined') return Promise.resolve(true);
+  if (window.__sheetjsLoading) return window.__sheetjsLoading;
+  window.__sheetjsLoading = new Promise((resolve) => {
+    const el = document.createElement('script');
+    el.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    el.async = true;
+    el.onload = () => resolve(typeof XLSX !== 'undefined');
+    el.onerror = () => { window.__sheetjsLoading = null; resolve(false); };
+    document.head.appendChild(el);
+  });
+  return window.__sheetjsLoading;
+}
+
+async function exportAllXLSX() {
+  const btn = $('#exportAllBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Preparing…'; }
+  try {
+    if (!(await loadSheetJS())) { toast('Could not load the Excel library — check your connection.'); return; }
+    const byDate = (k) => (a, b) => (a[k] || '').localeCompare(b[k] || '');
+    const orders = state.orders.slice().sort(byDate('date'));
+    const discountText = (d) => {
+      const v = Number(d && d.value) || 0;
+      if (!d || v <= 0) return '';
+      return d.type === 'percent' ? `${v}%` : `$${v}`;
+    };
+    const status = (o) => orderIsFullyPaid(o) ? 'Paid' : (orderPaymentsTotal(o) > 0.005 ? 'Partial' : 'Unpaid');
+
+    const sheets = {
+      'Orders': [
+        ['Order ID', 'Invoice #', 'Date', 'Customer', 'Items', 'Total Qty', 'Subtotal', 'Line Discounts', 'Order Discount', 'Shipping', 'Order Total', 'Amount Paid', 'Balance Due', 'Status', 'Last Payment Date', 'Delivered', 'Profit', 'Notes'],
+        ...orders.map(o => {
+          const pays = orderPayments(o).map(p => p && p.date).filter(Boolean).sort();
+          return [
+            o.id || '', invoiceNumberForOrder(o), o.date || '', o.customer || '',
+            itemsSummary(orderItems(o)), orderQty(o),
+            round2(orderItemsTotal(o)), round2(orderItemDiscountsTotal(o)), round2(orderDiscountAmount(o)),
+            round2(orderShipping(o)), round2(orderTotal(o)), round2(orderPaymentsTotal(o)), round2(orderBalance(o)),
+            status(o), pays.length ? pays[pays.length - 1] : '', o.delivered ? 'Yes' : 'No',
+            round2(orderProfit(o)), o.notes || '',
+          ];
+        }),
+      ],
+      'Order Items': [
+        ['Order ID', 'Date', 'Customer', 'Item', 'Qty', 'Unit Price', 'Unit Cost (COGS)', 'Line Subtotal', 'Line Discount', 'Line Total'],
+        ...orders.flatMap(o => orderItems(o).map(it => {
+          const sub = itemLineSubtotal(it), disc = itemDiscountAmount(it);
+          return [
+            o.id || '', o.date || '', o.customer || '', it.product || '',
+            Number(it.qty) || 0, Number(it.price) || 0, Number(it.cogs) || 0,
+            round2(sub), round2(disc), round2(sub - disc),
+          ];
+        })),
+      ],
+      'Payments': [
+        ['Payment Date', 'Order ID', 'Order Date', 'Customer', 'Amount', 'Method', 'Note'],
+        ...orders.flatMap(o => orderPayments(o).map(p => [
+          (p && p.date) || '', o.id || '', o.date || '', o.customer || '',
+          round2(Number(p && p.amount) || 0), (p && p.method) || '', (p && p.note) || '',
+        ])).sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+      ],
+      'Customers': [
+        ['Name', 'Phone', 'Email', 'Address', 'Notes', 'Added'],
+        ...(state.customers || []).slice()
+          .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+          .map(c => [c.name || '', c.phone || '', c.email || '', c.address || '', c.notes || '', c.createdAt || '']),
+      ],
+      'Expenses': [
+        ['Date Ordered', 'Date Received', 'Vendor', 'Category', 'Description', 'Operating Cost', 'Capital / Owner-Funded', 'Total Cost'],
+        ...state.expenses.slice().sort(byDate('dateOrdered')).map(e => [
+          e.dateOrdered || '', e.dateReceived || '', e.vendor || '',
+          expenseCategoryLabel(expenseCategory(e)),
+          itemsSummary(expenseItems(e)) || (e.product || ''),
+          round2(expenseOperatingCost(e)), round2(expenseCapitalCost(e)), round2(expenseCost(e)),
+        ]),
+      ],
+      'Expense Items': [
+        ['Date Ordered', 'Vendor', 'Item', 'Qty', 'Unit', 'Cost'],
+        ...state.expenses.slice().sort(byDate('dateOrdered')).flatMap(e => expenseItems(e).map(it => [
+          e.dateOrdered || '', e.vendor || '', it.product || '',
+          Number(it.qty) || '', it.unit || '', round2(Number(it.cost) || 0),
+        ])),
+      ],
+      'Shipments': [
+        ['Date Ordered', 'Date Received', 'Transit Days', 'Vendor', 'Category', 'Product', 'Amount', 'Unit', 'Stock Items', 'Tracking', 'Status'],
+        ...state.shipments.slice().sort(byDate('dateOrdered')).map(sh => {
+          const transit = shipmentTransitDays(sh);
+          return [
+            sh.dateOrdered || '', sh.dateReceived || '', transit == null ? '' : transit,
+            sh.vendor || '', categoryLabel(shipmentCategory(sh)),
+            sh.product || '', Number(sh.kits) || '', sh.unit === 'qty' ? 'Qty' : 'Kits',
+            shipmentUnitCount(sh), sh.tracking || '', shipmentStatus(sh).label,
+          ];
+        }),
+      ],
+      'Inventory': [
+        ['Product', 'Cost', 'Price', 'Qty', 'Reorder At', 'Margin', 'Stock Value (Net)', 'Stock Value (Gross)', 'Status'],
+        ...state.stock.slice().sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(p => {
+          const cost = Number(p.cost) || 0, price = Number(p.price) || 0, qty = Number(p.qty) || 0;
+          return [p.name || '', cost, price, qty, stockReorderLevel(p), price - cost, round2((price - cost) * qty), round2(price * qty), p.status || 'ACTIVE'];
+        }),
+      ],
+    };
+
+    const wb = XLSX.utils.book_new();
+    for (const [name, rows] of Object.entries(sheets)) {
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      // Rough auto-width so dates and names aren't cut off when opened.
+      ws['!cols'] = rows[0].map((_, i) => ({
+        wch: Math.min(40, Math.max(8, ...rows.map(r => String(r[i] == null ? '' : r[i]).length + 2))),
+      }));
+      XLSX.utils.book_append_sheet(wb, ws, name);
+    }
+    XLSX.writeFile(wb, `lumen-all-data-${todayISO()}.xlsx`);
+    toast(`Exported ${orders.length} orders, ${state.expenses.length} expenses, ${state.shipments.length} shipments.`);
+  } catch (err) {
+    console.error('Excel export failed', err);
+    toast('Export failed.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Export All (Excel)'; }
+  }
+}
+
 function backupAllJSON() {
   const payload = {
     app: 'lumen-peptides-tracker',
@@ -8367,6 +8494,7 @@ function restoreFromBackup(file) {
   reader.readAsText(file);
 }
 
+$('#exportAllBtn')?.addEventListener('click', exportAllXLSX);
 $('#exportOrdersBtn')?.addEventListener('click', exportOrdersCSV);
 $('#exportExpensesBtn')?.addEventListener('click', exportExpensesCSV);
 $('#exportShipmentsBtn')?.addEventListener('click', exportShipmentsCSV);
