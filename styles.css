@@ -6333,7 +6333,11 @@ button.ship-timeline:active {
   white-space: nowrap;
   overflow: hidden;
 }
+.inv-prod-meta > * { flex: none; }
 .inv-prod-meta i { font-style: normal; opacity: 0.6; }
+/* The SKU is the part that gives way when space runs out, so the category
+   and website marker always read in full. */
+.inv-prod-meta > .inv-sku { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .inv-sku { font-family: var(--font-mono); font-size: 11.5px; color: var(--i-ink-2); }
 .inv-site { display: inline-flex; align-items: center; gap: 4px; color: var(--i-blue); }
 .inv-site svg { width: 12px; height: 12px; }
