@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-10-19.14';
+const BUILD_VERSION = '2026-10-19.15';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -6036,6 +6036,7 @@ function renderShipments() {
   const shipCounts = { all: rows.length };
   for (const [k, fn] of Object.entries(SHIP_TABS)) shipCounts[k] = rows.filter(fn).length;
   paintTabs('#shipTabs', SHIP_TABS[f] ? f : 'all', shipCounts);
+  const cardRows = rows;   // summary + analysis cards ignore the status tab
   if (SHIP_TABS[f]) rows = rows.filter(SHIP_TABS[f]);
 
   // Group by vendor + date + tracking — same vendor/day OR same tracking number
@@ -6054,9 +6055,9 @@ function renderShipments() {
   const itemTotal = shipmentsItemTotal(rows);
   $('#shipCount').textContent = `${rows.length} shipment${rows.length === 1 ? '' : 's'}`;
   $('#shipItems').textContent = itemTotal > 0 ? `${fmtN(itemTotal)} items` : '';
-  renderShipSummary(rows);
-  renderShipBreakdown(rows);
-  renderShipVendors(rows);
+  renderShipSummary(cardRows);
+  renderShipBreakdown(cardRows);
+  renderShipVendors(cardRows);
   setFilterCount('shipFilterBtn', renderFilterChips($('#shipChips'), SHIP_CHIP_FIELDS, shipSearch));
   // Only offer the review when there is actually something ambiguous left —
   // the unmistakable variants have already been merged automatically.
@@ -7141,6 +7142,7 @@ function renderExpenses() {
     operating: rows.filter(e => !expenseExcluded(e)).length,
     capital: rows.filter(e => expenseExcluded(e)).length,
   });
+  const cardRows = rows;   // summary + category cards ignore the funding tab
   if (funding === 'operating') rows = rows.filter(e => !expenseExcluded(e));
   else if (funding === 'capital') rows = rows.filter(e => expenseExcluded(e));
 
@@ -7170,8 +7172,8 @@ function renderExpenses() {
     ? `${fmt$(opex)} operating + ${fmt$(capex)} capital`
     : '';
 
-  renderExpenseSummary(rows, opex, capex);
-  renderExpenseBreakdown(rows);
+  renderExpenseSummary(cardRows, sumOperating(cardRows), sumCapital(cardRows));
+  renderExpenseBreakdown(cardRows);
   setFilterCount('expFilterBtn', renderFilterChips($('#expChips'), EXP_CHIP_FIELDS, expSearch));
   wireCollapsibleCard('expBreakdownCard');
 
