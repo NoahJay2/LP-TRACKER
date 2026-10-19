@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-10-19.6';
+const BUILD_VERSION = '2026-10-19.7';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -4381,15 +4381,25 @@ function customerModal(existing) {
 
 // ---------- INVENTORY ----------
 const stkSearch = $('#stkSearch');
-const stkFilter = $('#stkFilter');
+const stkFilter = $('#stkFilter');      // hidden; driven by the status tabs
 const stkCategory = $('#stkCategory');
+const stkSort = $('#stkSort');
 persistFilter(stkSearch, 'lumen.stock.search');
 persistFilter(stkFilter, 'lumen.stock.filter');
 persistFilter(stkCategory, 'lumen.stock.category');
+persistFilter(stkSort, 'lumen.stock.sort');
 wireSearchClear(stkSearch);
-[stkSearch, stkFilter, stkCategory].forEach(el => el.addEventListener('input', renderInventory));
-$('#stkReset').addEventListener('click', () => resetFilters([stkSearch, stkFilter, stkCategory]));
+[stkSearch, stkFilter, stkCategory, stkSort].forEach(el => el.addEventListener('input', renderInventory));
+$('#stkReset').addEventListener('click', () => resetFilters([stkSearch, stkFilter, stkCategory, stkSort]));
 $('#addStockBtn').addEventListener('click', () => stockModal());
+$('#invExportBtn').addEventListener('click', () => exportInventoryCSV());
+const setInvTab = (tab) => { stkFilter.value = tab; stkFilter.dispatchEvent(new Event('input')); };
+$$('#invTabs [data-tab]').forEach(b => b.addEventListener('click', () => setInvTab(b.dataset.tab)));
+// "Needs attention" jumps to whichever problem list has products in it.
+$('#invKpiAttn').addEventListener('click', () => {
+  setInvTab(state.stock.some(p => invGroup(p) === 'low') ? 'low' : 'oos');
+  $('#invTabs').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
 
 // Apply a delta to stock for a list of order items.
 // direction = -1 to deduct (a new sale), +1 to restore (deletion / undo).
@@ -4437,111 +4447,158 @@ function productInitial(name) {
   const word = String(name || '').split(/\s+/).find(w => /^[a-z]/i.test(w)) || String(name || '?');
   return word.charAt(0).toUpperCase();
 }
-function renderInventory() {
-  const q = stkSearch.value.toLowerCase().trim();
-  const f = stkFilter.value;
-  let rows = [...state.stock];
-  if (q) rows = rows.filter(p => `${p.name || ''} ${p.sku || ''}`.toLowerCase().includes(q));
-  if (f === 'active') rows = rows.filter(p => p.status === 'ACTIVE');
-  if (f === 'oos') rows = rows.filter(p => p.status !== 'ACTIVE' || Number(p.qty) === 0);
-  if (f === 'low') rows = rows.filter(p => stockNeedsReorder(p));
-  const cat = stkCategory.value;
-  if (cat !== 'all') rows = rows.filter(p => stockCategory(p) === cat);
+// Sort orders for the Sort menu. "status" reads attention-last: in stock,
+// then low, then out — most units first within each.
+const INV_SORTS = {
+  status: (a, b) => INV_GROUPS.indexOf(invGroup(a)) - INV_GROUPS.indexOf(invGroup(b)) || (b.qty - a.qty),
+  'stock-desc': (a, b) => (Number(b.qty) || 0) - (Number(a.qty) || 0),
+  'stock-asc': (a, b) => (Number(a.qty) || 0) - (Number(b.qty) || 0),
+  'value-desc': (a, b) => invRetailValue(b) - invRetailValue(a),
+  name: (a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { numeric: true }),
+};
+const INV_TAB_GROUP = { in: 'in', low: 'low', oos: 'out' };
+const invRetailValue = (p) => (Number(p.price) || 0) * (Number(p.qty) || 0);
+const invCostValue = (p) => (Number(p.cost) || 0) * (Number(p.qty) || 0);
+const INV_CHEVRON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 4 4 4-4 4" /></svg>';
+const INV_GLOBE = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" /><path d="M2.5 8h11M8 2.5c1.6 1.6 2.3 3.4 2.3 5.5S9.6 11.9 8 13.5M8 2.5C6.4 4.1 5.7 5.9 5.7 8s.7 3.9 2.3 5.5" /></svg>';
 
-  // Grouped In stock → Low stock → Out of stock, most units first within each.
-  rows.sort((a, b) => INV_GROUPS.indexOf(invGroup(a)) - INV_GROUPS.indexOf(invGroup(b)) || (b.qty - a.qty));
-  const groupCounts = rows.reduce((m, p) => { const g = invGroup(p); m[g] = (m[g] || 0) + 1; return m; }, {});
-  let lastGroup = null;
+function invBadge(group) {
+  return `<span class="inv-badge inv-badge-${group}">${INV_GROUP_LABELS[group]}</span>`;
+}
+
+// Overview cards — always the whole inventory, regardless of filters.
+function renderInventoryMetrics() {
+  const all = state.stock;
+  const retail = all.reduce((s, p) => s + invRetailValue(p), 0);
+  const cost = all.reduce((s, p) => s + invCostValue(p), 0);
+  const profit = retail - cost;
+  const units = all.reduce((s, p) => s + (Number(p.qty) || 0), 0);
+  const stocked = all.filter(p => (Number(p.qty) || 0) > 0).length;
+  const low = all.filter(p => invGroup(p) === 'low').length;
+  const out = all.filter(p => invGroup(p) === 'out').length;
+  const linked = all.filter(p => p.wooId).length;
+  $('#invKpiGross').textContent = fmt$(retail);
+  $('#invKpiGrossSub').textContent = `${fmt$(cost)} at cost`;
+  $('#invKpiNet').textContent = fmt$(profit);
+  $('#invKpiNetSub').textContent = `${fmtPct(retail > 0 ? profit / retail * 100 : 0)} margin on hand`;
+  $('#invKpiUnits').textContent = fmtN(units);
+  $('#invKpiCount').textContent = `across ${fmtN(stocked)} of ${fmtN(all.length)} products`;
+  $('#invKpiAttnVal').textContent = fmtN(low + out);
+  $('#invKpiAttnSub').textContent = low + out ? `${fmtN(low)} low · ${fmtN(out)} out of stock` : 'Everything is stocked';
+  $('#invKpiAttn').classList.toggle('is-clear', low + out === 0);
+  $('#invSub').textContent = [
+    `${fmtN(all.length)} products`,
+    linked ? `${fmtN(linked)} synced with your website` : null,
+  ].filter(Boolean).join(' · ');
+}
+
+function renderInventory() {
+  renderInventoryMetrics();
+  const q = stkSearch.value.toLowerCase().trim();
+  const cat = stkCategory.value;
+  // Tab counts reflect the current search + category, like a store admin.
+  const base = state.stock.filter(p =>
+    (!q || `${p.name || ''} ${p.sku || ''}`.toLowerCase().includes(q)) &&
+    (cat === 'all' || stockCategory(p) === cat)
+  );
+  const counts = { all: base.length, in: 0, low: 0, oos: 0 };
+  base.forEach(p => { const g = invGroup(p); counts[g === 'out' ? 'oos' : g]++; });
+  const tab = (stkFilter.value in INV_TAB_GROUP) ? stkFilter.value : 'all';
+  $$('#invTabs [data-tab]').forEach(b => {
+    const on = b.dataset.tab === tab;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', String(on));
+    b.querySelector('span').textContent = fmtN(counts[b.dataset.tab]);
+  });
+
+  const group = INV_TAB_GROUP[tab];
+  const rows = (group ? base.filter(p => invGroup(p) === group) : base)
+    .sort(INV_SORTS[stkSort.value] || INV_SORTS.status);
+
+  if (!rows.length) {
+    const filtered = q || cat !== 'all' || tab !== 'all';
+    $('#stockBody').innerHTML = `<tr class="inv-empty"><td colspan="6">
+      <div class="inv-empty-box">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5z" /><path d="m4 7.5 8 4.5 8-4.5M12 12v9" /></svg>
+        <b>${filtered ? 'No products match' : 'No products yet'}</b>
+        <span>${filtered ? 'Try a different search, category or tab.' : 'Add your first product to start tracking stock.'}</span>
+        ${filtered ? '<button type="button" class="inv-btn" data-inv-clear>Clear filters</button>' : ''}
+      </div></td></tr>`;
+    $('#stockBody [data-inv-clear]')?.addEventListener('click', () => $('#stkReset').click());
+    return;
+  }
 
   $('#stockBody').innerHTML = rows.map(p => {
-    const group = invGroup(p);
-    const groupHead = group === lastGroup ? '' : `<tr class="inv-group inv-group-${group}"><td colspan="4"><span>${INV_GROUP_LABELS[group]}</span><b>${fmtN(groupCounts[group])}</b></td></tr>`;
-    lastGroup = group;
-    const margin = (Number(p.price) || 0) - (Number(p.cost) || 0);
-    const valNet = margin * (Number(p.qty) || 0);
-    const valGross = (Number(p.price) || 0) * (Number(p.qty) || 0);
-    const isActive = p.status === 'ACTIVE';
-    const out = stockIsOut(p);
-    const needs = stockNeedsReorder(p);
+    const g = invGroup(p);
+    const qty = Number(p.qty) || 0;
+    const price = Number(p.price) || 0;
+    const cost = Number(p.cost) || 0;
+    const margin = price - cost;
+    const marginPct = price > 0 ? margin / price * 100 : 0;
     const lvl = stockReorderLevel(p);
     const customLvl = Number(p.reorder) > 0;
-    const statusPill = !isActive
-      ? `<span class="pill red">Out of Stock</span>`
-      : out
-        ? `<span class="pill red">Reorder · Out</span>`
-        : needs
-          ? `<span class="pill amber">Reorder</span>`
-          : `<span class="pill green">Active</span>`;
-    // On sale = original price set AND higher than the current selling price.
-    // When true, show the original struck through next to the sale price.
-    const origPrice = Number(p.originalPrice) || 0;
-    const onSale = origPrice > (Number(p.price) || 0);
-    const priceCell = onSale
-      ? `<span class="inv-price-was">${fmt$(origPrice)}</span><span class="inv-price-now">${fmt$(p.price)}</span><span class="pill amber inv-sale-pill">Sale</span>`
-      : fmt$(p.price);
-    const cat = stockCategory(p);
+    const pcat = stockCategory(p);
     const open = invOpenRows.has(p.id);
-    // The table shows only what you scan for — product, price, qty, status.
-    // Everything else (costs, margins, stock values, reorder level, web sync)
-    // and the edit / delete actions live in the detail panel a click opens.
-    const qty = Number(p.qty) || 0;
-    // Level bar: full at 4× the reorder point, so "plenty" reads as full and
-    // anything near the reorder line is visibly short.
-    const fill = Math.max(qty > 0 ? 4 : 0, Math.min(100, Math.round(qty / (lvl * 4) * 100)));
+    // Level bar is full at 4× the reorder point, so "plenty" reads as full
+    // and anything near the reorder line is visibly short.
+    const fill = qty > 0 ? Math.max(6, Math.min(100, Math.round(qty / (lvl * 4) * 100))) : 0;
+    const origPrice = Number(p.originalPrice) || 0;
+    const onSale = origPrice > price;
     const thumb = p.imageUrl
-      ? `<img class="inv-thumb" src="${escapeHtml(p.imageUrl)}" alt="" loading="lazy" />`
-      : `<span class="inv-thumb inv-thumb-ph cat-${cat}" aria-hidden="true">${escapeHtml(productInitial(p.name))}</span>`;
-    const meta = [categoryLabel(cat), p.sku].filter(Boolean).map(escapeHtml).join(' · ');
-    return `${groupHead}<tr class="inv-row inv-${group}${open ? ' open' : ''}" data-stock-row="${p.id}" aria-expanded="${open}">
+      ? `<img class="inv-img" src="${escapeHtml(p.imageUrl)}" alt="" loading="lazy" />`
+      : `<span class="inv-img inv-img-ph cat-${pcat}" aria-hidden="true">${escapeHtml(productInitial(p.name))}</span>`;
+    const meta = [p.sku ? `<span class="inv-sku">${escapeHtml(p.sku)}</span>` : '', escapeHtml(categoryLabel(pcat))]
+      .filter(Boolean).join('<i>·</i>');
+    return `<tr class="inv-r inv-${g}${open ? ' open' : ''}" data-stock-row="${p.id}" tabindex="0" aria-expanded="${open}">
       <td>
         <div class="inv-prod">
-          <span class="inv-caret" aria-hidden="true">▶</span>
           ${thumb}
           <div class="inv-prod-text">
-            <div class="inv-prod-name"><b>${escapeHtml(p.name)}</b>${p.wooId ? `<span class="web-tag" title="Synced with the website — stock updates both ways">Web</span>` : ''}</div>
-            <div class="inv-prod-meta">${meta}</div>
+            <div class="inv-prod-name">${escapeHtml(p.name)}</div>
+            <div class="inv-prod-meta">${meta}${p.wooId ? `<i>·</i><span class="inv-site" title="Synced with your website — stock updates both ways">${INV_GLOBE}On website</span>` : ''}</div>
           </div>
         </div>
       </td>
-      <td class="num">${priceCell}</td>
-      <td class="inv-stock-cell">
-        <div class="inv-stock"><b>${fmtN(qty)}</b><span class="inv-meter"><i style="width:${fill}%"></i></span></div>
+      <td class="num">
+        <div class="inv-price">${fmt$(price)}</div>
+        ${onSale ? `<div class="inv-price-sub"><s>${fmt$(origPrice)}</s> <span class="inv-sale">Sale</span></div>` : ''}
       </td>
-      <td>${statusPill}</td>
+      <td>
+        <div class="inv-qty"><b>${fmtN(qty)}</b><span>${qty === 1 ? 'unit' : 'units'}</span></div>
+        <div class="inv-meter" title="Reorder at ${fmtN(lvl)}"><i style="width:${fill}%"></i></div>
+      </td>
+      <td class="num">
+        <div class="inv-price">${fmt$(invRetailValue(p))}</div>
+        <div class="inv-price-sub">${fmt$(invCostValue(p))} cost</div>
+      </td>
+      <td>${invBadge(g)}</td>
+      <td class="inv-col-caret"><span class="inv-chev">${INV_CHEVRON}</span></td>
     </tr>
     <tr class="inv-detail" data-stock-detail="${p.id}"${open ? '' : ' hidden'}>
-      <td colspan="4">
-        <div class="inv-strip">
-          <div class="inv-cell"><span>Cost</span><b>${fmt$(p.cost)}</b></div>
-          <div class="inv-cell"><span>Margin / Unit</span><b class="inv-pos">${fmt$(margin)}</b></div>
-          <div class="inv-cell hl"><span>Stock Value (Gross)</span><b>${fmt$(valGross)}</b></div>
-          <div class="inv-cell hl"><span>Stock Value (Net)</span><b class="inv-pos">${fmt$(valNet)}</b></div>
-          <div class="inv-cell"><span>Reorder At</span><b>${fmtN(lvl)}${customLvl ? '' : ' <i>default</i>'}</b></div>
-          <div class="inv-cell"><span>Category</span><b>${escapeHtml(categoryLabel(cat))}</b></div>
-          <div class="inv-cell"><span>Website</span><b>${p.wooId ? 'Synced' : 'Not on site'}</b></div>
-          <div class="inv-cell"><span>SKU</span><b>${p.sku ? escapeHtml(p.sku) : '—'}</b></div>
-        </div>
-        <div class="inv-actions">
-          <button type="button" class="btn ghost" data-edit-stock="${p.id}">Edit product</button>
-          <button type="button" class="btn danger-outline" data-del-stock="${p.id}">Delete</button>
+      <td colspan="6">
+        <div class="inv-detail-box">
+          <dl class="inv-facts">
+            <div><dt>Unit cost</dt><dd>${fmt$(cost)}</dd></div>
+            <div><dt>Unit margin</dt><dd class="inv-pos">${fmt$(margin)} <small>${fmtPct(marginPct)}</small></dd></div>
+            <div><dt>Profit on hand</dt><dd class="inv-pos">${fmt$(margin * qty)}</dd></div>
+            <div><dt>Reorder point</dt><dd>${fmtN(lvl)} <small>${customLvl ? 'custom' : 'default'}</small></dd></div>
+            <div><dt>Category</dt><dd>${escapeHtml(categoryLabel(pcat))}</dd></div>
+            <div><dt>SKU</dt><dd>${p.sku ? escapeHtml(p.sku) : '—'}</dd></div>
+            <div><dt>Website</dt><dd>${p.wooId ? 'Synced' : 'Not listed'}</dd></div>
+            <div><dt>List price</dt><dd>${onSale ? `${fmt$(origPrice)} <small>on sale</small>` : fmt$(price)}</dd></div>
+          </dl>
+          <div class="inv-detail-actions">
+            <button type="button" class="inv-btn inv-btn-danger" data-del-stock="${p.id}">Delete</button>
+            <button type="button" class="inv-btn inv-btn-primary" data-edit-stock="${p.id}">Edit product</button>
+          </div>
         </div>
       </td>
     </tr>`;
-  }).join('') || `<tr><td colspan="4" class="muted" style="padding:24px;text-align:center;">No products match.</td></tr>`;
+  }).join('');
 
-  // Summary tiles at the top of the page — respect the current search/filter so
-  // they reflect exactly what's visible (e.g. filtering to Low Stock recalcs).
-  const sumNet = rows.reduce((s, p) => s + ((Number(p.price) || 0) - (Number(p.cost) || 0)) * (Number(p.qty) || 0), 0);
-  const sumGross = rows.reduce((s, p) => s + (Number(p.price) || 0) * (Number(p.qty) || 0), 0);
-  const margin = sumGross > 0 ? (sumNet / sumGross) * 100 : 0;
-  $('#invKpiCount').textContent = fmtN(rows.length);
-  $('#invKpiGross').textContent = fmt$(sumGross);
-  $('#invKpiNet').textContent = fmt$(sumNet);
-  $('#invKpiMargin').textContent = fmtPct(margin);
-
-  // Click a product to open its detail panel. Open panels are remembered so a
-  // background refresh doesn't snap them shut.
-  $$('#stockBody [data-stock-row]').forEach(row => row.addEventListener('click', () => {
+  // Click (or Enter / Space) a product to open its details. Open panels are
+  // remembered so a background refresh doesn't snap them shut.
+  const toggle = (row) => {
     const id = row.dataset.stockRow;
     const detail = $(`#stockBody [data-stock-detail="${id}"]`);
     if (!detail) return;
@@ -4550,17 +4607,25 @@ function renderInventory() {
     row.classList.toggle('open', open);
     row.setAttribute('aria-expanded', String(open));
     if (open) invOpenRows.add(id); else invOpenRows.delete(id);
-  }));
+  };
+  $$('#stockBody [data-stock-row]').forEach(row => {
+    row.addEventListener('click', () => toggle(row));
+    row.addEventListener('keydown', (e) => {
+      if (e.target !== row) return;
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(row); }
+    });
+  });
 
   $$('#stockBody [data-edit-stock]').forEach(el => el.addEventListener('click', () => {
     const p = state.stock.find(x => x.id === el.dataset.editStock);
     if (p) stockModal(p);
   }));
   $$('#stockBody [data-del-stock]').forEach(el => el.addEventListener('click', () => {
-    if (!confirm('Delete this product?')) return;
-    const id = el.dataset.delStock;
-    state.stock = state.stock.filter(x => x.id !== id);
-    saveState(); cloudDelete('stock', id); renderInventory(); renderDashboard(); toast('Product deleted.');
+    const p = state.stock.find(x => x.id === el.dataset.delStock);
+    if (!p || !confirm(`Delete "${p.name}"? This can't be undone.`)) return;
+    state.stock = state.stock.filter(x => x.id !== p.id);
+    invOpenRows.delete(p.id);
+    saveState(); cloudDelete('stock', p.id); renderInventory(); renderDashboard(); toast('Product deleted.');
   }));
 }
 
