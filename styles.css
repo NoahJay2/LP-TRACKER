@@ -6954,3 +6954,54 @@ button.link:hover, a.link:hover { color: #86efac; }
 .toolbar .btn-reset, .btn { justify-content: center; }
 .login-card .login-sub { font-family: var(--font-body); font-size: 13px; color: var(--muted); }
 .login-card .login-sub::before { content: none; }
+
+/* ── Dashboard · This Month card ─────────────────────────────── */
+.this-month-head .muted { font-weight: 400; }
+.tm-stat:not(.tm-stat-revenue):not(.tm-stat-net):not(.tm-stat-pending) b { color: var(--text); }
+.tm-pace { margin-top: 16px; }
+.tm-pace-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.tm-pace-bar {
+  margin-top: 8px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+.tm-pace-bar i { display: block; height: 100%; border-radius: inherit; background: #22c55e; }
+.tm-top { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+.tm-top-head {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.tm-top-head .muted { font-weight: 400; }
+.tm-top-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: 12px;
+  padding: 8px 0;
+}
+.tm-top-row + .tm-top-row { border-top: 1px solid rgba(255, 255, 255, 0.04); }
+.tm-top-name { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.tm-top-name span { font-size: 13.5px; font-weight: 550; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tm-top-name small { flex: none; font-size: 12px; color: var(--muted); }
+.tm-top-row b { font-size: 13.5px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
+.tm-top-bar {
+  grid-column: 1 / -1;
+  margin-top: 6px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+}
+.tm-top-bar i { display: block; height: 100%; border-radius: inherit; background: rgba(56, 189, 248, 0.7); }

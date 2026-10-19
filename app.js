@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-10-19.9';
+const BUILD_VERSION = '2026-10-19.10';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -1875,13 +1875,59 @@ function renderDashboard() {
   // which would be misleading when there ARE orders, just none completed).
   const hasAny = monthOrders.length || monthPending.length;
   if (tmCard) {
+    // Orders that have landed (paid) this month, the base for count, average
+    // and top products — same cash basis as the Revenue / Net Profit tiles.
+    const landed = monthOrders.filter(orderHasLandedProfit);
+    const avgOrder = landed.length ? monthRev / landed.length : 0;
+    // Pace: month-to-date revenue against last month's total, plus a straight
+    // line projection to month end (the same projection the Monthly page uses).
+    const now = new Date();
+    const day = now.getDate();
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const prevKey = monthKey(new Date(now.getFullYear(), now.getMonth() - 1, 15).toISOString().slice(0, 10));
+    const prevRev = round2(orders.filter(o => monthKey(o.date) === prevKey).reduce((s, o) => s + orderPaidRevenue(o), 0));
+    const projected = day > 0 ? monthRev / day * daysInMonth : 0;
+    const pacePct = prevRev > 0 ? Math.min(100, Math.round(monthRev / prevRev * 100)) : 0;
+    const prevName = monthName(prevKey + '-01').split(' ')[0];
+    // Top sellers this month by revenue.
+    const byProduct = new Map();
+    landed.forEach(o => orderItems(o).forEach(it => {
+      const name = (it.product || '').trim();
+      if (!name) return;
+      const row = byProduct.get(name) || { name, qty: 0, gross: 0 };
+      row.qty += Number(it.qty) || 0;
+      row.gross += itemLineTotal(it);
+      byProduct.set(name, row);
+    }));
+    const top = [...byProduct.values()].sort((a, b) => b.gross - a.gross).slice(0, 5);
+    const topMax = top.length ? top[0].gross : 0;
     tmCard.innerHTML = hasAny
       ? `
-        <div class="this-month-head">${monthLabel}</div>
+        <div class="this-month-head">${monthLabel} <span class="muted">· Day ${day} of ${daysInMonth}</span></div>
         <div class="this-month-stats">
           <div class="tm-stat tm-stat-revenue"><span class="tm-label">Revenue</span><b>${fmt$(monthRev)}</b></div>
           <div class="tm-stat tm-stat-net"><span class="tm-label">Net Profit</span><b>${fmt$(monthNet)}</b></div>
+          <div class="tm-stat"><span class="tm-label">Orders paid</span><b>${fmtN(landed.length)}</b></div>
+          <div class="tm-stat"><span class="tm-label">Avg order</span><b>${fmt$(avgOrder)}</b></div>
         </div>
+        ${prevRev > 0 ? `
+        <div class="tm-pace">
+          <div class="tm-pace-row">
+            <span>${pacePct}% of ${escapeHtml(prevName)}'s ${fmt$(prevRev)}</span>
+            <span class="muted">On pace for ${fmt$(projected)}</span>
+          </div>
+          <div class="tm-pace-bar"><i style="width:${pacePct}%"></i></div>
+        </div>` : ''}
+        ${top.length ? `
+        <div class="tm-top">
+          <div class="tm-top-head"><span>Top products</span><span class="muted">Revenue</span></div>
+          ${top.map(t => `
+            <div class="tm-top-row">
+              <div class="tm-top-name"><span>${escapeHtml(t.name)}</span><small>×${fmtN(t.qty)}</small></div>
+              <b>${fmt$(t.gross)}</b>
+              <div class="tm-top-bar"><i style="width:${topMax ? Math.max(4, Math.round(t.gross / topMax * 100)) : 0}%"></i></div>
+            </div>`).join('')}
+        </div>` : ''}
       `
       : `<div class="this-month-head">${monthLabel}</div><div class="muted" style="padding:6px 0;">No orders yet this month.</div>`;
   }
