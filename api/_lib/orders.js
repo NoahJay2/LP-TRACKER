@@ -213,9 +213,12 @@ export async function processWooOrder(wo) {
   // Orders placed before the store was connected were already tracked by
   // hand. Ignore them completely — even a later status change in Woo (e.g.
   // marking an old order Completed) must not import it a second time.
-  const { connectedAt } = await getState('woo');
+  // `includeOrders` lists older orders you chose to import anyway (see
+  // /api/woo/import-order); they keep syncing like any other web order.
+  const { connectedAt, includeOrders = [] } = await getState('woo');
   if (!connectedAt) return { action: 'skipped', reason: 'not-connected' };
-  if (!(placedAt(wo) >= Date.parse(connectedAt))) return { action: 'skipped', reason: 'before-connection' };
+  const included = includeOrders.map(String).includes(String(wo.id));
+  if (!included && !(placedAt(wo) >= Date.parse(connectedAt))) return { action: 'skipped', reason: 'before-connection' };
 
   // Cancelled (incl. Woo's auto-cancel of unpaid orders), failed, refunded,
   // trashed: not a sale. Woo gives the stock back, so the tracker does too.
