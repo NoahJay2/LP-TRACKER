@@ -27,7 +27,29 @@ const TYPES = {
 // Same rewrites as vercel.json.
 const REWRITES = { '/': '/tracker.html', '/landing': '/landing.html' };
 
+// Without local keys (.env.local), forward /api to the deployed site so the
+// Integrations tab still works locally against the real connection — the
+// secrets stay in Vercel. Set API_PROXY= (empty) to disable.
+const API_PROXY = process.env.WOO_CONSUMER_KEY
+  ? ''
+  : (process.env.API_PROXY ?? 'https://lptracker-five.vercel.app');
+
+async function proxyApi(req, res) {
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  const headers = { ...req.headers };
+  delete headers.host;
+  const upstream = await fetch(API_PROXY + req.url, {
+    method: req.method,
+    headers,
+    body: ['GET', 'HEAD'].includes(req.method) ? undefined : Buffer.concat(chunks),
+  });
+  res.writeHead(upstream.status, { 'Content-Type': upstream.headers.get('content-type') || 'application/json' });
+  res.end(Buffer.from(await upstream.arrayBuffer()));
+}
+
 async function handleApi(req, res, pathname) {
+  if (API_PROXY) return proxyApi(req, res);
   const file = join(ROOT, normalize(pathname + '.js'));
   if (!file.startsWith(join(ROOT, 'api')) || !existsSync(file)) {
     res.writeHead(404).end('Not found'); return;
@@ -62,4 +84,6 @@ createServer(async (req, res) => {
     console.error(err);
     res.writeHead(500).end(String(err.message || err));
   }
-}).listen(PORT, () => console.log(`LP Tracker dev server → http://localhost:${PORT}`));
+}).listen(PORT, () => console.log(
+  `LP Tracker dev server → http://localhost:${PORT}` + (API_PROXY ? `  (/api → ${API_PROXY})` : '')
+));
