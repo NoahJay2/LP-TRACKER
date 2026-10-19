@@ -63,9 +63,11 @@ export function parseWooKey(key) {
   return { productId: Number(productId) || 0, variationId: Number(variationId) || 0 };
 }
 
+// Some stores return a variation's `name` as just its option ("20mg"), so
+// only trust it when it already includes the parent product's name.
 function variationName(parent, v) {
-  if (v.name) return v.name;
-  const opts = (v.attributes || []).map(a => a.option).filter(Boolean).join(', ');
+  if (v.name && v.name.toLowerCase().includes(String(parent.name || '').toLowerCase())) return v.name;
+  const opts = (v.attributes || []).map(a => a.option).filter(Boolean).join(', ') || v.name || '';
   return opts ? `${parent.name} - ${opts}` : parent.name;
 }
 

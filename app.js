@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-10-19.1';
+const BUILD_VERSION = '2026-10-19.2';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -8821,21 +8821,41 @@ $('#wooCatchUpBtn').addEventListener('click', (e) => runWooAction(e.currentTarge
   await manualSync();
 }));
 
-// Loose name key so "BPC-157 10mg" and "BPC157 - 10 mg" suggest each other.
-const looseKey = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+// Name words, order-free: "BPC-157 10MG" and "10MG BPC-157" both become
+// {bpc, 157, 10mg}. "Bacteriostatic" is spelled out on the store, "Bac" here.
+const nameWords = (s) => new Set(
+  String(s || '').toLowerCase().replace(/bacteriostatic/g, 'bac').split(/[^a-z0-9]+/).filter(Boolean)
+);
+const sameWords = (a, b) => a.size === b.size && [...a].every(w => b.has(w));
+const subsetOf = (a, b) => a.size > 0 && [...a].every(w => b.has(w));
+
+// Best unlinked tracker product for a store product: same words in any order,
+// otherwise the one product whose words contain all of the store's (or vice
+// versa) — "Retatrutide - 20mg" → "20MG Retatrutide (GLP-3)". Ambiguous
+// partial matches suggest nothing rather than guess.
+function suggestStockFor(storeName, candidates) {
+  const sw = nameWords(storeName);
+  const exact = candidates.find(p => sameWords(nameWords(p.name), sw));
+  if (exact) return exact;
+  const partial = candidates.filter(p => {
+    const pw = nameWords(p.name);
+    return subsetOf(sw, pw) || subsetOf(pw, sw);
+  });
+  return partial.length === 1 ? partial[0] : null;
+}
 
 function renderWooProducts() {
   const wrap = $('#wooProductsWrap');
   if (!wooProducts) { wrap.innerHTML = ''; return; }
   const stockByName = [...state.stock].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-  const linkedIds = new Set(state.stock.filter(p => p.wooId).map(p => p.wooId));
+  // Suggest unlinked tracker products only, and each one for at most one
+  // store product.
+  const claimed = new Set();
   const rows = wooProducts.map(wp => {
     const current = state.stock.find(p => p.wooId === wp.wooId);
-    // Suggest an unlinked tracker product with the same name — never one
-    // already linked elsewhere.
-    const suggested = !current && !linkedIds.has(wp.wooId)
-      ? state.stock.find(p => !p.wooId && looseKey(p.name) === looseKey(wp.name))
-      : null;
+    const suggested = current ? null
+      : suggestStockFor(wp.name, state.stock.filter(p => !p.wooId && !claimed.has(p.id)));
+    if (suggested) claimed.add(suggested.id);
     const selected = current ? current.id : suggested ? suggested.id : '';
     const opts = [
       `<option value="">Don't sync</option>`,
