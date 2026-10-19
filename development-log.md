@@ -361,3 +361,25 @@ alter table orders add column if not exists discount jsonb;
 | `styles.css` | Payments editor + partial chip + paid-cell; discount section + `[hidden]` re-assert + exclusion checklist + invoice discount/strikethrough; calendar (cal-head/nav/back, months grid, day grid, summary, today badge) + day-detail modal; bigger modal close button + payment `$` prefix; build-tag; partial row tints; invoice PAID stamp + balance rows. |
 | `vercel.json` | `rewrites` (`/`→tracker, `/landing`→landing), `cleanUrls`, `trailingSlash:false`, no-cache `headers` for HTML. |
 | Supabase | Optional `orders.payments` (jsonb) + `orders.discount` (jsonb); app degrades gracefully if absent. |
+
+## WooCommerce integration
+
+Serverless functions in `api/woo/` (Vercel) keep the store and the tracker in step. No npm dependencies.
+
+- **Stock — tracker owns the count.** Only products linked on the Integrations page sync (`stock.woo_id` = `"productId"` or `"productId/variationId"`); everything else stays tracker-only. Any stock save in the app calls `/api/woo/push-stock` for linked rows (`queueWooStockPush` in `app.js`).
+- **Orders — webhook import.** `api/_lib/orders.js` turns Woo orders into tracker orders with id `o-woo-<wooId>`, `source = 'woo'`. Imported only once paid: processing → Paid, completed → Paid + Fulfilled; on-hold and pending wait. Orders placed before the connection date (`integration_state.woo.connectedAt`) are ignored entirely, and a web order matching a manual one (same customer, ±1 day, same items) is skipped, since those were already tracked by hand. Manual orders are never modified. cancelled/failed/refunded/deleted web orders → removed and stock returned. Web orders hold stock while processing / on-hold / completed (Woo's rule) instead of the app's paid + fulfilled rule — see `orderConsumesInventory`. Deduction is guarded by a compare-and-set on `inventory_applied`, so duplicate/concurrent webhooks deduct once.
+- **Products.** Images + SKUs pulled from Woo on link and on `product.updated`. Name and price stay as entered in the tracker.
+- **App.** Integrations view (status, register webhooks, import missed orders, product linking). Web tag + thumbnail on Inventory, Web tag on Orders. A quiet refresh every 60s (and on refocus) brings new web orders in.
+
+### Setup
+
+1. Run `supabase/woocommerce.sql` in the Supabase SQL Editor.
+2. WooCommerce → Settings → Advanced → REST API → Add key, permission **Read/Write**.
+3. Vercel → Settings → Environment Variables: see `.env.example`. Redeploy.
+4. In the app: Integrations → Register webhooks → Load store products → pick links → Save links.
+
+Local: copy `.env.example` to `.env.local`, then `npm run dev` (serves the app and `/api` on :3000). Webhooks can only reach the deployed site.
+
+## Delivered → Fulfilled
+
+Order-side labels (tables, toggles, filters, CSV/Excel headers, tooltips) now say Fulfilled. The stored field is still `delivered`. Shipments keep "Delivered" (it means the vendor package arrived).

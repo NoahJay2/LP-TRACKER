@@ -6053,3 +6053,57 @@ button.ship-timeline:active {
   /* The tidy link would push the collapsed header onto a second line. */
   .is-collapsed .vendor-tidy-btn { display: none; }
 }
+
+/* ── WooCommerce integration ────────────────────────────────── */
+.web-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  background: rgba(96, 165, 250, 0.10);
+  color: #60a5fa;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+.inv-thumb {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  vertical-align: middle;
+  margin-right: 8px;
+}
+.integ-card { margin-bottom: 16px; }
+.integ-status { display: grid; gap: 6px; margin: 4px 0 12px; }
+.integ-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font-size: 13px; }
+.integ-row > span:first-child { color: var(--muted); min-width: 110px; }
+.integ-warn {
+  color: var(--warn);
+  background: var(--warn-soft);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  font-size: 13px;
+  margin: 0;
+}
+.integ-warn code, .integ-status code { font-family: var(--font-mono); font-size: 12px; }
+.integ-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
+.integ-actions [hidden] { display: none; }
+.integ-rules { margin: 4px 0 0; padding-left: 18px; color: var(--text-2); font-size: 13px; line-height: 1.6; }
+.integ-note { margin: 0 0 4px; }
+.integ-products { overflow-x: auto; }
+.integ-table td { vertical-align: middle; }
+.integ-table select { max-width: 240px; width: 100%; }
+.woo-qty-change { color: var(--warn); font-weight: 600; }
+@media (max-width: 640px) {
+  .integ-table th:nth-child(1), .integ-table td:nth-child(1),
+  .integ-table th:nth-child(5), .integ-table td:nth-child(5) { display: none; }
+  .integ-table select { max-width: 160px; font-size: 16px; }
+}
+.integ-sub { display: block; color: var(--muted); font-size: 11.5px; margin-top: 2px; }

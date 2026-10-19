@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-10-09.6';
+const BUILD_VERSION = '2026-10-19.1';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -542,6 +542,12 @@ const Adapters = {
       reorder: r.reorder == null ? null : (Number(r.reorder) || 0),
       originalPrice: r.original_price == null ? null : (Number(r.original_price) || 0),
       category: CATEGORY_KEYS.includes(r.category) ? r.category : classifyProduct(r.name),
+      // WooCommerce link. Read-only here: the /api/woo functions own these
+      // columns, and toRow leaves them out so a stale tab can't unlink a
+      // product by saving an old copy of the row.
+      wooId: r.woo_id || null,
+      imageUrl: r.image_url || '',
+      sku: r.sku || '',
     }),
   },
   orders: {
@@ -582,6 +588,9 @@ const Adapters = {
       // `undefined` (column missing or never set) is preserved so migrateOrders
       // can initialize it from the legacy paid flag on first load.
       inventoryApplied: (typeof r.inventory_applied === 'boolean') ? r.inventory_applied : undefined,
+      // 'woo' for orders imported from the website (server-owned, like wooId).
+      source: r.source || '',
+      wooStatus: r.woo_status || '',
     }),
   },
   shipments: {
@@ -862,6 +871,7 @@ function cloudUpsert(table, item) {
       toast(`Cloud save failed: ${error.message}`);
     } else {
       setCloudStatus('online', 'Synced');
+      if (table === 'stock') queueWooStockPush([item]);
     }
   });
 }
@@ -875,9 +885,73 @@ function cloudUpsertMany(table, items) {
       toast(`Cloud save failed: ${error.message}`);
     } else {
       setCloudStatus('online', 'Synced');
+      if (table === 'stock') queueWooStockPush(items);
     }
   });
 }
+
+// ---------- WooCommerce sync ----------
+// Calls the /api/woo serverless functions with the signed-in user's session,
+// which is how they know the request comes from the tracker.
+async function wooApi(path, { method = 'GET', body } = {}) {
+  const { data } = await sb.auth.getSession();
+  const token = data && data.session && data.session.access_token;
+  const res = await fetch('/api/woo/' + path, {
+    method,
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (token || '') },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  let out = null;
+  try { out = await res.json(); } catch {}
+  if (!res.ok) throw new Error((out && out.error) || `Integration server returned ${res.status}`);
+  return out;
+}
+
+// After any stock save, mirror the new counts of linked products to the
+// store. Batched briefly so one order touching several products is one call.
+let wooPushIds = new Set();
+let wooPushTimer = null;
+function queueWooStockPush(items) {
+  (items || []).forEach(p => { if (p && p.wooId) wooPushIds.add(p.id); });
+  if (!wooPushIds.size) return;
+  clearTimeout(wooPushTimer);
+  wooPushTimer = setTimeout(() => {
+    const stockIds = [...wooPushIds];
+    wooPushIds = new Set();
+    wooApi('push-stock', { method: 'POST', body: { stockIds } })
+      .then(r => { if (r.errors && r.errors.length) toast('Website stock update failed: ' + r.errors[0]); })
+      .catch(err => {
+        console.error('woo push failed', err);
+        toast('Website stock not updated: ' + err.message);
+      });
+  }, 1500);
+}
+
+// Web orders land in Supabase via webhook, not through this tab, so pull the
+// latest quietly every minute and whenever the app comes back to the
+// foreground. Skipped while a modal or sheet is open so a refresh never swaps
+// state out from under an edit in progress.
+async function quietRefresh() {
+  if (!sb || document.hidden || modal.classList.contains('open') || activeOverlay) return;
+  const { data } = await sb.auth.getSession();
+  if (!data || !data.session) return;
+  try {
+    const cloud = await cloudFetchAll();
+    if (modal.classList.contains('open') || activeOverlay) return;
+    const before = new Set(state.orders.map(o => o.id));
+    cloud.orders = mergeCloudOrders(cloud.orders);
+    state = { ...state, ...cloud };
+    saveState();
+    renderAll();
+    const fresh = state.orders.filter(o => o.source === 'woo' && !before.has(o.id));
+    if (fresh.length) toast(fresh.length === 1 ? `New web order from ${fresh[0].customer}` : `${fresh.length} new web orders`);
+  } catch (err) {
+    console.warn('background refresh failed', err);
+  }
+}
+setInterval(quietRefresh, 60 * 1000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) quietRefresh(); });
+
 function cloudDelete(table, id) {
   if (!sb) return;
   setCloudStatus('syncing', 'Syncing…');
@@ -1254,7 +1328,12 @@ function setOrderFullyPaid(o, fullyPaid) {
 // leave stock untouched. The per-order `inventoryApplied` flag tracks whether
 // the deduction is currently in place so toggles stay idempotent and consistent
 // across devices (synced via the optional `inventory_applied` column).
+const WOO_STOCK_HELD = ['processing', 'on-hold', 'completed'];
 function orderConsumesInventory(o) {
+  // Website orders follow WooCommerce's own rule instead — Woo holds stock as
+  // soon as an order is processing / on-hold / completed — so the tracker and
+  // the store agree on the count for orders that haven't shipped yet.
+  if (o && o.source === 'woo') return WOO_STOCK_HELD.includes(o.wooStatus);
   return !!(o && o.paid && o.delivered);
 }
 // Apply / undo the inventory delta for an order so its actual deduction state
@@ -1453,7 +1532,7 @@ function attachTypeahead(input, getOptions) {
 }
 
 const VIEW_STORAGE_KEY = 'lumen-tracker-view';
-const VALID_VIEWS = ['dashboard', 'orders', 'customers', 'inventory', 'shipments', 'expenses', 'income', 'monthly'];
+const VALID_VIEWS = ['dashboard', 'orders', 'customers', 'inventory', 'shipments', 'expenses', 'income', 'monthly', 'integrations'];
 
 function switchView(name) {
   if (!VALID_VIEWS.includes(name)) name = 'dashboard';
@@ -1470,6 +1549,7 @@ function switchView(name) {
   if (name === 'expenses') renderExpenses();
   if (name === 'income') renderIncome();
   if (name === 'monthly') renderMonthly();
+  if (name === 'integrations') renderIntegrations();
 }
 
 function restoreLastView() {
@@ -1637,7 +1717,7 @@ function renderRecentOrderGroup(g, readonly = false) {
   let html = `
     <tr class="${aggCls}">
       <td>${fmtDateShort(g.date)}</td>
-      <td><b>${escapeHtml(g.customer || '')}</b><span class="customer-sub">${totalLineItems} item${totalLineItems === 1 ? '' : 's'}</span></td>
+      <td><b>${escapeHtml(g.customer || '')}</b>${webOrderBadge(g.orders.find(o => o.source === 'woo'))}<span class="customer-sub">${totalLineItems} item${totalLineItems === 1 ? '' : 's'}</span></td>
       <td class="items-cell"><span class="chevron" data-toggle-group="${groupId}">▶</span><span class="grp-badge">${totalLineItems} item${totalLineItems === 1 ? '' : 's'}</span></td>
       <td class="num">${fmtN(totalQty)}</td>
       <td class="num">${fmt$(totalAmt)}</td>
@@ -1652,7 +1732,7 @@ function renderRecentOrderGroup(g, readonly = false) {
     if (flag) cls.push(`row-flag-${flag}`);
     const childToggles = readonly ? '' : `
           <span class="cs-toggle"><span class="cs-tlabel">Paid</span><label class="switch"><input type="checkbox" data-toggle-paid="${o.id}" ${o.paid ? 'checked' : ''} /><span class="slider"></span></label>${partialPaidPill(o)}</span>
-          <span class="cs-toggle"><span class="cs-tlabel">Delivered</span><label class="switch"><input type="checkbox" data-toggle-delivered="${o.id}" ${o.delivered ? 'checked' : ''} /><span class="slider"></span></label></span>
+          <span class="cs-toggle"><span class="cs-tlabel">Fulfilled</span><label class="switch"><input type="checkbox" data-toggle-delivered="${o.id}" ${o.delivered ? 'checked' : ''} /><span class="slider"></span></label></span>
           <span class="cs-actions"><button class="icon-btn" data-edit-order="${o.id}" title="Edit">✎</button></span>`;
     return `
     <tr class="${cls.join(' ')}" data-parent="${groupId}" hidden>
@@ -1689,7 +1769,7 @@ function renderRecentOrderRow(o, readonly = false) {
   if (items.length <= 1) {
     return `<tr class="${flagCls.trim()}">
       <td>${fmtDateShort(o.date)}</td>
-      <td>${escapeHtml(o.customer || '')}${statusFlagBadge(flag)}${sub}</td>
+      <td>${escapeHtml(o.customer || '')}${webOrderBadge(o)}${statusFlagBadge(flag)}${sub}</td>
       <td class="items-cell">${itemsCellInline(items)}</td>
       <td class="num">${fmtN(orderQty(o))}</td>
       <td class="num">${fmt$(orderTotal(o))}</td>
@@ -1704,7 +1784,7 @@ function renderRecentOrderRow(o, readonly = false) {
   let html = `
     <tr class="group-row${flagCls}">
       <td>${fmtDateShort(o.date)}</td>
-      <td>${escapeHtml(o.customer || '')}${statusFlagBadge(flag)}${sub}</td>
+      <td>${escapeHtml(o.customer || '')}${webOrderBadge(o)}${statusFlagBadge(flag)}${sub}</td>
       <td class="items-cell"><span class="chevron" data-toggle-group="${groupId}">▶</span><span class="grp-badge">${items.length} items</span></td>
       <td class="num">${fmtN(orderQty(o))}</td>
       <td class="num">${fmt$(orderTotal(o))}</td>
@@ -2116,9 +2196,15 @@ function orderStatusFlag(o) {
   if (orderIsPartiallyPaid(o)) return 'partial';
   return null;
 }
+// Marks orders that came in from the website.
+function webOrderBadge(o) {
+  if (!o || o.source !== 'woo') return '';
+  const status = o.wooStatus ? ` · ${o.wooStatus}` : '';
+  return ` <span class="web-tag" title="Website order${escapeHtml(status)}">Web</span>`;
+}
 function statusFlagBadge(flag) {
-  if (flag === 'unpaid')  return ' <span class="status-flag danger" title="Delivered but not paid — collect payment">⚠</span>';
-  if (flag === 'pending') return ' <span class="status-flag success" title="Paid but not yet delivered — needs to ship">⏳</span>';
+  if (flag === 'unpaid')  return ' <span class="status-flag danger" title="Fulfilled but not paid — collect payment">⚠</span>';
+  if (flag === 'pending') return ' <span class="status-flag success" title="Paid but not yet fulfilled — needs to ship">⏳</span>';
   if (flag === 'partial') return ' <span class="status-flag warn" title="Partial payment received — balance still owed">◐</span>';
   return '';
 }
@@ -2737,7 +2823,7 @@ function openTodayOrderDetail(customerKey, dateKey) {
             <span class="switch"><input type="checkbox" id="rdPaid" ${allPaid ? 'checked' : ''} /><span class="slider"></span></span>
           </label>
           <label class="toggle-row">
-            <span class="toggle-row-label">Delivered</span>
+            <span class="toggle-row-label">Fulfilled</span>
             <span class="switch"><input type="checkbox" id="rdDelivered" ${allDelivered ? 'checked' : ''} /><span class="slider"></span></span>
           </label>
         </div>
@@ -3192,7 +3278,7 @@ function renderOrderGroup(g) {
   let html = `
     <tr class="${aggCls}">
       <td>${fmtDateShort(g.date)}</td>
-      <td><b>${escapeHtml(g.customer || '')}</b><span class="customer-sub">${totalLineItems} item${totalLineItems === 1 ? '' : 's'}</span></td>
+      <td><b>${escapeHtml(g.customer || '')}</b>${webOrderBadge(g.orders.find(o => o.source === 'woo'))}<span class="customer-sub">${totalLineItems} item${totalLineItems === 1 ? '' : 's'}</span></td>
       <td class="items-cell"><span class="chevron" data-toggle-group="${groupId}">▶</span><span class="grp-badge">${totalLineItems} item${totalLineItems === 1 ? '' : 's'}</span></td>
       <td class="num">${fmtN(totalQty)}</td>
       <td class="num">${fmt$(totalAmt)}</td>
@@ -3214,7 +3300,7 @@ function renderOrderGroup(g) {
           <span class="cs-stat"><span class="cs-tlabel">Total</span><b class="cs-stat-total">${fmt$(orderTotal(o))}</b></span>
           <span class="cs-stat"><span class="cs-tlabel">Profit</span><b>${fmt$(orderProfit(o))}</b></span>
           <span class="cs-toggle"><span class="cs-tlabel">Paid</span><label class="switch"><input type="checkbox" data-toggle-paid="${o.id}" ${o.paid ? 'checked' : ''} /><span class="slider"></span></label>${partialPaidPill(o)}</span>
-          <span class="cs-toggle"><span class="cs-tlabel">Delivered</span><label class="switch"><input type="checkbox" data-toggle-delivered="${o.id}" ${o.delivered ? 'checked' : ''} /><span class="slider"></span></label></span>
+          <span class="cs-toggle"><span class="cs-tlabel">Fulfilled</span><label class="switch"><input type="checkbox" data-toggle-delivered="${o.id}" ${o.delivered ? 'checked' : ''} /><span class="slider"></span></label></span>
           <span class="cs-actions">
             <button class="icon-btn" data-edit-order="${o.id}" title="Edit">✎</button>
             <button class="icon-btn danger" data-del-order="${o.id}" title="Delete">🗑</button>
@@ -3235,7 +3321,7 @@ function renderSingleOrderRow(o) {
     const sub = it ? `<span class="customer-sub">${escapeHtml(it.product || '')}${(Number(it.qty) || 0) > 0 ? ` ×${fmtN(it.qty)}` : ''}</span>` : '';
     return `<tr class="${flagCls.trim()}">
       <td>${fmtDateShort(o.date)}</td>
-      <td>${escapeHtml(o.customer || '')}${statusFlagBadge(flag)}${sub}</td>
+      <td>${escapeHtml(o.customer || '')}${webOrderBadge(o)}${statusFlagBadge(flag)}${sub}</td>
       <td class="items-cell">${itemsCellInline(items)}</td>
       <td class="num">${fmtN(orderQty(o))}</td>
       <td class="num">${fmt$(orderTotal(o))}</td>
@@ -3253,7 +3339,7 @@ function renderSingleOrderRow(o) {
   let html = `
     <tr class="group-row${flagCls}">
       <td>${fmtDateShort(o.date)}</td>
-      <td>${escapeHtml(o.customer || '')}${statusFlagBadge(flag)}<span class="customer-sub">${items.length} items</span></td>
+      <td>${escapeHtml(o.customer || '')}${webOrderBadge(o)}${statusFlagBadge(flag)}<span class="customer-sub">${items.length} items</span></td>
       <td class="items-cell"><span class="chevron" data-toggle-group="${groupId}">▶</span><span class="grp-badge">${items.length} items</span></td>
       <td class="num">${fmtN(orderQty(o))}</td>
       <td class="num">${fmt$(orderTotal(o))}</td>
@@ -3388,7 +3474,7 @@ function orderModal(existing, draft) {
         <span class="switch"><input type="checkbox" name="paid" ${data.paid ? 'checked' : ''} /><span class="slider"></span></span>
       </label>
       <label class="toggle-row">
-        <span class="toggle-row-label">Delivered</span>
+        <span class="toggle-row-label">Fulfilled</span>
         <span class="switch"><input type="checkbox" name="delivered" ${data.delivered ? 'checked' : ''} /><span class="slider"></span></span>
       </label>
     </div>
@@ -4379,8 +4465,10 @@ function renderInventory() {
     return `<tr class="inv-row${needs ? ' row-reorder' : ''}" data-stock-row="${p.id}">
       <td>
         <span class="inv-caret" aria-hidden="true">▶</span>
+        ${p.imageUrl ? `<img class="inv-thumb" src="${escapeHtml(p.imageUrl)}" alt="" loading="lazy" />` : ''}
         <b>${escapeHtml(p.name)}</b>
         <span class="cat-tag cat-${cat}">${escapeHtml(categoryLabel(cat))}</span>
+        ${p.wooId ? `<span class="web-tag" title="Synced with the website — stock updates both ways">Web</span>` : ''}
       </td>
       <td class="num">${fmt$(p.cost)}</td>
       <td class="num">${priceCell}</td>
@@ -7698,7 +7786,7 @@ function calSummaryHtml(gross, net, qty, pendingGross, pendingNet, pendingQty) {
   // instead of being folded into the headline number.
   const grossTip = hasPending ? ` title="${fmt$(round2(g))} paid · ${fmt$(round2(pg))} pending"` : '';
   const netTip = hasPending ? ` title="${fmt$(round2(n))} paid · ${fmt$(round2(pn))} pending"` : '';
-  const qtyTip = hasPending ? ` title="${fmtN(q)} delivered · ${fmtN(pq)} pending"` : '';
+  const qtyTip = hasPending ? ` title="${fmtN(q)} fulfilled · ${fmtN(pq)} pending"` : '';
   const pendGrossLine = hasPending ? `<span class="cal-sum-pending-line">+${fmt$(round2(pg))} pending</span>` : '';
   const pendNetLine = hasPending ? `<span class="cal-sum-pending-line">+${fmt$(round2(pn))} pending</span>` : '';
   const pendQtyLine = hasPending ? `<span class="cal-sum-pending-line">+${fmtN(pq)} pending</span>` : '';
@@ -7934,7 +8022,7 @@ function renderCalendar(mk, dayBuckets) {
       const hasPending = pg > 0.005 || pq > 0;
       const grossTip = hasPending ? ` title="${fmt$(round2(g))} paid + ${fmt$(round2(pg))} pending"` : '';
       const netTip = hasPending ? ` title="${fmt$(round2(n))} paid + ${fmt$(round2(pn))} pending"` : '';
-      const qtyTip = hasPending ? ` title="${fmtN(q)} delivered + ${fmtN(pq)} pending"` : '';
+      const qtyTip = hasPending ? ` title="${fmtN(q)} fulfilled + ${fmtN(pq)} pending"` : '';
       return `
         <button type="button" class="cal-week-total cal-week-total-active${spanClass}" data-cal-week="${ds}">
           <span class="cal-week-label">${label}</span>
@@ -8029,7 +8117,7 @@ function openDayDetail(dateKey) {
     : { gross: 'Total Gross', net: 'Net Profit', qty: 'Total Items', sectionOrders: 'Orders Completed' };
   const ddTotalQty = (b.qty || 0) + (b.pendingQty || 0);
   const ddQtyTip = (!__monthlyPending && (b.pendingQty || 0) > 0)
-    ? ` title="${fmtN(b.qty)} delivered + ${fmtN(b.pendingQty)} pending"`
+    ? ` title="${fmtN(b.qty)} fulfilled + ${fmtN(b.pendingQty)} pending"`
     : '';
   form.innerHTML = `
     <div class="day-detail${__monthlyPending ? ' day-detail-pending' : ''}">
@@ -8150,7 +8238,7 @@ function openWeekDetail(mk, weekNum, startDay, endDay) {
   const totalQ = qty + pendingQty;
   const grossTip = hasPending ? ` title="${fmt$(round2(gross))} paid + ${fmt$(round2(pendingGross))} pending"` : '';
   const netTip = hasPending ? ` title="${fmt$(round2(net))} paid + ${fmt$(round2(pendingNet))} pending"` : '';
-  const qtyTip = hasPending ? ` title="${fmtN(qty)} delivered + ${fmtN(pendingQty)} pending"` : '';
+  const qtyTip = hasPending ? ` title="${fmtN(qty)} fulfilled + ${fmtN(pendingQty)} pending"` : '';
 
   const form = $('#modalForm');
   form.innerHTML = `
@@ -8244,7 +8332,7 @@ function itemsSummary(items) {
 }
 
 function exportOrdersCSV() {
-  const headers = ['Date', 'Customer', 'Items', 'Total Qty', 'Subtotal', 'Discount', 'Shipping', 'Order Total', 'Amount Paid', 'Balance Due', 'Status', 'Delivered', 'Profit'];
+  const headers = ['Date', 'Customer', 'Items', 'Total Qty', 'Subtotal', 'Discount', 'Shipping', 'Order Total', 'Amount Paid', 'Balance Due', 'Status', 'Fulfilled', 'Profit'];
   const rows = state.orders.slice()
     .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
     .map(o => {
@@ -8347,7 +8435,7 @@ async function exportAllXLSX() {
 
     const sheets = {
       'Orders': [
-        ['Order ID', 'Invoice #', 'Date', 'Customer', 'Items', 'Total Qty', 'Subtotal', 'Line Discounts', 'Order Discount', 'Shipping', 'Order Total', 'Amount Paid', 'Balance Due', 'Status', 'Last Payment Date', 'Delivered', 'Profit', 'Notes'],
+        ['Order ID', 'Invoice #', 'Date', 'Customer', 'Items', 'Total Qty', 'Subtotal', 'Line Discounts', 'Order Discount', 'Shipping', 'Order Total', 'Amount Paid', 'Balance Due', 'Status', 'Last Payment Date', 'Fulfilled', 'Profit', 'Notes'],
         ...orders.map(o => {
           const pays = orderPayments(o).map(p => p && p.date).filter(Boolean).sort();
           return [
@@ -8652,6 +8740,194 @@ document.addEventListener('keydown', (e) => {
     claimed = null;
   }, { passive: true });
 })();
+
+// ---------- Integrations (WooCommerce) ----------
+let wooStatusLoaded = false;
+let wooProducts = null;   // catalog from /api/woo/products, once loaded
+
+function renderIntegrations() {
+  if (!wooStatusLoaded) loadWooStatus();
+  renderWooLinkSummary();
+}
+
+function renderWooLinkSummary() {
+  const linked = state.stock.filter(p => p.wooId).length;
+  const priv = state.stock.length - linked;
+  $('#wooLinkSummary').textContent = `${linked} linked · ${priv} tracker-only`;
+}
+
+function fmtWhen(iso) {
+  if (!iso) return 'never';
+  const d = new Date(iso);
+  return isNaN(d) ? iso : d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+async function loadWooStatus() {
+  wooStatusLoaded = true;
+  const pill = $('#wooConnPill');
+  const body = $('#wooStatusBody');
+  pill.className = 'pill gray';
+  pill.textContent = 'Checking…';
+  let s;
+  try {
+    s = await wooApi('status');
+  } catch (err) {
+    pill.className = 'pill red';
+    pill.textContent = 'Unavailable';
+    body.innerHTML = `<p class="muted">${escapeHtml(err.message)}. The integration runs on the deployed Vercel site, or locally with <code>npm run dev</code>.</p>`;
+    return;
+  }
+  const lines = [];
+  if (s.missingEnv && s.missingEnv.length) {
+    lines.push(`<p class="integ-warn">Missing Vercel environment variables: ${s.missingEnv.map(k => `<code>${escapeHtml(k)}</code>`).join(' ')}</p>`);
+  }
+  if (s.error) lines.push(`<p class="integ-warn">${escapeHtml(s.error)}</p>`);
+  if (s.store) lines.push(`<div class="integ-row"><span>Store</span><b>${escapeHtml(s.store)}</b></div>`);
+  if (s.webhooks && s.webhooks.length) {
+    const ok = s.webhooks.filter(w => w.status === 'active').length;
+    const bad = s.webhooks.filter(w => w.status !== 'active').map(w => `${w.topic} (${w.status})`);
+    lines.push(`<div class="integ-row"><span>Webhooks</span><b>${ok}/${s.webhooks.length} active</b>${bad.length ? `<span class="muted">${escapeHtml(bad.join(', '))}</span>` : ''}</div>`);
+  }
+  const st = s.state || {};
+  lines.push(`<div class="integ-row"><span>Last web event</span><b>${escapeHtml(fmtWhen(st.lastWebhookAt))}</b>${st.lastWebhookTopic ? `<span class="muted">${escapeHtml(st.lastWebhookTopic)}</span>` : ''}</div>`);
+  if (st.lastError) lines.push(`<p class="integ-warn">Last error (${escapeHtml(fmtWhen(st.lastErrorAt))}): ${escapeHtml(st.lastError)}</p>`);
+  body.innerHTML = lines.join('');
+
+  const hooksOk = s.webhooks && s.webhooks.length && s.webhooks.every(w => w.status === 'active');
+  if (!s.reachable) { pill.className = 'pill red'; pill.textContent = 'Not connected'; }
+  else if (!hooksOk) { pill.className = 'pill amber'; pill.textContent = 'Webhooks needed'; }
+  else { pill.className = 'pill green'; pill.textContent = 'Connected'; }
+}
+
+async function runWooAction(btn, fn) {
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Working…';
+  try { await fn(); }
+  catch (err) { toast(err.message); }
+  finally { btn.disabled = false; btn.textContent = label; }
+}
+
+$('#wooCheckBtn').addEventListener('click', (e) => runWooAction(e.currentTarget, loadWooStatus));
+$('#wooSetupBtn').addEventListener('click', (e) => runWooAction(e.currentTarget, async () => {
+  const r = await wooApi('setup', { method: 'POST' });
+  toast(`Webhooks ready (${r.results.length}).`);
+  await loadWooStatus();
+}));
+$('#wooCatchUpBtn').addEventListener('click', (e) => runWooAction(e.currentTarget, async () => {
+  const r = await wooApi('catch-up', { method: 'POST' });
+  toast(`Checked ${r.scanned} web orders · ${r.created} new${r.duplicates ? ` · ${r.duplicates} already tracked` : ''}${r.errors.length ? ` · ${r.errors.length} failed` : ''}`);
+  if (r.errors.length) console.warn('catch-up errors', r.errors);
+  await manualSync();
+}));
+
+// Loose name key so "BPC-157 10mg" and "BPC157 - 10 mg" suggest each other.
+const looseKey = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+function renderWooProducts() {
+  const wrap = $('#wooProductsWrap');
+  if (!wooProducts) { wrap.innerHTML = ''; return; }
+  const stockByName = [...state.stock].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const linkedIds = new Set(state.stock.filter(p => p.wooId).map(p => p.wooId));
+  const rows = wooProducts.map(wp => {
+    const current = state.stock.find(p => p.wooId === wp.wooId);
+    // Suggest an unlinked tracker product with the same name — never one
+    // already linked elsewhere.
+    const suggested = !current && !linkedIds.has(wp.wooId)
+      ? state.stock.find(p => !p.wooId && looseKey(p.name) === looseKey(wp.name))
+      : null;
+    const selected = current ? current.id : suggested ? suggested.id : '';
+    const opts = [
+      `<option value="">Don't sync</option>`,
+      `<option value="__create">+ Add to tracker</option>`,
+      ...stockByName.map(p => `<option value="${escapeHtml(p.id)}"${p.id === selected ? ' selected' : ''}>${escapeHtml(p.name)}${p.wooId && p.wooId !== wp.wooId ? ' (linked elsewhere)' : ''}</option>`),
+    ].join('');
+    const wooQty = wp.stockQty == null ? '<span class="muted">untracked</span>' : fmtN(wp.stockQty);
+    return `<tr data-woo-id="${escapeHtml(wp.wooId)}">
+      <td>${wp.image ? `<img class="inv-thumb" src="${escapeHtml(wp.image)}" alt="" loading="lazy" />` : ''}</td>
+      <td><b>${escapeHtml(wp.name)}</b>${wp.sku ? `<span class="integ-sub">SKU ${escapeHtml(wp.sku)}</span>` : ''}${wp.status !== 'publish' ? `<span class="integ-sub">${escapeHtml(wp.status)}</span>` : ''}</td>
+      <td class="num">${wooQty}</td>
+      <td><select class="woo-link-select">${opts}</select>${suggested ? '<span class="integ-sub">suggested match</span>' : ''}</td>
+      <td class="num woo-link-effect"></td>
+    </tr>`;
+  }).join('');
+  wrap.innerHTML = `<table class="table integ-table">
+    <thead><tr><th></th><th>Store product</th><th class="num">Store qty</th><th>Tracker product</th><th class="num">After save</th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="5" class="muted">No products in the store.</td></tr>'}</tbody>
+  </table>`;
+  const refreshEffect = (tr) => {
+    const wp = wooProducts.find(p => p.wooId === tr.dataset.wooId);
+    const val = tr.querySelector('select').value;
+    const cell = tr.querySelector('.woo-link-effect');
+    if (!val) { cell.innerHTML = '<span class="muted">—</span>'; return; }
+    if (val === '__create') {
+      cell.innerHTML = `<span class="muted">new · qty ${wp.stockQty == null ? 0 : fmtN(wp.stockQty)}</span>`;
+      return;
+    }
+    const s = state.stock.find(p => p.id === val);
+    const qty = Number(s && s.qty) || 0;
+    const changes = wp.stockQty !== qty;
+    cell.innerHTML = changes
+      ? `<span class="woo-qty-change">store → ${fmtN(qty)}</span>`
+      : `<span class="muted">${fmtN(qty)}</span>`;
+  };
+  $$('#wooProductsWrap tr[data-woo-id]').forEach(tr => {
+    refreshEffect(tr);
+    tr.querySelector('select').addEventListener('change', () => refreshEffect(tr));
+  });
+}
+
+$('#wooLoadProductsBtn').addEventListener('click', (e) => runWooAction(e.currentTarget, async () => {
+  const r = await wooApi('products');
+  wooProducts = r.products || [];
+  renderWooProducts();
+  $('#wooSaveLinksBtn').hidden = false;
+}));
+
+$('#wooSaveLinksBtn').addEventListener('click', (e) => runWooAction(e.currentTarget, async () => {
+  if (!wooProducts) return;
+  const links = [];
+  const creates = [];
+  const chosen = new Map();   // stockId → wooId, to catch double-linking
+  for (const tr of $$('#wooProductsWrap tr[data-woo-id]')) {
+    const wooId = tr.dataset.wooId;
+    const val = tr.querySelector('select').value;
+    if (val === '__create') { creates.push(wooId); continue; }
+    if (!val) continue;
+    if (chosen.has(val)) {
+      const name = (state.stock.find(p => p.id === val) || {}).name;
+      throw new Error(`"${name}" is picked for two store products. Each tracker product can link to one.`);
+    }
+    chosen.set(val, wooId);
+    const s = state.stock.find(p => p.id === val);
+    if (!s || s.wooId !== wooId) links.push({ stockId: val, wooId });
+  }
+  // Unlink tracker products whose store product is now "Don't sync" or points
+  // elsewhere. Products linked to something no longer in the store are left.
+  const catalogIds = new Set(wooProducts.map(p => p.wooId));
+  const unlinks = state.stock
+    .filter(p => p.wooId && catalogIds.has(p.wooId) && chosen.get(p.id) !== p.wooId)
+    .map(p => p.id);
+  if (!links.length && !creates.length && !unlinks.length) { toast('No changes to save.'); return; }
+  const qtyPushes = links.filter(l => {
+    const s = state.stock.find(p => p.id === l.stockId);
+    const wp = wooProducts.find(p => p.wooId === l.wooId);
+    return (Number(s && s.qty) || 0) !== wp.stockQty;
+  }).length;
+  const msg = [
+    links.length && `Link ${links.length} product${links.length === 1 ? '' : 's'}`,
+    creates.length && `add ${creates.length} to the tracker`,
+    unlinks.length && `unlink ${unlinks.length}`,
+  ].filter(Boolean).join(', ') + '.'
+    + (qtyPushes ? `\n\n${qtyPushes} store quantit${qtyPushes === 1 ? 'y' : 'ies'} will change to match the tracker.` : '');
+  if (!confirm(msg)) return;
+  const r = await wooApi('link', { method: 'POST', body: { links, creates, unlinks } });
+  if (r.errors && r.errors.length) { console.warn('link errors', r.errors); toast(`Saved with ${r.errors.length} error(s): ${r.errors[0]}`); }
+  else toast(`Saved · ${r.linked} linked · ${r.created} added · ${r.unlinked} unlinked`);
+  await manualSync();
+  renderWooProducts();
+  renderWooLinkSummary();
+}));
 
 // ---------- INIT ----------
 function renderAll() {

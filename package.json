@@ -1,0 +1,11 @@
+{
+  "name": "lp-tracker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node dev-server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
