@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-10-19.8';
+const BUILD_VERSION = '2026-10-19.9';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -9128,21 +9128,21 @@ if (sb) {
   hideLogin();
   setCloudStatus('offline', 'No cloud configured');
 }
-// ── Terminal clock (preview-only) ─────────────────────────────
-// Live HH:MM:SS readout in the sidebar footer. Pure flavor — no
-// app logic depends on it.
+// ── Sidebar clock ─────────────────────────────────────────────
+// Date and time in the sidebar footer ("Mon, Oct 19 · 12:59 PM"). Pure
+// flavor — no app logic depends on it.
 (function () {
   const el = document.getElementById('termClock');
   if (!el) return;
-  const DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-  const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+  const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const p = (n) => String(n).padStart(2, '0');
   const tick = () => {
     const d = new Date();
     const h24 = d.getHours();
     const h12 = h24 % 12 || 12;
     const ampm = h24 < 12 ? 'AM' : 'PM';
-    el.textContent = `${DAYS[d.getDay()]} ${h12}:${p(d.getMinutes())}:${p(d.getSeconds())} ${ampm} · ${MONTHS[d.getMonth()]} ${d.getDate()}`;
+    el.textContent = `${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()} · ${h12}:${p(d.getMinutes())} ${ampm}`;
   };
   tick();
   setInterval(tick, 1000);

@@ -29,7 +29,7 @@
      fresh JS/CSS instead of serving the cached copy. iOS standalone mode
      caches scripts indefinitely once installed; a query-string change is the
      only thing that reliably busts it without removing/re-adding the bookmark. -->
-<link rel="stylesheet" href="styles.css?v=20261019-8" />
+<link rel="stylesheet" href="styles.css?v=20261019-9" />
 <!-- Preload the Zelle QR so it's already in the browser cache when the first
      invoice opens — guarantees a screenshot captures the image, no race. -->
 <link rel="preload" as="image" href="public/zelle-qr.png" />
@@ -70,15 +70,15 @@
       </div>
     </div>
     <nav class="nav">
-      <button class="nav-item active" data-view="dashboard"><span class="ico">▦</span> Dashboard</button>
-      <button class="nav-item" data-view="orders"><span class="ico">⛁</span> Orders</button>
-      <button class="nav-item" data-view="customers"><span class="ico">☺</span> Customers</button>
-      <button class="nav-item" data-view="inventory"><span class="ico">▤</span> Inventory</button>
-      <button class="nav-item" data-view="shipments"><span class="ico">✈</span> Shipments</button>
-      <button class="nav-item" data-view="expenses"><span class="ico">＄</span> Expenses</button>
-      <button class="nav-item" data-view="income"><span class="ico">∑</span> Income Statement</button>
-      <button class="nav-item" data-view="monthly"><span class="ico">◷</span> Monthly</button>
-      <button class="nav-item" data-view="integrations"><span class="ico">⇄</span> Integrations</button>
+      <button class="nav-item active" data-view="dashboard"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg> Dashboard</button>
+      <button class="nav-item" data-view="orders"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg> Orders</button>
+      <button class="nav-item" data-view="customers"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> Customers</button>
+      <button class="nav-item" data-view="inventory"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8 12 3 3 8v8l9 5 9-5Z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/></svg> Inventory</button>
+      <button class="nav-item" data-view="shipments"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62L18.3 9.38a1 1 0 0 0-.78-.38H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg> Shipments</button>
+      <button class="nav-item" data-view="expenses"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg> Expenses</button>
+      <button class="nav-item" data-view="income"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg> Income Statement</button>
+      <button class="nav-item" data-view="monthly"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> Monthly</button>
+      <button class="nav-item" data-view="integrations"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7h10l-3-3"/><path d="M17 17H7l3 3"/></svg> Integrations</button>
     </nav>
     <div class="sidebar-foot">
       <div id="termClock" class="term-clock" aria-hidden="true"></div>
@@ -732,8 +732,8 @@
      more reliable on iOS Safari than html-to-image (which uses SVG
      foreignObject internally and trips on WebKit's CORS quirks). ~50 KB. -->
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-<script src="config.js?v=20261019-8"></script>
-<script src="seed.js?v=20261019-8"></script>
-<script src="app.js?v=20261019-8"></script>
+<script src="config.js?v=20261019-9"></script>
+<script src="seed.js?v=20261019-9"></script>
+<script src="app.js?v=20261019-9"></script>
 </body>
 </html>
