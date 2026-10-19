@@ -4365,21 +4365,19 @@ function allCustomerStats() {
   }
   return state.customers.map(c => ({ ...c, ...statsFromOrders(byKey.get(customerKey(c.name)) || []) }));
 }
-// Lifetime revenue, profit and order counts only include COMPLETED orders
-// (paid AND fulfilled). Anything still open — unpaid, partially paid, or paid
-// but not yet fulfilled — shows separately as open orders / balance owed.
+// Lifetime revenue and profit use the same cash basis as the Dashboard's Gross
+// Revenue / Gross Profit (money actually collected, partials included; profit
+// lands once an order is paid), so every customer's figures add up to the
+// dashboard totals. Order counts and averages use paid orders; anything still
+// unpaid shows separately as "+N unpaid" and the balance owed.
 function statsFromOrders(orders) {
   let lifetimeRev = 0, paid = 0, owed = 0, lifetimeProfit = 0, pendingCount = 0, openOwed = 0, completedCount = 0;
   let lastDate = '', firstDate = '', web = false;
   for (const o of orders) {
-    const complete = !!(o.paid && o.delivered);
-    if (complete) {
-      completedCount++;
-      lifetimeRev += orderTotal(o);
-      lifetimeProfit += orderProfit(o);
-    } else {
-      pendingCount++;
-    }
+    lifetimeRev += orderPaidRevenue(o);
+    lifetimeProfit += orderPaidProfit(o);
+    if (orderHasLandedProfit(o)) completedCount++;
+    else pendingCount++;
     paid += orderPaidRevenue(o);
     const bal = orderBalance(o);
     owed += bal;
@@ -4460,7 +4458,7 @@ function renderCustomers() {
       </td>
       <td class="num">
         <div class="inv-price">${fmtN(c.completedCount)}</div>
-        <div class="inv-price-sub">${c.pendingCount ? `+${fmtN(c.pendingCount)} open` : c.completedCount ? `${fmt$(avg)} avg` : ''}</div>
+        <div class="inv-price-sub">${c.pendingCount ? `+${fmtN(c.pendingCount)} unpaid` : c.completedCount ? `${fmt$(avg)} avg` : ''}</div>
       </td>
       <td class="num">
         <div class="inv-price">${fmt$(round2(c.lifetimeRev))}</div>
@@ -4509,7 +4507,7 @@ function renderCustomerMetrics(all) {
 }
 
 function exportCustomersCSV() {
-  const headers = ['Name', 'Phone', 'Email', 'Address', 'Completed orders', 'Open orders', 'Lifetime (completed)', 'Paid', 'Owed', 'Profit (completed)', 'First order', 'Last order', 'Notes'];
+  const headers = ['Name', 'Phone', 'Email', 'Address', 'Paid orders', 'Unpaid orders', 'Lifetime (collected)', 'Paid', 'Owed', 'Profit', 'First order', 'Last order', 'Notes'];
   const rows = allCustomerStats()
     .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
     .map(c => [c.name || '', c.phone || '', c.email || '', c.address || '', c.completedCount, c.pendingCount,
@@ -4574,9 +4572,9 @@ function customerModal(existing) {
           ${initial.email ? `<a class="inv-btn" href="mailto:${escapeHtml(initial.email)}">${ICON.mail}Email</a>` : ''}
         </div>` : ''}
         <div class="cp-stats">
-          <div title="Completed orders only (paid and fulfilled)"><span>Lifetime</span><b>${fmt$(round2(stats.lifetimeRev))}</b></div>
+          <div title="Money collected (same basis as the Dashboard)"><span>Lifetime</span><b>${fmt$(round2(stats.lifetimeRev))}</b></div>
           <div><span>Profit</span><b class="inv-pos">${fmt$(round2(stats.lifetimeProfit))}</b></div>
-          <div><span>Orders</span><b>${fmtN(stats.completedCount)}${stats.pendingCount ? ` <small>+${fmtN(stats.pendingCount)} open</small>` : ''}</b></div>
+          <div><span>Orders</span><b>${fmtN(stats.completedCount)}${stats.pendingCount ? ` <small>+${fmtN(stats.pendingCount)} unpaid</small>` : ''}</b></div>
           <div><span>Avg order</span><b>${fmt$(avg)}</b></div>
           <div class="${stats.owed > 0.005 ? 'is-owed' : ''}"><span>Owes</span><b>${stats.owed > 0.005 ? fmt$(round2(stats.owed)) : '—'}</b></div>
         </div>
