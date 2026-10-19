@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-10-19.4';
+const BUILD_VERSION = '2026-10-19.5';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -4424,6 +4424,7 @@ function stockNeedsReorder(s) {
   return stockIsActive(s) && (Number(s && s.qty) || 0) <= stockReorderLevel(s);
 }
 
+const invOpenRows = new Set();   // product ids whose detail panel is open
 function renderInventory() {
   const q = stkSearch.value.toLowerCase().trim();
   const f = stkFilter.value;
@@ -4462,44 +4463,40 @@ function renderInventory() {
       ? `<span class="inv-price-was">${fmt$(origPrice)}</span><span class="inv-price-now">${fmt$(p.price)}</span><span class="pill amber inv-sale-pill">Sale</span>`
       : fmt$(p.price);
     const cat = stockCategory(p);
-    // Detail row carries the columns that get hidden on phones (cost, reorder
-    // level, margin, and both stock values) so the same numbers are reachable
-    // there by tapping the row. CSS keeps it out of the way on desktop, where
-    // every column is already on screen.
-    return `<tr class="inv-row${needs ? ' row-reorder' : ''}" data-stock-row="${p.id}">
+    const open = invOpenRows.has(p.id);
+    // The table shows only what you scan for — product, price, qty, status.
+    // Everything else (costs, margins, stock values, reorder level, web sync)
+    // and the edit / delete actions live in the detail panel a click opens.
+    return `<tr class="inv-row${needs ? ' row-reorder' : ''}${open ? ' open' : ''}" data-stock-row="${p.id}" aria-expanded="${open}">
       <td>
         <span class="inv-caret" aria-hidden="true">▶</span>
         ${p.imageUrl ? `<img class="inv-thumb" src="${escapeHtml(p.imageUrl)}" alt="" loading="lazy" />` : ''}
         <b>${escapeHtml(p.name)}</b>
-        <span class="cat-tag cat-${cat}">${escapeHtml(categoryLabel(cat))}</span>
         ${p.wooId ? `<span class="web-tag" title="Synced with the website — stock updates both ways">Web</span>` : ''}
       </td>
-      <td class="num">${fmt$(p.cost)}</td>
       <td class="num">${priceCell}</td>
       <td class="num"><b>${fmtN(p.qty)}</b></td>
-      <td class="num muted${customLvl ? ' reorder-custom' : ''}" title="${customLvl ? 'Custom reorder level' : 'Default reorder level'}">${fmtN(lvl)}</td>
-      <td class="num">${fmt$(margin)}</td>
-      <td class="num">${fmt$(valNet)}</td>
-      <td class="num">${fmt$(valGross)}</td>
       <td>${statusPill}</td>
-      <td style="white-space:nowrap;">
-        <button class="icon-btn" data-edit-stock="${p.id}" title="Edit">✎</button>
-        <button class="icon-btn danger" data-del-stock="${p.id}" title="Delete">🗑</button>
-      </td>
     </tr>
-    <tr class="inv-detail" data-stock-detail="${p.id}" hidden>
-      <td colspan="10">
+    <tr class="inv-detail" data-stock-detail="${p.id}"${open ? '' : ' hidden'}>
+      <td colspan="4">
         <div class="inv-strip">
           <div class="inv-cell"><span>Cost</span><b>${fmt$(p.cost)}</b></div>
           <div class="inv-cell"><span>Margin / Unit</span><b class="inv-pos">${fmt$(margin)}</b></div>
           <div class="inv-cell hl"><span>Stock Value (Gross)</span><b>${fmt$(valGross)}</b></div>
           <div class="inv-cell hl"><span>Stock Value (Net)</span><b class="inv-pos">${fmt$(valNet)}</b></div>
-          <div class="inv-cell"><span>Reorder At</span><b>${fmtN(lvl)}</b></div>
+          <div class="inv-cell"><span>Reorder At</span><b>${fmtN(lvl)}${customLvl ? '' : ' <i>default</i>'}</b></div>
           <div class="inv-cell"><span>Category</span><b>${escapeHtml(categoryLabel(cat))}</b></div>
+          <div class="inv-cell"><span>Website</span><b>${p.wooId ? 'Synced' : 'Not on site'}</b></div>
+          <div class="inv-cell"><span>SKU</span><b>${p.sku ? escapeHtml(p.sku) : '—'}</b></div>
+        </div>
+        <div class="inv-actions">
+          <button type="button" class="btn ghost" data-edit-stock="${p.id}">Edit product</button>
+          <button type="button" class="btn danger-outline" data-del-stock="${p.id}">Delete</button>
         </div>
       </td>
     </tr>`;
-  }).join('') || `<tr><td colspan="10" class="muted" style="padding:24px;text-align:center;">No products match.</td></tr>`;
+  }).join('') || `<tr><td colspan="4" class="muted" style="padding:24px;text-align:center;">No products match.</td></tr>`;
 
   // Summary tiles at the top of the page — respect the current search/filter so
   // they reflect exactly what's visible (e.g. filtering to Low Stock recalcs).
@@ -4511,15 +4508,17 @@ function renderInventory() {
   $('#invKpiNet').textContent = fmt$(sumNet);
   $('#invKpiMargin').textContent = fmtPct(margin);
 
-  // Tap a product row to open its detail strip. Only meaningful on phones —
-  // desktop shows every column already, so CSS keeps the strip collapsed there.
-  $$('#stockBody [data-stock-row]').forEach(row => row.addEventListener('click', (e) => {
-    if (e.target.closest('button')) return;   // edit / delete handle themselves
-    const detail = $(`#stockBody [data-stock-detail="${row.dataset.stockRow}"]`);
+  // Click a product to open its detail panel. Open panels are remembered so a
+  // background refresh doesn't snap them shut.
+  $$('#stockBody [data-stock-row]').forEach(row => row.addEventListener('click', () => {
+    const id = row.dataset.stockRow;
+    const detail = $(`#stockBody [data-stock-detail="${id}"]`);
     if (!detail) return;
     const open = detail.hidden;
     detail.hidden = !open;
     row.classList.toggle('open', open);
+    row.setAttribute('aria-expanded', String(open));
+    if (open) invOpenRows.add(id); else invOpenRows.delete(id);
   }));
 
   $$('#stockBody [data-edit-stock]').forEach(el => el.addEventListener('click', () => {

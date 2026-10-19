@@ -3140,21 +3140,8 @@ tr.row-flag-pending:hover > td,
   }
 
 
-  /* Inventory (9 cols): keep Product, Price, Qty, Status, Actions
-     hide Cost(2), Reorder At(5), Margin(6), Stock Net(7), Stock Gross(8) so
-     mobile keeps Product, Price, Qty, Status, Actions. The reorder level is
-     still conveyed on mobile by the Status pill ("Reorder" / "Reorder · Out"),
-     and the hidden totals are surfaced as the .inv-kpi-grid tiles up top. */
-  #view-inventory .table thead th:nth-child(2),
-  #view-inventory .table thead th:nth-child(5),
-  #view-inventory .table thead th:nth-child(6),
-  #view-inventory .table thead th:nth-child(7),
-  #view-inventory .table thead th:nth-child(8),
-  #view-inventory .table tbody td:nth-child(2),
-  #view-inventory .table tbody td:nth-child(5),
-  #view-inventory .table tbody td:nth-child(6),
-  #view-inventory .table tbody td:nth-child(7),
-  #view-inventory .table tbody td:nth-child(8) { display: none; }
+  /* Inventory is four columns everywhere now (details open on click), so
+     nothing needs hiding on phones. */
 
   /* Shipments (6 cols after dropping Amount): Vendor(1), Date(2), Product(3),
      Tracking(4), Delivered(5), Actions(6). All stay visible on mobile —
@@ -4905,70 +4892,78 @@ html, body { overscroll-behavior-y: none; }
   vertical-align: middle;
 }
 
-/* ── Inventory · tap-to-open detail strip ────────────────────
-   Desktop shows all ten columns, so the strip and its caret stay
-   hidden there; the whole mechanism only switches on at phone
-   width, where Cost / Reorder At / Margin / both Stock Value
-   columns are dropped from the table. */
-.inv-caret { display: none; }
-#view-inventory .inv-detail { display: none; }
+/* ── Inventory · click-to-open detail panel ──────────────────
+   The table shows Product · Price · Qty · Status. Clicking a row
+   opens a panel with the rest (costs, margins, stock values,
+   reorder level, website sync) and the edit / delete actions. */
+#view-inventory .inv-row { cursor: pointer; }
+#view-inventory .inv-row td:first-child { position: relative; padding-left: 26px; }
+.inv-caret {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 9px;
+  color: var(--muted-2);
+  transition: transform 0.18s var(--ease), color 0.18s var(--ease);
+}
+#view-inventory .inv-row:hover .inv-caret { color: var(--text-2); }
+#view-inventory .inv-row.open .inv-caret {
+  transform: translateY(-50%) rotate(90deg);
+  color: var(--primary);
+}
+#view-inventory .inv-row.open td {
+  background: rgba(34, 197, 94, 0.07);
+  border-bottom-color: transparent;
+}
+#view-inventory .inv-detail[hidden] { display: none; }
+#view-inventory .inv-detail td { padding: 0 !important; background: var(--surface-2); }
+#view-inventory .inv-detail:hover { background: transparent; }
+.inv-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border-top: 1px solid var(--border);
+}
+.inv-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  background: var(--surface);
+}
+.inv-cell span {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+.inv-cell b {
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.inv-cell b i { font-style: normal; font-size: 10px; font-weight: 400; color: var(--muted); }
+.inv-cell.hl { background: linear-gradient(180deg, rgba(34, 197, 94, 0.07), transparent), var(--surface); }
+.inv-pos { color: var(--up); }
+.inv-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-strong);
+}
+/* .danger-outline is full-width by default (built for stacked forms). */
+.inv-actions .btn.danger-outline { width: auto; margin-top: 0; }
 
 @media (max-width: 640px) {
-  #view-inventory .inv-row { cursor: pointer; }
-  #view-inventory .inv-row td:first-child { position: relative; padding-left: 24px; }
-  .inv-caret {
-    display: inline-block;
-    position: absolute;
-    left: 9px;
-    top: 50%;
-    transform: translateY(-50%);
-    font-size: 9px;
-    color: var(--muted-2);
-    transition: transform 0.18s var(--ease), color 0.18s var(--ease);
-  }
-  #view-inventory .inv-row.open .inv-caret {
-    transform: translateY(-50%) rotate(90deg);
-    color: var(--primary);
-  }
-  #view-inventory .inv-row.open td {
-    background: rgba(34, 197, 94, 0.07);
-    border-bottom-color: transparent;
-  }
-  /* [hidden] on the row still governs — this only un-does the
-     desktop display:none for the rows that are open. */
-  #view-inventory .inv-detail:not([hidden]) { display: table-row; }
-  #view-inventory .inv-detail td { padding: 0 !important; background: var(--surface-2); }
-  .inv-strip {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 1px;
-    background: var(--border);
-    border-top: 1px solid var(--border);
-    border-bottom: 1px solid var(--border-strong);
-  }
-  .inv-cell {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 9px 10px;
-    background: var(--surface);
-  }
-  .inv-cell span {
-    font-family: var(--font-mono);
-    font-size: 8.5px;
-    letter-spacing: 0.11em;
-    text-transform: uppercase;
-    color: var(--muted-2);
-  }
-  .inv-cell b {
-    font-family: var(--font-mono);
-    font-size: 13.5px;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-    color: var(--text);
-  }
-  .inv-cell.hl { background: linear-gradient(180deg, rgba(34, 197, 94, 0.07), transparent), var(--surface); }
-  .inv-pos { color: var(--up); }
+  .inv-strip { grid-template-columns: repeat(2, 1fr); }
+  .inv-actions .btn { flex: 1; }
 
   /* Category tag is noise next to a long product name on a phone. */
   #view-inventory .cat-tag { display: none; }
