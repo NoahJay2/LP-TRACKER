@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-10-19.16';
+const BUILD_VERSION = '2026-10-19.17';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -8178,8 +8178,10 @@ function renderMonthly() {
   });
 
   // Two bucketing modes:
-  //   Cash mode (default / Paid Only): payments land on their own date as gross,
-  //     profit + items land on the day the order closed (last payment).
+  //   Cash mode (default / Paid Only): exactly the Dashboard's basis — each
+  //     order's collected money (partials included, capped at its total) and,
+  //     once it's paid, its profit + items land on the ORDER date. So a month
+  //     here always equals the Dashboard / Income Statement for that month.
   //   Pending mode (Pending filter): unpaid BALANCES are bucketed on the order's
   //     date so the user can see potential income laid out by when each order
   //     was placed. Net = unpaid profit (all-or-nothing). Qty = order qty.
@@ -8217,37 +8219,29 @@ function renderMonthly() {
     });
   } else {
     orders.forEach(o => {
-      // 1) Every payment counts as gross on its own date — but cap the total
-      // attributed to any single order at orderTotal so an over-payment can't
-      // inflate the books. This matches the Dashboard's orderPaidRevenue()
-      // which caps at orderTotal for the same reason.
-      const cap = orderTotal(o);
-      let attributed = 0;
-      for (const p of orderPayments(o)) {
-        const pd = p && p.date;
-        const raw = Number(p && p.amount) || 0;
-        if (!pd || raw <= 0) continue;
-        const room = Math.max(0, cap - attributed);
-        if (room <= 0) break;
-        const amt = Math.min(raw, room);
-        attributed += amt;
-        const day = ensureDay(pd);
-        day.gross += amt;
-        day.payments.push({ order: o, payment: p });
-        ensureMonth(monthKey(pd)).gross += amt;
+      const dk = o.date;
+      if (!dk) return;
+      // 1) Money collected on the order (orderPaidRevenue: partials included,
+      // capped at the order total) — the Dashboard's Gross Revenue basis.
+      const gross = orderPaidRevenue(o);
+      if (gross > 0.005) {
+        const day = ensureDay(dk);
+        day.gross += gross;
+        for (const p of orderPayments(o)) {
+          if ((Number(p && p.amount) || 0) > 0) day.payments.push({ order: o, payment: p });
+        }
+        ensureMonth(monthKey(dk)).gross += gross;
       }
-      // 2) Profit + qty land on the day the order closed (last payment date).
-      // Round profit per-order (matches Dashboard's orderPaidProfit) so summed
-      // buckets equal the Dashboard's rounded Gross Profit figure.
-      const completed = orderCompletionDate(o);
-      if (completed) {
+      // 2) Profit + qty once the order is paid (orderPaidProfit, rounded per
+      // order) — the Dashboard's Gross Profit basis.
+      if (orderHasLandedProfit(o)) {
         const profit = orderPaidProfit(o);
         const qty = orderQty(o);
-        const day = ensureDay(completed);
+        const day = ensureDay(dk);
         day.net += profit;
         day.qty += qty;
         day.orders.push(o);
-        const mb = ensureMonth(monthKey(completed));
+        const mb = ensureMonth(monthKey(dk));
         mb.net += profit;
         mb.qty += qty;
       }
@@ -8660,7 +8654,7 @@ function openDayDetail(dateKey) {
       </div>
       ${b.payments.length ? `
         <div class="dd-section">
-          <div class="dd-section-head">Payments Received</div>
+          <div class="dd-section-head">Payments on these orders</div>
           <div class="dd-payments">
             ${b.payments.map(pe => {
               const amt = Number(pe.payment && pe.payment.amount) || 0;
