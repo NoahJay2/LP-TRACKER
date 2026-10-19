@@ -7232,3 +7232,44 @@ a.inv-btn { text-decoration: none; }
   .inv-toolbar.filterbar { flex-wrap: nowrap; }
   .inv-toolbar.filterbar .inv-search { flex: 1 1 auto; }
 }
+
+/* Orders table: long product names truncate inside their pill instead of
+   widening the whole table. */
+.ord-table .item-pill { max-width: 250px; min-width: 0; }
+.ord-table .item-pill .ip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 1300px) {
+  /* Qty repeats what the item pills already show (×2) — drop it here. */
+  .ord-table th:nth-child(4),
+  .ord-table tbody tr:not(.child-row) td:nth-child(4),
+  .ord-table tfoot td:nth-child(2) { display: none; }
+  .inv-panel > .ord-table th, .inv-panel > .ord-table td { padding-left: 10px; padding-right: 10px; }
+  /* Delete stays reachable inside the order, as on phones. */
+  .ord-table tbody .icon-btn.danger { display: none; }
+}
+@media (max-width: 1300px) {
+  .ord-table .item-pill { max-width: 210px; }
+  /* Shipments: category is summarized in the card above; timelines wrap;
+     long tracking numbers truncate (full number stays in the tooltip/link). */
+  .ship-table th:nth-child(3),
+  .ship-table tbody tr:not(.child-row) td:nth-child(3) { display: none; }
+  .inv-panel > .ship-table th, .inv-panel > .ship-table td { padding-left: 10px; padding-right: 10px; }
+  .inv-panel > .ship-table td { white-space: normal; }
+  .ship-table .tracking-digits {
+    display: inline-block;
+    max-width: 130px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
+  }
+}
+@media (max-width: 1300px) {
+  .ship-table .ship-timeline { flex-wrap: wrap; row-gap: 4px; max-width: 150px; text-align: left; }
+  .ship-table .item-pill { max-width: 190px; min-width: 0; }
+  .ship-table .item-pill .ip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .inv-panel > .ship-table th:last-child, .inv-panel > .ship-table td:last-child { width: 44px; padding-left: 4px; }
+}
+@media (max-width: 1300px) {
+  .inv-panel > .ship-table tbody td:first-child { max-width: 120px; overflow-wrap: anywhere; }
+  .ship-table .tracking-digits { max-width: 105px; }
+}
