@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-10-19.3';
+const BUILD_VERSION = '2026-10-19.4';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -2197,10 +2197,14 @@ function orderStatusFlag(o) {
   return null;
 }
 // Marks orders that came in from the website.
+// Unpaid ones also show their WooCommerce status — WooCommerce handles the
+// reminders and cancels them if they go unpaid, which removes them here.
+const WOO_UNPAID_LABELS = { pending: 'Pending payment', 'on-hold': 'On hold' };
 function webOrderBadge(o) {
   if (!o || o.source !== 'woo') return '';
+  const unpaid = !o.paid && WOO_UNPAID_LABELS[o.wooStatus];
   const status = o.wooStatus ? ` · ${o.wooStatus}` : '';
-  return ` <span class="web-tag" title="Website order${escapeHtml(status)}">Web</span>`;
+  return ` <span class="web-tag${unpaid ? ' web-tag-unpaid' : ''}" title="Website order${escapeHtml(status)}">Web${unpaid ? ' · ' + escapeHtml(unpaid) : ''}</span>`;
 }
 function statusFlagBadge(flag) {
   if (flag === 'unpaid')  return ' <span class="status-flag danger" title="Fulfilled but not paid — collect payment">⚠</span>';

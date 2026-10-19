@@ -12,11 +12,15 @@
 import { db, getState } from './supabase.js';
 import { setWooStock, wooKey } from './woo.js';
 
-// An order already in the tracker stays while it's in one of these statuses
-// (Woo keeps its stock reserved for them).
+// The tracker mirrors WooCommerce's status; Woo itself handles payment
+// reminders and auto-cancelling unpaid orders.
+//
+// Shown in the tracker. Pending payment and On-hold appear as unpaid orders.
+const SHOWN = new Set(['pending', 'on-hold', 'processing', 'completed']);
+// Woo reduces stock for these, so the tracker holds it too. Pending doesn't
+// take stock until it's paid (Woo's own rule).
 const HELD = new Set(['processing', 'on-hold', 'completed']);
-// Money received — the only statuses that create a tracker order. On-hold
-// and pending orders wait until they're paid.
+// Money received → Paid.
 const PAID = new Set(['processing', 'completed']);
 // Shipped / done → Fulfilled in the tracker.
 const DONE = new Set(['completed']);
@@ -213,17 +217,14 @@ export async function processWooOrder(wo) {
   if (!connectedAt) return { action: 'skipped', reason: 'not-connected' };
   if (!(placedAt(wo) >= Date.parse(connectedAt))) return { action: 'skipped', reason: 'before-connection' };
 
-  // Pending (unpaid checkout), cancelled, failed, refunded, trashed: not a
-  // sale. Woo gives the stock back for these, so the tracker does too.
-  if (!HELD.has(status)) return removeOrder(id);
+  // Cancelled (incl. Woo's auto-cancel of unpaid orders), failed, refunded,
+  // trashed: not a sale. Woo gives the stock back, so the tracker does too.
+  if (!SHOWN.has(status)) return removeOrder(id);
 
   const stock = await db.select('stock', 'select=id,name,qty,cost,woo_id');
   const [existing] = await db.select('orders', `select=*&${db.eq('id', id)}`);
   const paid = PAID.has(status);
   let action;
-
-  // Not in the tracker yet and not paid (on-hold): wait for payment.
-  if (!existing && !paid) return { action: 'skipped', reason: 'awaiting-payment' };
 
   if (!existing) {
     const name = customerName(wo);
@@ -269,10 +270,18 @@ export async function processWooOrder(wo) {
     action = 'updated';
   }
 
-  // Deduct stock exactly once per order.
+  // Hold stock exactly once while Woo holds it; give it back if the order
+  // drops back to Pending (Woo restores stock then too).
   let touched = [];
-  const claimed = await claimInventory(id, false, true);
-  if (claimed) touched = await moveStock(claimed.items, -1, stock);
+  let direction = 0;
+  if (HELD.has(status)) {
+    const claimed = await claimInventory(id, false, true);
+    if (claimed) { touched = await moveStock(claimed.items, -1, stock); direction = -1; }
+  } else {
+    const released = await claimInventory(id, true, false);
+    if (released) { touched = await moveStock(released.items, +1, stock); direction = 1; }
+  }
   const push = await pushStockToWoo(touched.map(s => s.id));
-  return { action, id, stockDeducted: touched.map(s => s.name), push };
+  const moved = touched.map(s => s.name);
+  return { action, id, stockDeducted: direction < 0 ? moved : [], stockReleased: direction > 0 ? moved : [], push };
 }
