@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-10-19.13';
+const BUILD_VERSION = '2026-10-19.14';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -3364,6 +3364,63 @@ function wireOrderInteractions(body) {
   }));
 }
 
+// ── Orders page rows ───────────────────────────────────────────
+// Same nine columns and the same data-* hooks the wiring above relies on
+// (toggles, expand chevrons, edit / delete, payments chip) — only the
+// presentation is new: avatar + invoice, readable items, and status badges
+// beside compact toggles instead of colored row rails.
+const ICON_EDIT = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.5 3.5l2 2M3 13l.7-2.8 7.6-7.6a1.4 1.4 0 0 1 2 2l-7.6 7.6Z" /></svg>';
+const ICON_TRASH = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.6 4.5l.6 8.5h5.6l.6-8.5" /></svg>';
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function ordDateCell(iso) {
+  if (!iso || iso.length < 10) return `<div class="ord-date"><b>${escapeHtml(iso || '—')}</b></div>`;
+  const [y, m, d] = iso.split('-').map(Number);
+  const wd = WEEKDAYS[new Date(y, m - 1, d).getDay()];
+  return `<div class="ord-date"><b>${MONTHS_SHORT[m - 1]} ${d}</b><span>${wd}</span></div>`;
+}
+function ordCustomerCell(name, sub) {
+  return `<div class="ord-cust">${customerAvatar(name, 'cust-avatar cust-avatar-sm')}<div class="ord-cust-text"><b>${escapeHtml(name || '')}</b>${sub ? `<span class="ord-sub">${sub}</span>` : ''}</div></div>`;
+}
+function ordInvoiceSub(o) {
+  return `<span class="ord-inv">#${escapeHtml(invoiceNumberForOrder(o))}</span>${webOrderBadge(o)}`;
+}
+// Payment status: green Paid · amber "$X due" (tap to see payments) · amber
+// Unpaid · red Unpaid when it has already gone out the door.
+function ordPayBadge(o) {
+  if (o.paid) return '<span class="ord-badge is-green">Paid</span>';
+  if (orderIsPartiallyPaid(o)) {
+    const due = Math.max(0, orderTotal(o) - orderPaymentsTotal(o));
+    return `<button type="button" class="ord-badge is-amber" data-open-payments="${o.id}" title="${fmt$(orderPaymentsTotal(o))} of ${fmt$(orderTotal(o))} paid">${fmt$(due)} due</button>`;
+  }
+  return o.delivered
+    ? '<span class="ord-badge is-red" title="Fulfilled but not paid — collect payment">Unpaid</span>'
+    : '<span class="ord-badge is-amber">Unpaid</span>';
+}
+function ordFulfillBadge(o) {
+  if (o.delivered) return '<span class="ord-badge is-muted">Fulfilled</span>';
+  return o.paid
+    ? '<span class="ord-badge is-blue" title="Paid — ready to go out">To ship</span>'
+    : '<span class="ord-badge is-outline" title="Not fulfilled yet">Pending</span>';
+}
+function ordSwitch(attr, id, checked) {
+  return `<label class="switch sw-sm"><input type="checkbox" ${attr}="${id}" ${checked ? 'checked' : ''} /><span class="slider"></span></label>`;
+}
+function ordActions(o) {
+  return `<div class="ord-actions">
+    <button class="icon-btn" data-edit-order="${o.id}" title="Open order" aria-label="Open order">${ICON_EDIT}</button>
+    <button class="icon-btn danger" data-del-order="${o.id}" title="Delete order" aria-label="Delete order">${ICON_TRASH}</button>
+  </div>`;
+}
+// "10MG Retatrutide (GLP-3) ×2" — plus "+N more" for longer orders.
+function ordItemsText(items) {
+  if (!items.length) return '<span class="muted">No items</span>';
+  const first = items[0];
+  const more = items.length - 1;
+  return `<span class="ord-item"><span class="ord-item-name">${escapeHtml(first.product || '')}</span><span class="ord-item-qty">×${fmtN(first.qty || 0)}</span></span>${more > 0 ? `<span class="ord-more">+${more} more</span>` : ''}`;
+}
+
 function renderOrderGroup(g) {
   if (g.orders.length === 1) return renderSingleOrderRow(g.orders[0]);
 
@@ -3373,111 +3430,88 @@ function renderOrderGroup(g) {
   const totalProfit = g.orders.reduce((s, o) => s + orderProfit(o), 0);
   const totalLineItems = g.orders.reduce((s, o) => s + orderItems(o).length, 0);
   const allPaid = g.orders.every(o => o.paid);
-  // Treat partial-payment orders as mixed so the user sees a "Mixed" pill (and
-  // can drill in) instead of an unchecked toggle that misrepresents the state.
+  // Partial payments count as mixed so the toggle never misrepresents them.
   const noPaid = g.orders.every(o => orderPaymentsTotal(o) <= 0.005);
   const allDelivered = g.orders.every(o => o.delivered);
   const noDelivered = g.orders.every(o => !o.delivered);
-
   const orderIds = g.orders.map(o => o.id).join(',');
-  const childFlags = g.orders.map(o => orderStatusFlag(o));
-  const aggCls = [
-    'group-row',
-    childFlags.includes('unpaid')  ? 'has-flag-unpaid'  : '',
-    childFlags.includes('pending') ? 'has-flag-pending' : '',
-  ].filter(Boolean).join(' ');
-
+  const mixed = `<button type="button" class="ord-badge is-outline" data-expand-group="${groupId}" title="Mixed — expand to see each">Mixed</button>`;
   const paidCell = (allPaid || noPaid)
-    ? `<label class="switch"><input type="checkbox" data-group-paid="${orderIds}" ${allPaid ? 'checked' : ''} /><span class="slider"></span></label>`
-    : `<span class="pill mixed" data-expand-group="${groupId}" title="Mixed — expand to see each">Mixed</span>`;
+    ? `<div class="ord-stat">${allPaid ? '<span class="ord-badge is-green">Paid</span>' : '<span class="ord-badge is-amber">Unpaid</span>'}${ordSwitch('data-group-paid', orderIds, allPaid)}</div>`
+    : `<div class="ord-stat">${mixed}</div>`;
   const deliveredCell = (allDelivered || noDelivered)
-    ? `<label class="switch"><input type="checkbox" data-group-delivered="${orderIds}" ${allDelivered ? 'checked' : ''} /><span class="slider"></span></label>`
-    : `<span class="pill mixed" data-expand-group="${groupId}" title="Mixed — expand to see each">Mixed</span>`;
+    ? `<div class="ord-stat">${allDelivered ? '<span class="ord-badge is-muted">Fulfilled</span>' : '<span class="ord-badge is-outline">Pending</span>'}${ordSwitch('data-group-delivered', orderIds, allDelivered)}</div>`
+    : `<div class="ord-stat">${mixed}</div>`;
+  const web = g.orders.find(o => o.source === 'woo');
 
   let html = `
-    <tr class="${aggCls}">
-      <td>${fmtDateShort(g.date)}</td>
-      <td><b>${escapeHtml(g.customer || '')}</b>${webOrderBadge(g.orders.find(o => o.source === 'woo'))}<span class="customer-sub">${totalLineItems} item${totalLineItems === 1 ? '' : 's'}</span></td>
-      <td class="items-cell"><span class="chevron" data-toggle-group="${groupId}">▶</span><span class="grp-badge">${totalLineItems} item${totalLineItems === 1 ? '' : 's'}</span></td>
+    <tr class="group-row ord-row">
+      <td>${ordDateCell(g.date)}</td>
+      <td>${ordCustomerCell(g.customer, `<span>${g.orders.length} orders</span>${webOrderBadge(web)}`)}</td>
+      <td class="items-cell"><span class="chevron" data-toggle-group="${groupId}">▶</span><span class="ord-item"><span class="ord-item-name">${totalLineItems} items</span></span><span class="ord-more">${g.orders.length} orders</span></td>
       <td class="num">${fmtN(totalQty)}</td>
-      <td class="num">${fmt$(totalAmt)}</td>
-      <td class="num">${fmt$(totalProfit)}</td>
+      <td class="num"><b class="ord-total">${fmt$(totalAmt)}</b><span class="ord-profit-sub">${fmt$(totalProfit)} profit</span></td>
+      <td class="num ord-profit">${fmt$(totalProfit)}</td>
       <td>${paidCell}</td>
       <td>${deliveredCell}</td>
       <td></td>
     </tr>`;
-  html += g.orders.map(o => {
-    const flag = orderStatusFlag(o);
-    const cls = ['child-row'];
-    if (flag) cls.push(`row-flag-${flag}`);
-    return `
-    <tr class="${cls.join(' ')}" data-parent="${groupId}" hidden>
+  html += g.orders.map(o => `
+    <tr class="child-row" data-parent="${groupId}" hidden>
       <td colspan="9" class="child-cell">
-        <div class="child-strip">
-          <span class="cs-label">↳${statusFlagBadge(flag)}</span>
-          <span class="cs-items">${itemsCellInline(orderItems(o))}</span>
+        <div class="child-strip ord-strip">
+          <span class="cs-label"><span class="ord-inv">#${escapeHtml(invoiceNumberForOrder(o))}</span></span>
+          <span class="cs-items">${ordItemsText(orderItems(o))}</span>
           <span class="cs-stat"><span class="cs-tlabel">Total</span><b class="cs-stat-total">${fmt$(orderTotal(o))}</b></span>
           <span class="cs-stat"><span class="cs-tlabel">Profit</span><b>${fmt$(orderProfit(o))}</b></span>
-          <span class="cs-toggle"><span class="cs-tlabel">Paid</span><label class="switch"><input type="checkbox" data-toggle-paid="${o.id}" ${o.paid ? 'checked' : ''} /><span class="slider"></span></label>${partialPaidPill(o)}</span>
-          <span class="cs-toggle"><span class="cs-tlabel">Fulfilled</span><label class="switch"><input type="checkbox" data-toggle-delivered="${o.id}" ${o.delivered ? 'checked' : ''} /><span class="slider"></span></label></span>
-          <span class="cs-actions">
-            <button class="icon-btn" data-edit-order="${o.id}" title="Edit">✎</button>
-            <button class="icon-btn danger" data-del-order="${o.id}" title="Delete">🗑</button>
-          </span>
+          <span class="cs-toggle">${ordPayBadge(o)}${ordSwitch('data-toggle-paid', o.id, o.paid)}</span>
+          <span class="cs-toggle">${ordFulfillBadge(o)}${ordSwitch('data-toggle-delivered', o.id, o.delivered)}</span>
+          <span class="cs-actions">${ordActions(o)}</span>
         </div>
       </td>
-    </tr>`;
-  }).join('');
+    </tr>`).join('');
   return html;
 }
 
 function renderSingleOrderRow(o) {
   const items = orderItems(o);
-  const flag = orderStatusFlag(o);
-  const flagCls = flag ? ` row-flag-${flag}` : '';
+  const paidCell = `<div class="ord-stat">${ordPayBadge(o)}${ordSwitch('data-toggle-paid', o.id, o.paid)}</div>`;
+  const deliveredCell = `<div class="ord-stat">${ordFulfillBadge(o)}${ordSwitch('data-toggle-delivered', o.id, o.delivered)}</div>`;
   if (items.length <= 1) {
-    const it = items[0];
-    const sub = it ? `<span class="customer-sub">${escapeHtml(it.product || '')}${(Number(it.qty) || 0) > 0 ? ` ×${fmtN(it.qty)}` : ''}</span>` : '';
-    return `<tr class="${flagCls.trim()}">
-      <td>${fmtDateShort(o.date)}</td>
-      <td>${escapeHtml(o.customer || '')}${webOrderBadge(o)}${statusFlagBadge(flag)}${sub}</td>
-      <td class="items-cell">${itemsCellInline(items)}</td>
+    return `<tr class="ord-row">
+      <td>${ordDateCell(o.date)}</td>
+      <td>${ordCustomerCell(o.customer, ordInvoiceSub(o))}</td>
+      <td class="items-cell">${ordItemsText(items)}</td>
       <td class="num">${fmtN(orderQty(o))}</td>
-      <td class="num">${fmt$(orderTotal(o))}</td>
-      <td class="num">${fmt$(orderProfit(o))}</td>
-      <td><div class="paid-cell"><label class="switch"><input type="checkbox" data-toggle-paid="${o.id}" ${o.paid ? 'checked' : ''} /><span class="slider"></span></label>${partialPaidPill(o)}</div></td>
-      <td><label class="switch"><input type="checkbox" data-toggle-delivered="${o.id}" ${o.delivered ? 'checked' : ''} /><span class="slider"></span></label></td>
-      <td style="white-space:nowrap;">
-        <button class="icon-btn" data-edit-order="${o.id}" title="Edit">✎</button>
-        <button class="icon-btn danger" data-del-order="${o.id}" title="Delete">🗑</button>
-      </td>
+      <td class="num"><b class="ord-total">${fmt$(orderTotal(o))}</b><span class="ord-profit-sub">${fmt$(orderProfit(o))} profit</span></td>
+      <td class="num ord-profit">${fmt$(orderProfit(o))}</td>
+      <td>${paidCell}</td>
+      <td>${deliveredCell}</td>
+      <td>${ordActions(o)}</td>
     </tr>`;
   }
   // Multi-item: parent row with chevron, plus child rows for each line item.
   const groupId = 'oi_' + String(o.id || '').replace(/\W+/g, '_');
   let html = `
-    <tr class="group-row${flagCls}">
-      <td>${fmtDateShort(o.date)}</td>
-      <td>${escapeHtml(o.customer || '')}${webOrderBadge(o)}${statusFlagBadge(flag)}<span class="customer-sub">${items.length} items</span></td>
-      <td class="items-cell"><span class="chevron" data-toggle-group="${groupId}">▶</span><span class="grp-badge">${items.length} items</span></td>
+    <tr class="group-row ord-row">
+      <td>${ordDateCell(o.date)}</td>
+      <td>${ordCustomerCell(o.customer, ordInvoiceSub(o))}</td>
+      <td class="items-cell"><span class="chevron" data-toggle-group="${groupId}">▶</span>${ordItemsText(items)}</td>
       <td class="num">${fmtN(orderQty(o))}</td>
-      <td class="num">${fmt$(orderTotal(o))}</td>
-      <td class="num">${fmt$(orderProfit(o))}</td>
-      <td><div class="paid-cell"><label class="switch"><input type="checkbox" data-toggle-paid="${o.id}" ${o.paid ? 'checked' : ''} /><span class="slider"></span></label>${partialPaidPill(o)}</div></td>
-      <td><label class="switch"><input type="checkbox" data-toggle-delivered="${o.id}" ${o.delivered ? 'checked' : ''} /><span class="slider"></span></label></td>
-      <td style="white-space:nowrap;">
-        <button class="icon-btn" data-edit-order="${o.id}" title="Edit">✎</button>
-        <button class="icon-btn danger" data-del-order="${o.id}" title="Delete">🗑</button>
-      </td>
+      <td class="num"><b class="ord-total">${fmt$(orderTotal(o))}</b><span class="ord-profit-sub">${fmt$(orderProfit(o))} profit</span></td>
+      <td class="num ord-profit">${fmt$(orderProfit(o))}</td>
+      <td>${paidCell}</td>
+      <td>${deliveredCell}</td>
+      <td>${ordActions(o)}</td>
     </tr>`;
   html += items.map(it => `
     <tr class="child-row" data-parent="${groupId}" hidden>
       <td colspan="9" class="child-cell">
-        <div class="child-strip">
-          <span class="cs-label">↳</span>
-          <span class="cs-items">${itemPill(it)}</span>
-          <span class="cs-stat"><span class="cs-tlabel">Total</span><b class="cs-stat-total">${fmt$((Number(it.qty)||0)*(Number(it.price)||0))}</b></span>
-          <span class="cs-stat"><span class="cs-tlabel">Profit</span><b>${fmt$(((Number(it.price)||0)-(Number(it.cogs)||0))*(Number(it.qty)||0))}</b></span>
+        <div class="child-strip ord-strip">
+          <span class="cs-label"></span>
+          <span class="cs-items"><span class="ord-item"><span class="ord-item-name">${escapeHtml(it.product || '')}</span><span class="ord-item-qty">×${fmtN(it.qty || 0)}</span></span></span>
+          <span class="cs-stat"><span class="cs-tlabel">Total</span><b class="cs-stat-total">${fmt$((Number(it.qty) || 0) * (Number(it.price) || 0))}</b></span>
+          <span class="cs-stat"><span class="cs-tlabel">Profit</span><b>${fmt$(((Number(it.price) || 0) - (Number(it.cogs) || 0)) * (Number(it.qty) || 0))}</b></span>
         </div>
       </td>
     </tr>`).join('');
@@ -4268,14 +4302,14 @@ $('#custKpiOwedBtn').addEventListener('click', () => {
 const CUST_LAPSED_DAYS = 60;
 const CUST_SEGMENTS = {
   owes: (c) => c.owed > 0.005,
-  repeat: (c) => c.orderCount >= 2,
+  repeat: (c) => c.completedCount >= 2,
   new: (c) => !!c.firstDate && monthKey(c.firstDate) === monthKey(todayISO()),
   lapsed: (c) => c.orderCount > 0 && daysSince(c.lastDate) >= CUST_LAPSED_DAYS,
 };
 const CUST_SORTS = {
   recent: (a, b) => (b.lastDate || '').localeCompare(a.lastDate || ''),
   lifetime: (a, b) => b.lifetimeRev - a.lifetimeRev,
-  orders: (a, b) => b.orderCount - a.orderCount || b.lifetimeRev - a.lifetimeRev,
+  orders: (a, b) => b.completedCount - a.completedCount || b.lifetimeRev - a.lifetimeRev,
   owed: (a, b) => b.owed - a.owed || b.pendingCount - a.pendingCount,
   name: (a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }),
 };
@@ -4331,22 +4365,30 @@ function allCustomerStats() {
   }
   return state.customers.map(c => ({ ...c, ...statsFromOrders(byKey.get(customerKey(c.name)) || []) }));
 }
+// Lifetime revenue, profit and order counts only include COMPLETED orders
+// (paid AND fulfilled). Anything still open — unpaid, partially paid, or paid
+// but not yet fulfilled — shows separately as open orders / balance owed.
 function statsFromOrders(orders) {
-  let lifetimeRev = 0, paid = 0, owed = 0, lifetimeProfit = 0, pendingCount = 0, openOwed = 0;
+  let lifetimeRev = 0, paid = 0, owed = 0, lifetimeProfit = 0, pendingCount = 0, openOwed = 0, completedCount = 0;
   let lastDate = '', firstDate = '', web = false;
   for (const o of orders) {
-    lifetimeRev += orderTotal(o);
+    const complete = !!(o.paid && o.delivered);
+    if (complete) {
+      completedCount++;
+      lifetimeRev += orderTotal(o);
+      lifetimeProfit += orderProfit(o);
+    } else {
+      pendingCount++;
+    }
     paid += orderPaidRevenue(o);
     const bal = orderBalance(o);
     owed += bal;
     if (bal > 0.005) openOwed++;
-    lifetimeProfit += orderPaidProfit(o);
-    if (!(o.paid && o.delivered)) pendingCount++;
     if (o.date && (!lastDate || o.date > lastDate)) lastDate = o.date;
     if (o.date && (!firstDate || o.date < firstDate)) firstDate = o.date;
     if (o.source === 'woo') web = true;
   }
-  return { orders, orderCount: orders.length, lifetimeRev, paid, owed, openOwed, lifetimeProfit, pendingCount, lastDate, firstDate, web };
+  return { orders, orderCount: orders.length, completedCount, lifetimeRev, paid, owed, openOwed, lifetimeProfit, pendingCount, lastDate, firstDate, web };
 }
 // Single-customer version, used by the profile.
 function customerStats(c) {
@@ -4399,7 +4441,7 @@ function renderCustomers() {
   const shown = rows.slice(0, custLimit);
   body.innerHTML = shown.map(c => {
     const contact = [formatPhone(c.phone), c.email].filter(Boolean).map(escapeHtml).join('<i>·</i>');
-    const avg = c.orderCount ? c.lifetimeRev / c.orderCount : 0;
+    const avg = c.completedCount ? c.lifetimeRev / c.completedCount : 0;
     const balance = c.owed > 0.005
       ? `<div class="cust-due">${fmt$(round2(c.owed))}</div><div class="inv-price-sub">${c.openOwed} open order${c.openOwed === 1 ? '' : 's'}</div>`
       : c.pendingCount
@@ -4417,8 +4459,8 @@ function renderCustomers() {
         </div>
       </td>
       <td class="num">
-        <div class="inv-price">${fmtN(c.orderCount)}</div>
-        ${c.orderCount ? `<div class="inv-price-sub">${fmt$(avg)} avg</div>` : ''}
+        <div class="inv-price">${fmtN(c.completedCount)}</div>
+        <div class="inv-price-sub">${c.pendingCount ? `+${fmtN(c.pendingCount)} open` : c.completedCount ? `${fmt$(avg)} avg` : ''}</div>
       </td>
       <td class="num">
         <div class="inv-price">${fmt$(round2(c.lifetimeRev))}</div>
@@ -4447,7 +4489,7 @@ function renderCustomers() {
 
 // Overview cards — always across every customer, independent of filters.
 function renderCustomerMetrics(all) {
-  const buyers = all.filter(c => c.orderCount > 0);
+  const buyers = all.filter(c => c.completedCount > 0);
   const rev = all.reduce((s, c) => s + c.lifetimeRev, 0);
   const owed = all.reduce((s, c) => s + c.owed, 0);
   const owing = all.filter(CUST_SEGMENTS.owes).length;
@@ -4467,10 +4509,10 @@ function renderCustomerMetrics(all) {
 }
 
 function exportCustomersCSV() {
-  const headers = ['Name', 'Phone', 'Email', 'Address', 'Orders', 'Lifetime', 'Paid', 'Owed', 'Profit', 'First order', 'Last order', 'Notes'];
+  const headers = ['Name', 'Phone', 'Email', 'Address', 'Completed orders', 'Open orders', 'Lifetime (completed)', 'Paid', 'Owed', 'Profit (completed)', 'First order', 'Last order', 'Notes'];
   const rows = allCustomerStats()
     .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-    .map(c => [c.name || '', c.phone || '', c.email || '', c.address || '', c.orderCount,
+    .map(c => [c.name || '', c.phone || '', c.email || '', c.address || '', c.completedCount, c.pendingCount,
       round2(c.lifetimeRev), round2(c.paid), round2(c.owed), round2(c.lifetimeProfit),
       c.firstDate || '', c.lastDate || '', c.notes || '']);
   downloadBlob(`lumen-customers-${todayISO()}.csv`, toCSV(headers, rows), 'text/csv;charset=utf-8');
@@ -4501,7 +4543,7 @@ function customerModal(existing) {
     form.innerHTML = fields;
   } else {
     const orders = stats.orders.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-    const avg = stats.orderCount ? stats.lifetimeRev / stats.orderCount : 0;
+    const avg = stats.completedCount ? stats.lifetimeRev / stats.completedCount : 0;
     // Favorite products: most units bought across all their orders.
     const fav = new Map();
     orders.forEach(o => orderItems(o).forEach(it => {
@@ -4532,9 +4574,9 @@ function customerModal(existing) {
           ${initial.email ? `<a class="inv-btn" href="mailto:${escapeHtml(initial.email)}">${ICON.mail}Email</a>` : ''}
         </div>` : ''}
         <div class="cp-stats">
-          <div><span>Lifetime</span><b>${fmt$(round2(stats.lifetimeRev))}</b></div>
+          <div title="Completed orders only (paid and fulfilled)"><span>Lifetime</span><b>${fmt$(round2(stats.lifetimeRev))}</b></div>
           <div><span>Profit</span><b class="inv-pos">${fmt$(round2(stats.lifetimeProfit))}</b></div>
-          <div><span>Orders</span><b>${fmtN(stats.orderCount)}</b></div>
+          <div><span>Orders</span><b>${fmtN(stats.completedCount)}${stats.pendingCount ? ` <small>+${fmtN(stats.pendingCount)} open</small>` : ''}</b></div>
           <div><span>Avg order</span><b>${fmt$(avg)}</b></div>
           <div class="${stats.owed > 0.005 ? 'is-owed' : ''}"><span>Owes</span><b>${stats.owed > 0.005 ? fmt$(round2(stats.owed)) : '—'}</b></div>
         </div>
@@ -6294,6 +6336,10 @@ function consolidateShipments(shipments) {
   return groups.sort((a, b) => (b.dateOrdered || '').localeCompare(a.dateOrdered || ''));
 }
 
+const SHIP_BADGE = { delivered: 'is-muted', transit: 'is-blue', aging: 'is-amber', overdue: 'is-red' };
+function shipStatusBadge(st) {
+  return `<span class="ord-badge ${SHIP_BADGE[st.key] || 'is-outline'}">${escapeHtml(st.label)}</span>`;
+}
 function renderShipmentGroup(g) {
   if (g.shipments.length === 1) return renderSingleShipmentRow(g.shipments[0]);
 
@@ -6302,9 +6348,9 @@ function renderShipmentGroup(g) {
   const noDelivered = g.shipments.every(s => !s.delivered);
   const shipIds = g.shipments.map(s => s.id).join(',');
 
-  const deliveredCell = (allDelivered || noDelivered)
-    ? `<label class="switch"><input type="checkbox" data-group-ship-delivered="${shipIds}" ${allDelivered ? 'checked' : ''} /><span class="slider"></span></label>`
-    : `<span class="pill mixed" data-expand-group="${groupId}" title="Mixed — expand to see each">Mixed</span>`;
+  const deliveredSwitch = (allDelivered || noDelivered)
+    ? `<label class="switch sw-sm"><input type="checkbox" data-group-ship-delivered="${shipIds}" ${allDelivered ? 'checked' : ''} /><span class="slider"></span></label>`
+    : `<button type="button" class="ord-badge is-outline" data-expand-group="${groupId}" title="Mixed — expand to see each">Mixed</button>`;
 
   // Show shared tracking number (if all the same) on the parent row.
   const trackings = g.shipments.map(s => (s.tracking || '').trim()).filter(Boolean);
@@ -6332,7 +6378,7 @@ function renderShipmentGroup(g) {
 
   let html = `
     <tr class="group-row ship-row" data-status="${groupStatus.key}">
-      <td><b>${escapeHtml(g.vendor || '')}</b></td>
+      <td>${vendorCell(g.vendor, `${g.shipments.length} products`)}</td>
       <td>${shipTimelineCell({
         ...g.shipments[0],
         dateOrdered: g.dateOrdered,
@@ -6347,8 +6393,8 @@ function renderShipmentGroup(g) {
       <td class="cat-cell">${groupCatCell}</td>
       <td class="items-cell"><span class="chevron" data-toggle-group="${groupId}">▶</span><span class="grp-badge">${g.shipments.length} product${g.shipments.length === 1 ? '' : 's'}</span>${groupItems > 0 ? `<span class="grp-badge">${fmtN(groupItems)} items</span>` : ''}</td>
       <td>${groupTrackingCell}</td>
-      <td>${deliveredCell}</td>
-      <td class="row-actions"><button class="row-menu-btn" data-ship-group-menu="${shipIds}" aria-label="Actions" title="Actions">⋯</button></td>
+      <td><div class="ord-stat">${shipStatusBadge(groupStatus)}${deliveredSwitch}</div></td>
+      <td class="row-actions"><button class="row-menu-btn" data-ship-group-menu="${shipIds}" aria-label="Actions" title="Actions">${ICON_DOTS}</button></td>
     </tr>`;
   html += g.shipments.map(s => {
     const n = Number(s.kits) || 0;
@@ -6363,9 +6409,9 @@ function renderShipmentGroup(g) {
       <td class="cat-cell">${shipCategoryChip(s)}</td>
       <td class="num muted">${shipmentUnitCount(s) > 0 ? `${fmtN(shipmentUnitCount(s))} items` : ''}</td>
       <td></td>
-      <td><label class="switch"><input type="checkbox" data-ship-delivered="${s.id}" ${s.delivered ? 'checked' : ''}/><span class="slider"></span></label></td>
+      <td><div class="ord-stat">${shipStatusBadge(shipmentStatus(s))}<label class="switch sw-sm"><input type="checkbox" data-ship-delivered="${s.id}" ${s.delivered ? 'checked' : ''}/><span class="slider"></span></label></div></td>
       <td class="row-actions">
-        <button class="row-menu-btn" data-ship-menu="${s.id}" aria-label="Actions" title="Actions">⋯</button>
+        <button class="row-menu-btn" data-ship-menu="${s.id}" aria-label="Actions" title="Actions">${ICON_DOTS}</button>
       </td>
     </tr>`;
   }).join('');
@@ -6381,14 +6427,14 @@ function renderSingleShipmentRow(s) {
   const pill = `<span class="item-pill"><span class="ip-name">${escapeHtml(s.product || '')}</span>${amtInner ? `<span class="ip-qty">${amtInner}</span>` : ''}</span>`;
   const st = shipmentStatus(s);
   return `<tr class="ship-row" data-status="${st.key}">
-    <td>${(s.vendor || '').trim() ? `<b>${escapeHtml(s.vendor)}</b>` : '<span class="muted">No vendor</span>'}</td>
+    <td>${vendorCell(s.vendor)}</td>
     <td>${shipTimelineCell(s, true)}</td>
     <td class="cat-cell">${shipCategoryChip(s)}</td>
     <td>${pill}</td>
     <td>${shipTrackingCell(s.tracking)}</td>
-    <td><label class="switch"><input type="checkbox" data-ship-delivered="${s.id}" ${s.delivered ? 'checked' : ''}/><span class="slider"></span></label></td>
+    <td><div class="ord-stat">${shipStatusBadge(st)}<label class="switch sw-sm"><input type="checkbox" data-ship-delivered="${s.id}" ${s.delivered ? 'checked' : ''}/><span class="slider"></span></label></div></td>
     <td class="row-actions">
-      <button class="row-menu-btn" data-ship-menu="${s.id}" aria-label="Actions" title="Actions">⋯</button>
+      <button class="row-menu-btn" data-ship-menu="${s.id}" aria-label="Actions" title="Actions">${ICON_DOTS}</button>
     </td>
   </tr>`;
 }
@@ -7004,9 +7050,20 @@ function expenseCategoryChip(e) {
 // Vendor is optional — a lot of older records only have a description. Render
 // a muted placeholder rather than an empty cell so the column still reads as a
 // column.
-function vendorCell(vendor) {
+const ICON_DOTS = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="3.5" cy="8" r="1.2" /><circle cx="8" cy="8" r="1.2" /><circle cx="12.5" cy="8" r="1.2" /></svg>';
+// Vendor / supplier: square initials badge + name, the company counterpart of
+// the round customer avatars.
+function vendorBadge(name) {
+  const v = String(name || '').trim();
+  let h = 0;
+  for (const ch of v) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const hue = AVATAR_HUES[h % AVATAR_HUES.length];
+  const initials = v.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w.charAt(0)).join('').toUpperCase() || '?';
+  return `<span class="vendor-badge" style="--hue:${hue}" aria-hidden="true">${escapeHtml(initials)}</span>`;
+}
+function vendorCell(vendor, sub) {
   const v = (vendor || '').trim();
-  return v ? `<b>${escapeHtml(v)}</b>` : '<span class="muted">No vendor</span>';
+  return `<div class="vend-cell">${vendorBadge(v)}<div class="vend-text">${v ? `<b>${escapeHtml(v)}</b>` : '<span class="muted">No vendor</span>'}${sub ? `<span class="vend-sub">${sub}</span>` : ''}</div></div>`;
 }
 
 // Small badge marking an expense as capital / owner-funded, so a row that is
@@ -7260,8 +7317,8 @@ function renderExpenseGroup(g) {
 
   let html = `
     <tr class="group-row">
-      <td>${vendorCell(g.vendor)}<span class="grp-badge">${g.expenses.length} expense${g.expenses.length === 1 ? '' : 's'}</span></td>
-      <td>${g.dateOrdered ? fmtDateShort(g.dateOrdered) : '<span class="muted">—</span>'}</td>
+      <td>${vendorCell(g.vendor, `${g.expenses.length} expense${g.expenses.length === 1 ? '' : 's'}`)}</td>
+      <td>${ordDateCell(g.dateOrdered)}</td>
       <td class="cat-cell">${catCell}${anyCapital ? '<span class="cap-badge">Capital</span>' : ''}</td>
       <td class="items-cell"><span class="chevron" data-toggle-group="${groupId}">▶</span><span class="grp-badge">${totalItems} item${totalItems === 1 ? '' : 's'}</span></td>
       <td class="num"><b>${fmt$(totalCost)}</b></td>
@@ -7281,7 +7338,7 @@ function renderExpenseGroup(g) {
             ${expenseCategoryChip(e)}${capitalBadge(e)}
             <span class="cs-total">${fmt$(expenseCost(e))}</span>
             <span class="cs-actions">
-              <button class="row-menu-btn" data-exp-menu="${e.id}" aria-label="Actions" title="Actions">⋯</button>
+              <button class="row-menu-btn" data-exp-menu="${e.id}" aria-label="Actions" title="Actions">${ICON_DOTS}</button>
             </span>
           </div>
         </td>
@@ -7300,14 +7357,14 @@ function renderExpenseRow(e) {
   let html = `
     <tr class="group-row${expenseExcluded(e) ? ' is-capital' : ''}">
       <td>${vendorCell(e.vendor)}</td>
-      <td>${e.dateOrdered ? fmtDateShort(e.dateOrdered) : '<span class="muted">—</span>'}</td>
+      <td>${ordDateCell(e.dateOrdered)}</td>
       <td class="cat-cell">${expenseCategoryChip(e)}${capitalBadge(e)}</td>
       <td class="items-cell">
         <span class="chevron" data-toggle-group="${groupId}">▶</span><span class="grp-badge">${items.length} items</span>
       </td>
       <td class="num"><b>${fmt$(totalCost)}</b></td>
       <td class="row-actions">
-        <button class="row-menu-btn" data-exp-menu="${e.id}" aria-label="Actions" title="Actions">⋯</button>
+        <button class="row-menu-btn" data-exp-menu="${e.id}" aria-label="Actions" title="Actions">${ICON_DOTS}</button>
       </td>
     </tr>`;
   // Show per-item cost only when the expense is tracked per-item — in total
@@ -7334,12 +7391,12 @@ function renderSingleExpenseRow(e) {
   // display correctly. Also covers per-item-mode multi-item rows.
   return `<tr${expenseExcluded(e) ? ' class="is-capital"' : ''}>
     <td>${vendorCell(e.vendor)}</td>
-    <td>${e.dateOrdered ? fmtDateShort(e.dateOrdered) : '<span class="muted">—</span>'}</td>
+    <td>${ordDateCell(e.dateOrdered)}</td>
     <td class="cat-cell">${expenseCategoryChip(e)}${capitalBadge(e)}</td>
     <td>${expenseItemLabel(it)}</td>
     <td class="num">${fmt$(expenseCost(e))}</td>
     <td class="row-actions">
-      <button class="row-menu-btn" data-exp-menu="${e.id}" aria-label="Actions" title="Actions">⋯</button>
+      <button class="row-menu-btn" data-exp-menu="${e.id}" aria-label="Actions" title="Actions">${ICON_DOTS}</button>
     </td>
   </tr>`;
 }

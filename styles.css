@@ -7273,3 +7273,231 @@ a.inv-btn { text-decoration: none; }
   .inv-panel > .ship-table tbody td:first-child { max-width: 120px; overflow-wrap: anywhere; }
   .ship-table .tracking-digits { max-width: 105px; }
 }
+.cp-stats b small { font-size: 12px; font-weight: 500; color: var(--i-ink-3); }
+
+/* ── Orders rows ─────────────────────────────────────────────── */
+/* Status now lives in badges, so the old colored row rails go. */
+.ord-table tbody tr, .ord-table tbody tr td { box-shadow: none !important; }
+.ord-table tbody tr[class*="row-flag"] td, .ord-table tbody tr[class*="has-flag"] td { background: transparent; }
+.ord-table tbody tr.ord-row:hover > td { background: rgba(255, 255, 255, 0.025); }
+.ord-table tbody tr.ord-row.expanded > td { background: rgba(255, 255, 255, 0.035); border-bottom-color: transparent; }
+.ord-table tbody tr td:first-child { border-left: none !important; }
+
+.ord-date { display: flex; flex-direction: column; line-height: 1.25; white-space: nowrap; }
+.ord-date b { font-size: 13.5px; font-weight: 600; color: var(--i-ink); }
+.ord-date span { font-size: 12px; color: var(--i-ink-3); }
+
+.cust-avatar-sm { width: 32px; height: 32px; font-size: 12px; }
+.ord-cust { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ord-cust-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+.ord-cust-text b { font-size: 13.5px; font-weight: 600; color: var(--i-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ord-sub { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--i-ink-3); white-space: nowrap; }
+.ord-sub .web-tag { margin-left: 0; }
+.ord-inv { font-family: var(--font-code); font-size: 11px; color: var(--i-ink-3); }
+
+.ord-table .items-cell { white-space: nowrap; }
+.ord-table .items-cell .chevron { margin-right: 6px; font-size: 9px; vertical-align: 1px; color: var(--i-ink-3); }
+.ord-item { display: inline-flex; align-items: baseline; gap: 5px; max-width: 100%; min-width: 0; vertical-align: middle; }
+.ord-item-name { font-size: 13.5px; color: var(--i-ink); min-width: 0; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ord-item-qty { font-size: 12px; color: var(--i-ink-3); font-variant-numeric: tabular-nums; }
+.ord-more { display: block; margin-top: 2px; font-size: 12px; color: var(--i-ink-3); }
+.ord-table .items-cell .chevron + .ord-item + .ord-more,
+.ord-table .items-cell .chevron ~ .ord-more { padding-left: 15px; }
+
+.ord-total { font-size: 14px; font-weight: 650; color: var(--i-ink); }
+.ord-profit { color: var(--i-ink-3); font-size: 13px; }
+
+.ord-stat { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.ord-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px 2px 7px;
+  border-radius: 999px;
+  border: none;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.ord-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+button.ord-badge { cursor: pointer; }
+.ord-badge.is-green { background: rgba(74, 222, 128, 0.1); color: var(--i-green); }
+.ord-badge.is-amber { background: rgba(251, 191, 36, 0.12); color: var(--i-amber); }
+.ord-badge.is-red { background: rgba(248, 113, 113, 0.12); color: var(--i-red); }
+.ord-badge.is-blue { background: rgba(124, 180, 255, 0.12); color: var(--i-blue); }
+.ord-badge.is-muted { background: rgba(255, 255, 255, 0.06); color: var(--i-ink-2); }
+.ord-badge.is-outline { background: transparent; box-shadow: inset 0 0 0 1px var(--i-line-2); color: var(--i-ink-3); }
+.ord-badge.is-outline::before { background: var(--i-ink-3); }
+
+/* Compact toggles beside the badges */
+.switch.sw-sm { width: 30px; height: 17px; flex: none; }
+.switch.sw-sm .slider::before { width: 13px; height: 13px; left: 2px; bottom: 2px; }
+.switch.sw-sm input:checked + .slider::before { transform: translateX(13px); }
+
+.ord-actions { display: inline-flex; gap: 2px; justify-content: flex-end; }
+.ord-actions .icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--i-ink-3);
+}
+.ord-actions .icon-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.ord-actions .icon-btn:hover { color: var(--i-ink); background: rgba(255, 255, 255, 0.06); }
+.ord-actions .icon-btn.danger:hover { color: var(--i-red); background: rgba(248, 113, 113, 0.08); }
+
+/* Expanded detail strip (multi-order days / multi-item orders) */
+.ord-table .child-row > td.child-cell { padding: 0 !important; background: rgba(255, 255, 255, 0.025); }
+.ord-strip {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 10px 16px 10px 58px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  font-size: 13px;
+}
+.ord-strip .cs-label { min-width: 70px; }
+.ord-strip .cs-items { flex: 1 1 200px; min-width: 0; }
+.ord-strip .cs-stat { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+.ord-strip .cs-tlabel { font-size: 12px; color: var(--i-ink-3); }
+.ord-strip .cs-stat b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.ord-strip .cs-toggle { display: inline-flex; align-items: center; gap: 8px; }
+
+@media (max-width: 1300px) {
+  .ord-item-name { max-width: 170px; }
+  .ord-table .ord-cust .cust-avatar { display: none; }
+}
+@media (max-width: 640px) {
+  .ord-date span { display: none; }
+  .ord-table .ord-badge { display: none; }
+  .ord-table .ord-stat .ord-badge[data-open-payments] { display: inline-flex; }
+  .ord-strip { flex-wrap: wrap; padding-left: 12px; gap: 10px 14px; }
+}
+/* Quantity already shows on each item (×2), so the Qty column is dropped. */
+.ord-table th:nth-child(4),
+.ord-table tbody tr:not(.child-row) td:nth-child(4),
+.ord-table tfoot td:nth-child(2) { display: none; }
+.inv-panel > .ord-table th, .inv-panel > .ord-table td { padding-left: 12px; padding-right: 12px; }
+.ord-cust-text b { max-width: 190px; }
+.ord-cust { max-width: 215px; }
+.ord-sub { overflow: hidden; }
+.ord-item-name { max-width: 200px; }
+
+/* ── Shipments & Expenses rows ───────────────────────────────── */
+.vendor-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: hsl(var(--hue) 60% 55% / 0.12);
+  border: 1px solid hsl(var(--hue) 60% 60% / 0.3);
+  color: hsl(var(--hue) 80% 72%);
+  font-size: 11.5px;
+  font-weight: 650;
+}
+.vend-cell { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.vend-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+.vend-text b { font-size: 13.5px; font-weight: 600; color: var(--i-ink); }
+.vend-sub { font-size: 12px; color: var(--i-ink-3); white-space: nowrap; }
+
+/* Status lives in badges now — drop the colored row rails. */
+.ship-table tbody tr td:first-child, .exp-table tbody tr td:first-child { border-left: none !important; box-shadow: none !important; }
+.ship-table tbody tr, .exp-table tbody tr { box-shadow: none !important; }
+.ship-table tbody tr.ship-row[data-status] > td { background: transparent; }
+.ship-table tbody tr:hover > td, .exp-table tbody tr:hover > td { background: rgba(255, 255, 255, 0.025); }
+.exp-table tbody tr.is-capital > td { background: rgba(167, 139, 250, 0.04); }
+
+/* Products read as text with a muted quantity, not chips. */
+.ship-table .item-pill, .exp-table .item-pill {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 13.5px;
+  color: var(--i-ink);
+  gap: 6px;
+}
+.ship-table .item-pill .ip-qty, .exp-table .item-pill .ip-qty { color: var(--i-ink-3); font-size: 12px; font-weight: 500; }
+.ship-table .grp-badge, .exp-table .grp-badge {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-right: 10px;
+  color: var(--i-ink-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+.ship-table .items-cell .chevron, .exp-table .items-cell .chevron { margin-right: 6px; font-size: 9px; color: var(--i-ink-3); }
+
+/* Row action menus */
+.row-menu-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--i-ink-3);
+}
+.row-menu-btn svg { width: 16px; height: 16px; fill: currentColor; }
+.row-menu-btn:hover { background: rgba(255, 255, 255, 0.06); color: var(--i-ink); }
+
+/* Expanded child rows */
+.ship-table .child-row > td, .exp-table .child-row > td { background: rgba(255, 255, 255, 0.025); }
+.exp-table .child-strip { padding: 10px 16px 10px 58px; gap: 16px; }
+
+@media (max-width: 1300px) {
+  .ship-table .vendor-badge, .exp-table .vendor-badge { display: none; }
+}
+@media (max-width: 640px) {
+  .ship-table .ord-badge, .exp-table .ord-badge { display: none; }
+  .vend-sub { display: none; }
+}
+.inv-panel > .ship-table th, .inv-panel > .ship-table td { padding-left: 12px; padding-right: 12px; }
+.ship-table .vend-cell { max-width: 170px; }
+.ship-table .vend-text b { overflow-wrap: anywhere; }
+.ship-table .tracking-digits {
+  display: inline-block;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+.ship-table .item-pill { max-width: 210px; min-width: 0; }
+.ship-table .item-pill .ip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ship-table .ship-timeline { flex-wrap: wrap; row-gap: 4px; max-width: 170px; text-align: left; }
+
+/* Orders: profit reads under the total, so the Profit column is dropped. */
+.ord-profit-sub { display: block; margin-top: 2px; font-size: 12px; color: var(--i-ink-3); white-space: nowrap; }
+.ord-table th:nth-child(6),
+.ord-table tbody tr:not(.child-row) td:nth-child(6) { display: none; }
+.ord-table tfoot td:nth-child(4) { display: none; }
+
+@media (max-width: 1300px) {
+  /* Badge above its toggle so status columns stay narrow. */
+  .ord-table .ord-stat, .ship-table .ord-stat { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .ord-item-name { max-width: 150px; }
+  .ord-cust { max-width: 170px; }
+  .ord-more { padding-left: 0; }
+  /* Shipments */
+  .ship-table .items-cell { white-space: normal; }
+  .ship-table .items-cell .grp-badge { display: inline-block; margin-right: 8px; }
+  .ship-table .tracking-digits { max-width: 105px; }
+  .inv-panel > .ship-table td.row-actions, .inv-panel > .ship-table th:last-child { width: 40px; padding-left: 2px; padding-right: 8px; }
+}
+@media (max-width: 1300px) {
+  .ord-item-name { max-width: 125px; }
+  .ord-cust { max-width: 150px; }
+  .ship-table .item-pill { max-width: 160px; }
+}
