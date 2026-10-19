@@ -3,19 +3,39 @@
 // variables — never in config.js or anything the browser loads.
 
 function cfg() {
-  const url = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  const url = (process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
+  const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
   if (!url || !key) throw new Error('SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set');
   return { url, key };
 }
 
+// The server needs a key that bypasses row-level security. A public key
+// (legacy "anon" JWT or new "sb_publishable_…") still answers every request,
+// but RLS hides all rows, so writes silently change nothing. Catch that.
+export function serviceKeyProblem() {
+  const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+  if (!key) return 'SUPABASE_SERVICE_ROLE_KEY is not set.';
+  if (key.startsWith('sb_secret_')) return null;
+  if (key.startsWith('sb_publishable_')) {
+    return 'SUPABASE_SERVICE_ROLE_KEY is the publishable key. Use the secret key (sb_secret_…) or the legacy service_role key.';
+  }
+  try {
+    const payload = JSON.parse(Buffer.from(key.split('.')[1], 'base64url').toString('utf8'));
+    if (payload.role === 'service_role') return null;
+    return `SUPABASE_SERVICE_ROLE_KEY is the "${payload.role}" key. Use the service_role key (or the sb_secret_… key).`;
+  } catch {
+    return 'SUPABASE_SERVICE_ROLE_KEY is not a recognised Supabase key.';
+  }
+}
+
 async function rest(path, { method = 'GET', body, prefer } = {}) {
   const { url, key } = cfg();
-  const headers = {
-    apikey: key,
-    Authorization: `Bearer ${key}`,
-    'Content-Type': 'application/json',
-  };
+  const problem = serviceKeyProblem();
+  if (problem) throw new Error(problem);
+  const headers = { apikey: key, 'Content-Type': 'application/json' };
+  // New-style keys (sb_…) aren't JWTs; Supabase reads the role from the
+  // apikey header alone. Legacy JWT keys also go in Authorization.
+  if (!key.startsWith('sb_')) headers.Authorization = `Bearer ${key}`;
   if (prefer) headers.Prefer = prefer;
   const res = await fetch(`${url}/rest/v1/${path}`, {
     method,
@@ -75,18 +95,20 @@ export async function verifyUser(request) {
   return res.json();
 }
 
-// integration_state helpers. Missing table → behave as empty so the rest of
-// the integration still works before the SQL has been run.
+// integration_state helpers. A missing table reads as empty so the status
+// page still renders before the SQL has run. A bad service key is raised, and
+// writes always raise, so the connection date can't be dropped silently.
 export async function getState(key) {
   try {
     const rows = await db.select('integration_state', `select=value&${db.eq('key', key)}`);
     return (rows && rows[0] && rows[0].value) || {};
-  } catch { return {}; }
+  } catch (err) {
+    if (serviceKeyProblem()) throw err;
+    return {};
+  }
 }
 export async function patchState(key, patch) {
-  try {
-    const value = { ...(await getState(key)), ...patch };
-    await db.upsert('integration_state', [{ key, value, updated_at: new Date().toISOString() }]);
-    return value;
-  } catch { return null; }
+  const value = { ...(await getState(key)), ...patch };
+  await db.upsert('integration_state', [{ key, value, updated_at: new Date().toISOString() }]);
+  return value;
 }

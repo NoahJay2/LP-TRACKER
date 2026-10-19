@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-10-19.2';
+const BUILD_VERSION = '2026-10-19.3';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -8778,6 +8778,7 @@ async function loadWooStatus() {
     return;
   }
   const lines = [];
+  if (s.keyProblem) lines.push(`<p class="integ-warn">${escapeHtml(s.keyProblem)} Update it in Vercel, then redeploy.</p>`);
   if (s.missingEnv && s.missingEnv.length) {
     lines.push(`<p class="integ-warn">Missing Vercel environment variables: ${s.missingEnv.map(k => `<code>${escapeHtml(k)}</code>`).join(' ')}</p>`);
   }
@@ -8794,7 +8795,8 @@ async function loadWooStatus() {
   body.innerHTML = lines.join('');
 
   const hooksOk = s.webhooks && s.webhooks.length && s.webhooks.every(w => w.status === 'active');
-  if (!s.reachable) { pill.className = 'pill red'; pill.textContent = 'Not connected'; }
+  if (s.keyProblem) { pill.className = 'pill red'; pill.textContent = 'Wrong Supabase key'; }
+  else if (!s.reachable) { pill.className = 'pill red'; pill.textContent = 'Not connected'; }
   else if (!hooksOk) { pill.className = 'pill amber'; pill.textContent = 'Webhooks needed'; }
   else { pill.className = 'pill green'; pill.textContent = 'Connected'; }
 }

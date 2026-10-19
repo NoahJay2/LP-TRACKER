@@ -1,6 +1,6 @@
 // Connection health for the Integrations page.
 import { authed, json } from '../_lib/http.js';
-import { getState } from '../_lib/supabase.js';
+import { getState, serviceKeyProblem } from '../_lib/supabase.js';
 import { wooFetch } from '../_lib/woo.js';
 import { WEBHOOK_TOPICS, webhookUrl } from './setup.js';
 
@@ -11,12 +11,14 @@ const REQUIRED_ENV = [
 
 export const GET = authed(async (request) => {
   const missingEnv = REQUIRED_ENV.filter(k => !process.env[k]);
+  const keyProblem = missingEnv.includes('SUPABASE_SERVICE_ROLE_KEY') ? null : serviceKeyProblem();
   const out = {
-    store: (process.env.WOO_STORE_URL || '').replace(/\/+$/, ''),
+    store: (process.env.WOO_STORE_URL || '').trim().replace(/\/+$/, ''),
     missingEnv,
+    keyProblem,
     reachable: false,
     webhooks: [],
-    state: await getState('woo'),
+    state: keyProblem ? {} : await getState('woo'),
   };
   if (missingEnv.some(k => k.startsWith('WOO_STORE') || k.startsWith('WOO_CONSUMER'))) return json(200, out);
   try {

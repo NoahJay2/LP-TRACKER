@@ -38,7 +38,8 @@ export const POST = authed(async (request) => {
   for (const { stockId, wooId } of links) {
     const p = byWooId.get(wooId);
     if (!p) { errors.push(`Woo product ${wooId} not found`); continue; }
-    await db.update('stock', db.eq('id', stockId), { woo_id: wooId, image_url: p.image || null, sku: p.sku || null });
+    const rows = await db.update('stock', db.eq('id', stockId), { woo_id: wooId, image_url: p.image || null, sku: p.sku || null });
+    if (!rows || !rows.length) { errors.push(`Tracker product ${stockId} not found`); continue; }
     linked.push(stockId);
   }
 

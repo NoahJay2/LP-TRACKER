@@ -56,7 +56,7 @@ export async function POST(request) {
     return json(200, { ok: true, topic, ...result });
   } catch (err) {
     console.error('webhook failed', topic, err);
-    await patchState('woo', { lastError: `${topic}: ${err.message}`, lastErrorAt: new Date().toISOString() });
+    await patchState('woo', { lastError: `${topic}: ${err.message}`, lastErrorAt: new Date().toISOString() }).catch(() => {});
     // 500 makes Woo log the failure (and disable the webhook after repeated
     // failures), which surfaces on the Integrations page instead of hiding it.
     return json(500, { error: err.message });
