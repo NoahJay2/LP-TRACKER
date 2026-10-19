@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-10-19.11';
+const BUILD_VERSION = '2026-10-19.12';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -3070,6 +3070,30 @@ function wireSearchClear(input) {
   update();
 }
 
+// Status tabs on list pages drive a hidden <select> (so filtering, persistence
+// and reset keep working through the existing select). paintTabs() marks the
+// active tab and fills in each tab's count.
+function wireTabs(tabsSel, selectEl) {
+  $$(tabsSel + ' [data-tab]').forEach(b => b.addEventListener('click', () => {
+    selectEl.value = b.dataset.tab;
+    selectEl.dispatchEvent(new Event('input'));
+  }));
+}
+function paintTabs(tabsSel, active, counts) {
+  $$(tabsSel + ' [data-tab]').forEach(b => {
+    const on = b.dataset.tab === active;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', String(on));
+    const n = counts[b.dataset.tab];
+    b.querySelector('span').textContent = n == null ? '' : fmtN(n);
+  });
+}
+function jumpToTab(tabsSel, selectEl, tab) {
+  selectEl.value = tab;
+  selectEl.dispatchEvent(new Event('input'));
+  $(tabsSel).scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 const ordSearch = $('#ordSearch');
 const ordFilter = $('#ordFilter');
 const ordMonth = $('#ordMonth');
@@ -3085,6 +3109,45 @@ persistFilter(ordDay, ORD_DAY_KEY);
 persistFilter(ordSort, 'lumen.orders.sort');
 [ordSearch, ordFilter, ordMonth, ordDay, ordSort].forEach(el => el.addEventListener('input', renderOrders));
 $('#ordReset').addEventListener('click', () => resetFilters([ordSearch, ordFilter, ordMonth, ordDay, ordSort]));
+wireTabs('#ordTabs', ordFilter);
+$('#ordExportBtn').addEventListener('click', () => exportOrdersCSV());
+$('#ordKpiUnpaidBtn').addEventListener('click', () => jumpToTab('#ordTabs', ordFilter, 'unpaid'));
+$('#ordKpiFulfillBtn').addEventListener('click', () => jumpToTab('#ordTabs', ordFilter, 'undelivered'));
+
+// Tab predicates — the same rules the filter below applies.
+const ORD_TABS = {
+  open: (o) => !(o.paid && o.delivered),
+  unpaid: (o) => !o.paid,
+  partial: (o) => orderIsPartiallyPaid(o),
+  undelivered: (o) => !o.delivered,
+  delivered: (o) => o.delivered,
+};
+
+// Overview cards — always the whole order book, regardless of filters.
+function renderOrderMetrics() {
+  const all = state.orders;
+  const mk = monthKey(todayISO());
+  const month = all.filter(o => monthKey(o.date) === mk);
+  const monthRev = month.reduce((s, o) => s + orderPaidRevenue(o), 0);
+  const monthProfit = month.reduce((s, o) => s + orderPaidProfit(o), 0);
+  const owing = all.filter(o => orderBalance(o) > 0.005);
+  const owed = owing.reduce((s, o) => s + orderBalance(o), 0);
+  const toFulfill = all.filter(o => o.paid && !o.delivered);
+  const recent = all.filter(o => { const d = daysSince(o.date); return d >= 0 && d <= 30 && orderHasLandedProfit(o); });
+  const avg = recent.length ? recent.reduce((s, o) => s + orderTotal(o), 0) / recent.length : 0;
+  const open = all.filter(ORD_TABS.open).length;
+  $('#ordSub').textContent = `${fmtN(all.length)} orders · ${fmtN(open)} open`;
+  $('#ordKpiMonth').textContent = fmt$(round2(monthRev));
+  $('#ordKpiMonthSub').textContent = `${fmtN(month.length)} orders · ${fmt$(round2(monthProfit))} profit`;
+  $('#ordKpiUnpaid').textContent = fmt$(round2(owed));
+  $('#ordKpiUnpaidSub').textContent = owing.length ? `${fmtN(owing.length)} order${owing.length === 1 ? '' : 's'} with a balance` : 'Everything is paid';
+  $('#ordKpiUnpaidBtn').classList.toggle('is-clear', owing.length === 0);
+  $('#ordKpiFulfill').textContent = fmtN(toFulfill.length);
+  $('#ordKpiFulfillSub').textContent = toFulfill.length ? 'Paid, waiting to go out' : 'Nothing waiting';
+  $('#ordKpiFulfillBtn').classList.toggle('is-clear', toFulfill.length === 0);
+  $('#ordKpiAvg').textContent = fmt$(avg);
+  $('#ordKpiAvgSub').textContent = `Last 30 days · ${fmtN(recent.length)} paid orders`;
+}
 
 $('#addOrderBtn').addEventListener('click', () => orderModal());
 
@@ -3143,6 +3206,11 @@ function renderOrders() {
   }
   if (mo !== 'all') rows = rows.filter(o => monthKey(o.date) === mo);
   if (dy !== 'all') rows = rows.filter(o => o.date === dy);
+  renderOrderMetrics();
+  const ordCounts = { all: rows.length };
+  for (const [k, fn] of Object.entries(ORD_TABS)) ordCounts[k] = rows.filter(fn).length;
+  paintTabs('#ordTabs', ORD_TABS[f] || f === 'all' ? f : 'all', ordCounts);
+  if (f === 'open') rows = rows.filter(ORD_TABS.open);
   if (f === 'unpaid') rows = rows.filter(o => !o.paid);
   if (f === 'partial') rows = rows.filter(o => orderIsPartiallyPaid(o));
   if (f === 'paid') rows = rows.filter(o => o.paid);
@@ -5633,7 +5701,6 @@ wireSearchClear(shipSearch);
 const SHIP_FILTERS = [shipSearch, shipFilter, shipSort, shipCategory, shipVendor, shipMonth];
 SHIP_FILTERS.forEach(el => el.addEventListener('input', renderShipments));
 const SHIP_CHIP_FIELDS = [
-  { el: shipFilter, label: 'Status' },
   { el: shipCategory, label: 'Category' },
   { el: shipVendor, label: 'Vendor' },
   { el: shipMonth, label: 'Month' },
@@ -5642,6 +5709,7 @@ $('#shipFilterBtn').addEventListener('click', (e) =>
   openFilterPanel(e.currentTarget, 'shipFilterFields', () => resetFilters(SHIP_FILTERS)));
 $('#addShipBtn').addEventListener('click', () => shipModal());
 $('#shipExportBtn')?.addEventListener('click', () => exportShipmentsCSV());
+wireTabs('#shipTabs', shipFilter);
 
 // ---------- Shipment status, aging, and tracking ----------
 // A pending shipment gets louder the longer it sits. Thresholds are generous
@@ -5911,15 +5979,22 @@ function renderShipments() {
     shipDir * ((a.dateOrdered || '').localeCompare(b.dateOrdered || ''))
   );
   if (q) rows = rows.filter(s => [s.vendor, s.product, s.tracking].join(' ').toLowerCase().includes(q));
-  if (f === 'pending') rows = rows.filter(s => !s.delivered);
-  if (f === 'delivered') rows = rows.filter(s => s.delivered);
-  if (f === 'overdue') rows = rows.filter(s => shipmentStatus(s).key === 'overdue');
   const cat = shipCategory.value || 'all';
   if (cat !== 'all') rows = rows.filter(s => shipmentCategory(s) === cat);
   const vend = shipVendor.value || 'all';
   if (vend !== 'all') rows = rows.filter(s => (s.vendor || '').trim() === vend);
   const mo = shipMonth.value || 'all';
   if (mo !== 'all') rows = rows.filter(s => monthKey(s.dateOrdered) === mo);
+  // Status tabs count within the other filters, then the chosen tab applies.
+  const SHIP_TABS = {
+    pending: (s) => !s.delivered,
+    overdue: (s) => shipmentStatus(s).key === 'overdue',
+    delivered: (s) => s.delivered,
+  };
+  const shipCounts = { all: rows.length };
+  for (const [k, fn] of Object.entries(SHIP_TABS)) shipCounts[k] = rows.filter(fn).length;
+  paintTabs('#shipTabs', SHIP_TABS[f] ? f : 'all', shipCounts);
+  if (SHIP_TABS[f]) rows = rows.filter(SHIP_TABS[f]);
 
   // Group by vendor + date + tracking — same vendor/day OR same tracking number
   // collapses into one row with a dropdown. Re-sort the groups to honor the
@@ -6060,24 +6135,24 @@ function renderShipSummary(rows) {
 
   el.innerHTML = `
     <div class="exp-stat ship-stat-transit">
-      <div class="exp-stat-label">In Transit</div>
+      <div class="exp-stat-label">In transit</div>
       <div class="exp-stat-value">${fmtN(pending.length)}</div>
       <div class="exp-stat-note">${oldest != null ? `Oldest ${oldest}d out` : 'Nothing outstanding'}</div>
     </div>
     <div class="exp-stat ship-stat-late${overdue.length ? '' : ' is-empty'}">
-      <div class="exp-stat-label">Needs Chasing</div>
+      <div class="exp-stat-label">Needs chasing</div>
       <div class="exp-stat-value">${fmtN(overdue.length)}</div>
       <div class="exp-stat-note">${aging.length
         ? `${aging.length} more aging past ${SHIP_AGING_DAYS}d`
         : `Overdue past ${SHIP_OVERDUE_DAYS}d`}</div>
     </div>
     <div class="exp-stat ship-stat-items">
-      <div class="exp-stat-label">Items Incoming</div>
+      <div class="exp-stat-label">Items incoming</div>
       <div class="exp-stat-value">${fmtN(pendingItems)}</div>
       <div class="exp-stat-note">Not yet counted in inventory</div>
     </div>
     <div class="exp-stat ship-stat-avg">
-      <div class="exp-stat-label">Avg Transit</div>
+      <div class="exp-stat-label">Avg transit</div>
       <div class="exp-stat-value">${avg == null ? '—' : `${avg.toFixed(1)}d`}</div>
       <div class="exp-stat-note">${avg == null
         ? 'No received dates recorded yet'
@@ -6882,12 +6957,12 @@ const EXP_CHIP_FIELDS = [
   { el: expCategory, label: 'Category' },
   { el: expMonth, label: 'Month' },
   { el: expDay, label: 'Day' },
-  { el: expFunding, label: 'Funding' },
 ];
 $('#expFilterBtn').addEventListener('click', (e) =>
   openFilterPanel(e.currentTarget, 'expFilterFields', () => resetFilters(EXP_FILTERS)));
 $('#addExpBtn').addEventListener('click', () => expModal());
 $('#expExportBtn')?.addEventListener('click', () => exportExpensesCSV());
+wireTabs('#expTabs', expFunding);
 
 function expenseItems(e) { return Array.isArray(e.items) ? e.items : []; }
 function expenseCost(e) {
@@ -7004,6 +7079,11 @@ function renderExpenses() {
   const cat = expCategory.value || 'all';
   if (cat !== 'all') rows = rows.filter(e => expenseCategory(e) === cat);
   const funding = expFunding.value || 'all';
+  paintTabs('#expTabs', ['operating', 'capital'].includes(funding) ? funding : 'all', {
+    all: rows.length,
+    operating: rows.filter(e => !expenseExcluded(e)).length,
+    capital: rows.filter(e => expenseExcluded(e)).length,
+  });
   if (funding === 'operating') rows = rows.filter(e => !expenseExcluded(e));
   else if (funding === 'capital') rows = rows.filter(e => expenseExcluded(e));
 
@@ -7084,19 +7164,19 @@ function renderExpenseSummary(rows, opex, capex) {
   const share = total > 0 ? Math.round((capex / total) * 100) : 0;
   el.innerHTML = `
     <div class="exp-stat exp-stat-op">
-      <div class="exp-stat-label">Operating Expenses</div>
+      <div class="exp-stat-label">Operating expenses</div>
       <div class="exp-stat-value">${fmt$(opex)}</div>
       <div class="exp-stat-note">Deducted from Net Profit</div>
     </div>
     <div class="exp-stat exp-stat-cap${capex > 0 ? '' : ' is-empty'}">
-      <div class="exp-stat-label">Capital &amp; Owner-Funded</div>
+      <div class="exp-stat-label">Capital &amp; owner-funded</div>
       <div class="exp-stat-value">${fmt$(capex)}</div>
       <div class="exp-stat-note">${capCount
         ? `${capCount} purchase${capCount === 1 ? '' : 's'} · ${share}% of outlay`
         : 'Nothing flagged yet'}</div>
     </div>
     <div class="exp-stat exp-stat-total">
-      <div class="exp-stat-label">Total Outlay</div>
+      <div class="exp-stat-label">Total outlay</div>
       <div class="exp-stat-value">${fmt$(total)}</div>
       <div class="exp-stat-note">Every dollar spent, however funded</div>
     </div>`;

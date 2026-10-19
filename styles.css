@@ -7152,3 +7152,83 @@ a.inv-btn { text-decoration: none; }
 @media (max-width: 640px) {
   .cust-grid th:nth-child(4), .cust-grid td:nth-child(4) { display: table-cell; width: 96px; text-align: right; }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   ORDERS · SHIPMENTS · EXPENSES — same panel layout as Inventory
+   The existing tables (grouped rows, toggles, expandable details)
+   now sit inside .inv-panel under status tabs.
+   ═══════════════════════════════════════════════════════════════ */
+.inv-metric-blue .inv-metric-label::before { background: var(--i-blue); box-shadow: 0 0 0 3px rgba(124, 180, 255, 0.15); }
+.inv-metric-blue .inv-metric-value { color: var(--i-blue); }
+.inv-metric-blue:hover { border-color: rgba(124, 180, 255, 0.35); }
+
+/* Filter bar inside the panel */
+.inv-toolbar.filterbar { margin-bottom: 0; }
+.inv-panel .filter-btn { flex: none; }
+.inv-panel .filter-btn svg { width: 15px; height: 15px; }
+.inv-panel .filter-count { background: #22c55e; color: #04130a; font-size: 11px; font-weight: 700; }
+.inv-panel .filter-chips { margin: 0; padding: 10px 12px; border-bottom: 1px solid var(--i-line); }
+.inv-panel .filter-chips[hidden] { display: none; }
+
+/* Tables inside the panel: hairline grid, Inter, roomy rows */
+.inv-panel > .table { margin: 0; width: 100%; }
+.inv-panel > .table th {
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.015);
+  border-bottom: 1px solid var(--i-line);
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--i-ink-3);
+  white-space: nowrap;
+}
+.inv-panel > .table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--i-line);
+  font-size: 13.5px;
+  vertical-align: middle;
+}
+.inv-panel > .table th:first-child, .inv-panel > .table td:first-child { padding-left: 16px; }
+.inv-panel > .table th:last-child, .inv-panel > .table td:last-child { padding-right: 16px; }
+.inv-panel > .table tbody tr:last-child td { border-bottom: 1px solid var(--i-line); }
+.inv-panel > .table tfoot td {
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.015);
+  border-top: none;
+  border-bottom: none;
+  font-size: 13px;
+  color: var(--i-ink-2);
+}
+.inv-panel > .table tfoot td:first-child { padding-left: 16px; }
+.inv-panel { overflow-x: auto; }
+
+/* Item / product pills read as quiet chips */
+.inv-panel .item-pill {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--i-line-2);
+  color: var(--i-ink);
+  font-size: 12.5px;
+  padding: 3px 9px;
+}
+.inv-panel .grp-badge {
+  background: rgba(74, 222, 128, 0.1);
+  border: none;
+  color: var(--i-green);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 9px;
+}
+.inv-panel .chevron { color: var(--i-ink-3); }
+
+/* Expanded child rows */
+.inv-panel .child-row > td, .inv-panel .child-cell { background: rgba(255, 255, 255, 0.025); }
+
+@media (max-width: 640px) {
+  .inv-panel > .table th, .inv-panel > .table td { padding-left: 8px; padding-right: 8px; }
+  .inv-panel > .table th:first-child, .inv-panel > .table td:first-child { padding-left: 10px; }
+  .inv-panel > .table tfoot td:first-child { padding-left: 10px; }
+  .ord-page .inv-toolbar { flex-wrap: wrap; }
+  .ord-page .inv-toolbar select { flex: 1 1 calc(50% - 4px); min-width: 0; }
+  .ord-page .inv-toolbar #ordReset { display: none; }
+  .inv-toolbar.filterbar { flex-wrap: nowrap; }
+  .inv-toolbar.filterbar .inv-search { flex: 1 1 auto; }
+}
