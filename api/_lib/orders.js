@@ -75,9 +75,18 @@ function buildItems(wo, stock) {
   }).filter(it => it.qty > 0);
 }
 
+// What the tracker counts as paid for an order: the Woo total minus shipping.
+// Shipping is a pass-through cost, not revenue or profit, so web orders are
+// imported without it (it's noted on the order instead).
+function wooAmountDue(wo) {
+  return round2((Number(wo.total) || 0) - (Number(wo.shipping_total) || 0));
+}
+
 function buildNotes(wo) {
   const parts = [`Web order #${wo.number || wo.id}`];
   if (wo.payment_method_title) parts.push(wo.payment_method_title);
+  const ship = Number(wo.shipping_total) || 0;
+  if (ship > 0) parts.push(`shipping $${ship.toFixed(2)} charged (not counted)`);
   const tax = Number(wo.total_tax) || 0;
   if (tax > 0) parts.push(`tax $${tax.toFixed(2)}`);
   const fees = (wo.fee_lines || []).reduce((s, f) => s + (Number(f.total) || 0), 0);
@@ -246,10 +255,10 @@ export async function processWooOrder(wo) {
       paid,
       delivered: DONE.has(status),
       items: buildItems(wo, stock),
-      payments: paid ? [wooPayment(wo, wo.total)] : [],
+      payments: paid ? [wooPayment(wo, wooAmountDue(wo))] : [],
       discount: Number(wo.discount_total) > 0 ? { type: 'amount', value: round2(wo.discount_total) } : null,
       notes: buildNotes(wo),
-      shipping: round2(wo.shipping_total),
+      shipping: 0,
       inventory_applied: false,
       source: 'woo',
       woo_status: status,
@@ -264,7 +273,7 @@ export async function processWooOrder(wo) {
     if (paid && !existing.paid) {
       const payments = Array.isArray(existing.payments) ? existing.payments : [];
       const have = payments.reduce((s, p) => s + (Number(p && p.amount) || 0), 0);
-      const balance = round2((Number(wo.total) || 0) - have);
+      const balance = round2(wooAmountDue(wo) - have);
       patch.payments = balance > 0.005 ? [...payments, wooPayment(wo, balance)] : payments;
       patch.paid = true;
     }
