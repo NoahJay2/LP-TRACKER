@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-10-19.10';
+const BUILD_VERSION = '2026-10-19.11';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -1654,6 +1654,7 @@ function closeModal() {
   // Reset any read-only popup styling so the next regular modal opens with the
   // standard Save/Cancel button setup.
   modal.classList.remove('modal-readonly');
+  modal.classList.remove('modal-wide');
   $('#modalCancel').textContent = 'Cancel';
   modalOnSave = null;
   unlockBodyScroll();
@@ -4174,28 +4175,115 @@ function orderModal(existing, draft) {
 //   pendingCount = orders that are NOT (paid AND delivered) — covers both
 //     unpaid orders AND paid-but-undelivered orders so the Pending filter
 //     surfaces every customer who has anything still in flight.
-function customerStats(c) {
-  const orders = state.orders.filter(o => customerKey(o.customer) === customerKey(c.name));
-  const orderCount = orders.length;
-  const lifetimeRev = orders.reduce((s, o) => s + orderTotal(o), 0);
-  const paid = orders.reduce((s, o) => s + orderPaidRevenue(o), 0);
-  const owed = orders.reduce((s, o) => s + orderBalance(o), 0);
-  const lifetimeProfit = orders.reduce((s, o) => s + orderPaidProfit(o), 0);
-  const pendingCount = orders.filter(o => !(o.paid && o.delivered)).length;
-  const lastDate = orders.reduce((d, o) => (o.date && (!d || o.date > d)) ? o.date : d, '');
-  return { orders, orderCount, lifetimeRev, paid, owed, lifetimeProfit, pendingCount, lastDate };
-}
-
 const custSearch = $('#custSearch');
-const custFilter = $('#custFilter');
+const custFilter = $('#custFilter');      // hidden; driven by the segment tabs
 const custSort = $('#custSort');
 persistFilter(custSearch, 'lumen.customers.search');
 persistFilter(custFilter, 'lumen.customers.filter');
 persistFilter(custSort, 'lumen.customers.sort');
 wireSearchClear(custSearch);
-[custSearch, custFilter, custSort].forEach(el => el.addEventListener('input', renderCustomers));
+const CUST_PAGE = 50;
+let custLimit = CUST_PAGE;
+[custSearch, custFilter, custSort].forEach(el => el.addEventListener('input', () => { custLimit = CUST_PAGE; renderCustomers(); }));
 $('#custReset').addEventListener('click', () => resetFilters([custSearch, custFilter, custSort]));
 $('#addCustomerBtn').addEventListener('click', () => customerModal());
+$('#custExportBtn').addEventListener('click', () => exportCustomersCSV());
+$('#custMoreBtn').addEventListener('click', () => { custLimit += CUST_PAGE; renderCustomers(); });
+const setCustTab = (tab) => { custFilter.value = tab; custFilter.dispatchEvent(new Event('input')); };
+$$('#custTabs [data-tab]').forEach(b => b.addEventListener('click', () => setCustTab(b.dataset.tab)));
+$('#custKpiOwedBtn').addEventListener('click', () => {
+  setCustTab('owes');
+  $('#custTabs').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+
+// Customers who've gone quiet: they've ordered before, but not in this long.
+const CUST_LAPSED_DAYS = 60;
+const CUST_SEGMENTS = {
+  owes: (c) => c.owed > 0.005,
+  repeat: (c) => c.orderCount >= 2,
+  new: (c) => !!c.firstDate && monthKey(c.firstDate) === monthKey(todayISO()),
+  lapsed: (c) => c.orderCount > 0 && daysSince(c.lastDate) >= CUST_LAPSED_DAYS,
+};
+const CUST_SORTS = {
+  recent: (a, b) => (b.lastDate || '').localeCompare(a.lastDate || ''),
+  lifetime: (a, b) => b.lifetimeRev - a.lifetimeRev,
+  orders: (a, b) => b.orderCount - a.orderCount || b.lifetimeRev - a.lifetimeRev,
+  owed: (a, b) => b.owed - a.owed || b.pendingCount - a.pendingCount,
+  name: (a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }),
+};
+
+function daysSince(iso) {
+  if (!iso) return Infinity;
+  const then = new Date(iso + 'T00:00:00');
+  const now = new Date(todayISO() + 'T00:00:00');
+  return Math.round((now - then) / 86400000);
+}
+function relativeDay(iso) {
+  const d = daysSince(iso);
+  if (!Number.isFinite(d)) return '—';
+  // Orders can be dated ahead (scheduled drop-offs).
+  if (d === -1) return 'Tomorrow';
+  if (d < 0) return `In ${-d} days`;
+  if (d === 0) return 'Today';
+  if (d === 1) return 'Yesterday';
+  if (d < 30) return `${d} days ago`;
+  if (d < 365) { const m = Math.round(d / 30); return `${m} month${m === 1 ? '' : 's'} ago`; }
+  const y = Math.round(d / 365);
+  return `${y} year${y === 1 ? '' : 's'} ago`;
+}
+// US numbers display as (726) 250-9833; anything else is shown as entered.
+function formatPhone(raw) {
+  const d = String(raw || '').replace(/\D/g, '');
+  const ten = d.length === 11 && d[0] === '1' ? d.slice(1) : d;
+  return ten.length === 10 ? `(${ten.slice(0, 3)}) ${ten.slice(3, 6)}-${ten.slice(6)}` : String(raw || '');
+}
+// Initials avatar with a stable color per name.
+const AVATAR_HUES = [199, 152, 262, 32, 340, 172, 222, 12];
+function customerInitials(name) {
+  const parts = String(name || '?').replace(/\(.*?\)/g, '').trim().split(/\s+/).filter(Boolean);
+  const first = parts[0] || '?';
+  const last = parts.length > 1 ? parts[parts.length - 1] : '';
+  return (first.charAt(0) + (last ? last.charAt(0) : '')).toUpperCase();
+}
+function customerAvatar(name, cls = 'cust-avatar') {
+  let h = 0;
+  for (const ch of String(name || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const hue = AVATAR_HUES[h % AVATAR_HUES.length];
+  return `<span class="${cls}" style="--hue:${hue}" aria-hidden="true">${escapeHtml(customerInitials(name))}</span>`;
+}
+
+// Stats for every customer in one pass over the orders (the list renders a
+// couple hundred customers, so avoid re-scanning every order per customer).
+function allCustomerStats() {
+  const byKey = new Map();
+  for (const o of state.orders) {
+    const k = customerKey(o.customer);
+    if (!byKey.has(k)) byKey.set(k, []);
+    byKey.get(k).push(o);
+  }
+  return state.customers.map(c => ({ ...c, ...statsFromOrders(byKey.get(customerKey(c.name)) || []) }));
+}
+function statsFromOrders(orders) {
+  let lifetimeRev = 0, paid = 0, owed = 0, lifetimeProfit = 0, pendingCount = 0, openOwed = 0;
+  let lastDate = '', firstDate = '', web = false;
+  for (const o of orders) {
+    lifetimeRev += orderTotal(o);
+    paid += orderPaidRevenue(o);
+    const bal = orderBalance(o);
+    owed += bal;
+    if (bal > 0.005) openOwed++;
+    lifetimeProfit += orderPaidProfit(o);
+    if (!(o.paid && o.delivered)) pendingCount++;
+    if (o.date && (!lastDate || o.date > lastDate)) lastDate = o.date;
+    if (o.date && (!firstDate || o.date < firstDate)) firstDate = o.date;
+    if (o.source === 'woo') web = true;
+  }
+  return { orders, orderCount: orders.length, lifetimeRev, paid, owed, openOwed, lifetimeProfit, pendingCount, lastDate, firstDate, web };
+}
+// Single-customer version, used by the profile.
+function customerStats(c) {
+  return statsFromOrders(state.orders.filter(o => customerKey(o.customer) === customerKey(c.name)));
+}
 
 function renderCustomers() {
   // Make sure every order has a matching profile so the user can always click
@@ -4208,85 +4296,117 @@ function renderCustomers() {
     if (sb) cloudUpsertMany('customers', state.customers.slice(before));
   }
 
+  const all = allCustomerStats();
+  renderCustomerMetrics(all);
+
   const q = (custSearch.value || '').toLowerCase().trim();
-  const filterKey = custFilter.value || 'all';
-  const sortKey = custSort.value || 'recent';
-  let rows = state.customers
-    .map(c => ({ ...c, ...customerStats(c) }))
-    .filter(c => {
-      // Pending = anything not yet (paid AND delivered) — includes both
-      // unpaid orders and paid-but-undelivered orders so the customer still
-      // surfaces while there's work to do.
-      if (filterKey === 'pending' && c.pendingCount === 0) return false;
-      if (!q) return true;
-      return [c.name, c.phone, c.email].some(v => (v || '').toLowerCase().includes(q));
-    });
-
-  if (sortKey === 'name') {
-    rows.sort((a, b) => (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase()));
-  } else if (sortKey === 'lifetime') {
-    rows.sort((a, b) => b.lifetimeRev - a.lifetimeRev);
-  } else if (sortKey === 'owed') {
-    // Pending Orders sort — customers with more incomplete orders bubble up;
-    // tiebreaker is the unpaid balance so the biggest debts surface first.
-    rows.sort((a, b) => (b.pendingCount - a.pendingCount) || (b.owed - a.owed));
-  } else {
-    // recent: most recent activity first; customers with no orders sink to the bottom.
-    rows.sort((a, b) => (b.lastDate || '').localeCompare(a.lastDate || ''));
-  }
-
-  // KPI tiles — totals across every customer (not the filtered view) so they
-  // stay stable while you scrub through filters / search.
-  const totals = state.customers.reduce((acc, c) => {
-    const s = customerStats(c);
-    acc.rev += s.lifetimeRev; acc.profit += s.lifetimeProfit; acc.owed += s.owed;
-    return acc;
-  }, { rev: 0, profit: 0, owed: 0 });
-  $('#custKpiCount').textContent = fmtN(state.customers.length);
-  $('#custKpiRevenue').textContent = fmt$(round2(totals.rev));
-  $('#custKpiProfit').textContent = fmt$(round2(totals.profit));
-  $('#custKpiOwed').textContent = fmt$(round2(totals.owed));
+  const base = q ? all.filter(c => [c.name, c.phone, c.email].some(v => (v || '').toLowerCase().includes(q))) : all;
+  const tab = CUST_SEGMENTS[custFilter.value] ? custFilter.value : 'all';
+  $$('#custTabs [data-tab]').forEach(b => {
+    const key = b.dataset.tab;
+    const on = key === tab;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', String(on));
+    b.querySelector('span').textContent = fmtN(key === 'all' ? base.length : base.filter(CUST_SEGMENTS[key]).length);
+  });
+  const rows = (tab === 'all' ? base : base.filter(CUST_SEGMENTS[tab]))
+    .sort(CUST_SORTS[custSort.value] || CUST_SORTS.recent);
 
   const body = $('#customersBody');
-  body.innerHTML = rows.length
-    ? rows.map(c => {
-        const last = c.lastDate ? fmtDateShort(c.lastDate) : '<span class="muted">—</span>';
-        const paidCell = c.paid > 0.005
-          ? `<b class="cust-paid">${fmt$(round2(c.paid))}</b>`
-          : `<span class="muted">—</span>`;
-        // Pending column dollar value = outstanding balance owed. Customers
-        // who only have paid-but-undelivered orders show "—" here (they owe
-        // nothing) but still surface in the Pending filter via pendingCount.
-        const pendingCell = c.owed > 0.005
-          ? `<b class="cust-owed">${fmt$(round2(c.owed))}</b>`
-          : `<span class="muted">—</span>`;
-        return `<tr data-edit-customer="${c.id}">
-          <td><b>${escapeHtml(c.name)}</b>${c.notes ? `<span class="customer-sub">${escapeHtml((c.notes || '').slice(0, 40))}${c.notes.length > 40 ? '…' : ''}</span>` : ''}</td>
-          <td class="num">${fmtN(c.orderCount)}</td>
-          <td class="num">${fmt$(round2(c.lifetimeRev))}</td>
-          <td class="num">${paidCell}</td>
-          <td class="num">${pendingCell}</td>
-          <td>${last}</td>
-          <td style="white-space:nowrap;text-align:right;"><button class="icon-btn" data-edit-customer-btn="${c.id}" title="Edit">✎</button></td>
-        </tr>`;
-      }).join('')
-    : `<tr><td colspan="7" class="muted" style="padding:24px;text-align:center;">No customers match.</td></tr>`;
+  const more = $('#custMore');
+  if (!rows.length) {
+    const filtered = q || tab !== 'all';
+    body.innerHTML = `<tr class="inv-empty"><td colspan="6">
+      <div class="inv-empty-box">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5" /><path d="M3 20a6 6 0 0 1 12 0" /><path d="M16 4.5a3.5 3.5 0 0 1 0 7M21 20a6 6 0 0 0-3.5-5.5" /></svg>
+        <b>${filtered ? 'No customers match' : 'No customers yet'}</b>
+        <span>${filtered ? 'Try a different search or tab.' : 'Customers appear here as you record orders.'}</span>
+        ${filtered ? '<button type="button" class="inv-btn" data-cust-clear>Clear filters</button>' : ''}
+      </div></td></tr>`;
+    body.querySelector('[data-cust-clear]')?.addEventListener('click', () => $('#custReset').click());
+    more.hidden = true;
+    return;
+  }
 
-  // Tap anywhere on the row OR the pencil to open the profile. Keep both
-  // hooks since tapping the pencil should not bubble row-level click handlers.
-  body.querySelectorAll('[data-edit-customer-btn]').forEach(el => {
-    el.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const c = state.customers.find(x => x.id === el.dataset.editCustomerBtn);
+  const shown = rows.slice(0, custLimit);
+  body.innerHTML = shown.map(c => {
+    const contact = [formatPhone(c.phone), c.email].filter(Boolean).map(escapeHtml).join('<i>·</i>');
+    const avg = c.orderCount ? c.lifetimeRev / c.orderCount : 0;
+    const balance = c.owed > 0.005
+      ? `<div class="cust-due">${fmt$(round2(c.owed))}</div><div class="inv-price-sub">${c.openOwed} open order${c.openOwed === 1 ? '' : 's'}</div>`
+      : c.pendingCount
+        ? `<div class="cust-clear">Paid</div><div class="inv-price-sub">${c.pendingCount} to fulfill</div>`
+        : `<div class="cust-clear">—</div>`;
+    const lapsed = c.orderCount > 0 && daysSince(c.lastDate) >= CUST_LAPSED_DAYS;
+    return `<tr class="inv-r" data-open-customer="${c.id}" tabindex="0">
+      <td>
+        <div class="inv-prod">
+          ${customerAvatar(c.name)}
+          <div class="inv-prod-text">
+            <div class="inv-prod-name">${escapeHtml(c.name)}${c.web ? ' <span class="web-tag" title="Has ordered on the website">Web</span>' : ''}</div>
+            <div class="inv-prod-meta">${contact || '<span class="cust-nocontact">No contact info</span>'}</div>
+          </div>
+        </div>
+      </td>
+      <td class="num">
+        <div class="inv-price">${fmtN(c.orderCount)}</div>
+        ${c.orderCount ? `<div class="inv-price-sub">${fmt$(avg)} avg</div>` : ''}
+      </td>
+      <td class="num">
+        <div class="inv-price">${fmt$(round2(c.lifetimeRev))}</div>
+        <div class="inv-price-sub">${fmt$(round2(c.lifetimeProfit))} profit</div>
+      </td>
+      <td class="num">${balance}</td>
+      <td>
+        <div class="cust-last${lapsed ? ' is-lapsed' : ''}">${c.lastDate ? relativeDay(c.lastDate) : '—'}</div>
+        ${c.lastDate ? `<div class="inv-price-sub">${fmtDateLong(c.lastDate)}</div>` : ''}
+      </td>
+      <td class="inv-col-caret"><span class="inv-chev">${INV_CHEVRON}</span></td>
+    </tr>`;
+  }).join('');
+  more.hidden = rows.length <= shown.length;
+  $('#custMoreBtn').textContent = `Show more (${fmtN(rows.length - shown.length)} left)`;
+
+  body.querySelectorAll('[data-open-customer]').forEach(row => {
+    const open = () => {
+      const c = state.customers.find(x => x.id === row.dataset.openCustomer);
       if (c) customerModal(c);
-    });
+    };
+    row.addEventListener('click', open);
+    row.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
   });
-  body.querySelectorAll('[data-edit-customer]').forEach(el => {
-    el.addEventListener('click', () => {
-      const c = state.customers.find(x => x.id === el.dataset.editCustomer);
-      if (c) customerModal(c);
-    });
-  });
+}
+
+// Overview cards — always across every customer, independent of filters.
+function renderCustomerMetrics(all) {
+  const buyers = all.filter(c => c.orderCount > 0);
+  const rev = all.reduce((s, c) => s + c.lifetimeRev, 0);
+  const owed = all.reduce((s, c) => s + c.owed, 0);
+  const owing = all.filter(CUST_SEGMENTS.owes).length;
+  const repeat = all.filter(CUST_SEGMENTS.repeat).length;
+  const fresh = all.filter(CUST_SEGMENTS.new).length;
+  const active30 = all.filter(c => daysSince(c.lastDate) <= 30).length;
+  $('#custSub').textContent = `${fmtN(all.length)} customers · ${fmtN(active30)} ordered in the last 30 days`;
+  $('#custKpiCount').textContent = fmtN(all.length);
+  $('#custKpiCountSub').textContent = `${fmtN(fresh)} new this month`;
+  $('#custKpiRevenue').textContent = fmt$(round2(rev));
+  $('#custKpiRevenueSub').textContent = `${fmt$(buyers.length ? rev / buyers.length : 0)} avg per customer`;
+  $('#custKpiRepeat').textContent = fmtPct(buyers.length ? repeat / buyers.length * 100 : 0);
+  $('#custKpiRepeatSub').textContent = `${fmtN(repeat)} of ${fmtN(buyers.length)} ordered again`;
+  $('#custKpiOwed').textContent = fmt$(round2(owed));
+  $('#custKpiOwedSub').textContent = owing ? `${fmtN(owing)} customer${owing === 1 ? ' owes' : 's owe'}` : 'Everyone is paid up';
+  $('#custKpiOwedBtn').classList.toggle('is-clear', owing === 0);
+}
+
+function exportCustomersCSV() {
+  const headers = ['Name', 'Phone', 'Email', 'Address', 'Orders', 'Lifetime', 'Paid', 'Owed', 'Profit', 'First order', 'Last order', 'Notes'];
+  const rows = allCustomerStats()
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+    .map(c => [c.name || '', c.phone || '', c.email || '', c.address || '', c.orderCount,
+      round2(c.lifetimeRev), round2(c.paid), round2(c.owed), round2(c.lifetimeProfit),
+      c.firstDate || '', c.lastDate || '', c.notes || '']);
+  downloadBlob(`lumen-customers-${todayISO()}.csv`, toCSV(headers, rows), 'text/csv;charset=utf-8');
+  toast(`Exported ${rows.length} customer${rows.length === 1 ? '' : 's'}.`);
 }
 
 function customerModal(existing) {
@@ -4295,61 +4415,95 @@ function customerModal(existing) {
     ? { ...existing }
     : { name: '', phone: '', email: '', address: '', notes: '' };
 
-  $('#modalTitle').textContent = isNew ? 'New Customer' : 'Customer Profile';
+  $('#modalTitle').textContent = isNew ? 'New customer' : 'Customer';
+  modal.classList.toggle('modal-wide', !isNew);
   const form = $('#modalForm');
-  const stats = existing ? customerStats(existing) : { orders: [], orderCount: 0, lifetimeRev: 0, lifetimeProfit: 0, owed: 0, lastDate: '' };
+  const stats = existing ? customerStats(existing) : null;
 
-  form.innerHTML = `
+  const fields = `
     <label><span class="req">Name</span><input type="text" name="name" required value="${escapeHtml(initial.name)}" placeholder="Customer name" autocomplete="off" /></label>
     <div class="row-2">
       <label><span>Phone</span><input type="tel" name="phone" value="${escapeHtml(initial.phone)}" placeholder="Optional" inputmode="tel" /></label>
       <label><span>Email</span><input type="email" name="email" value="${escapeHtml(initial.email)}" placeholder="Optional" inputmode="email" /></label>
     </div>
     <label><span>Address</span><input type="text" name="address" value="${escapeHtml(initial.address)}" placeholder="Optional — pickup or delivery info" /></label>
-    <label><span>Notes</span><textarea name="notes" rows="3" placeholder="Anything useful: preferences, allergies, recurring orders, payment quirks…">${escapeHtml(initial.notes || '')}</textarea></label>
-    ${existing ? `
-      <div class="customer-stats">
-        <div class="cust-stat"><span class="cust-stat-label">Orders</span><b>${fmtN(stats.orderCount)}</b></div>
-        <div class="cust-stat"><span class="cust-stat-label">Lifetime Rev</span><b>${fmt$(round2(stats.lifetimeRev))}</b></div>
-        <div class="cust-stat"><span class="cust-stat-label">Lifetime Profit</span><b>${fmt$(round2(stats.lifetimeProfit))}</b></div>
-        <div class="cust-stat${stats.owed > 0.005 ? ' cust-stat-owed' : ''}"><span class="cust-stat-label">Owed Now</span><b>${fmt$(round2(stats.owed))}</b></div>
-      </div>
-      <div class="customer-orders">
-        <div class="customer-orders-head">Order History</div>
-        ${stats.orderCount ? `
-          <div class="customer-orders-list">
-            ${stats.orders.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(o => {
-              const status = orderIsFullyPaid(o)
-                ? `<span class="pill green">Paid</span>`
-                : orderIsPartiallyPaid(o)
-                  ? `<span class="pill partial">Partial · ${fmt$(round2(orderBalance(o)))} due</span>`
-                  : `<span class="pill amber">Unpaid</span>`;
-              const inv = invoiceNumberForOrder(o);
-              const items = orderItems(o).map(it => `${it.product || ''}${Number(it.qty)>0 ? ` ×${fmtN(it.qty)}` : ''}`).filter(Boolean).join(', ');
-              return `<div class="customer-order-row" data-open-order="${o.id}">
-                <div class="cor-head">
-                  <span class="cor-date">${fmtDateShort(o.date)}</span>
-                  <span class="cor-inv muted">${inv}</span>
-                  <span class="cor-status">${status}</span>
-                </div>
-                <div class="cor-items muted">${escapeHtml(items) || '(no items)'}</div>
-                <div class="cor-foot">
-                  <span class="muted">Total</span><b>${fmt$(round2(orderTotal(o)))}</b>
-                  <span class="muted">Profit</span><b>${fmt$(round2(orderProfit(o)))}</b>
-                </div>
-              </div>`;
-            }).join('')}
+    <label><span>Notes</span><textarea name="notes" rows="3" placeholder="Preferences, recurring orders, payment quirks…">${escapeHtml(initial.notes || '')}</textarea></label>`;
+
+  if (isNew) {
+    form.innerHTML = fields;
+  } else {
+    const orders = stats.orders.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const avg = stats.orderCount ? stats.lifetimeRev / stats.orderCount : 0;
+    // Favorite products: most units bought across all their orders.
+    const fav = new Map();
+    orders.forEach(o => orderItems(o).forEach(it => {
+      const name = (it.product || '').trim();
+      if (name) fav.set(name, (fav.get(name) || 0) + (Number(it.qty) || 0));
+    }));
+    const favorites = [...fav.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const tel = (initial.phone || '').replace(/[^\d+]/g, '');
+    const since = stats.firstDate ? `Customer since ${monthName(stats.firstDate)}` : 'No orders yet';
+    const lastLine = stats.lastDate ? ` · last order ${relativeDay(stats.lastDate).toLowerCase()}` : '';
+    const ICON = {
+      text: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H7l-3 2.5v-2.5h0a1.5 1.5 0 0 1-1.5-1.5Z" /></svg>',
+      call: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2.5h2.5l1.2 3-1.5 1a7 7 0 0 0 3.3 3.3l1-1.5 3 1.2V13a1 1 0 0 1-1 1A10.5 10.5 0 0 1 2 3.5a1 1 0 0 1 1-1Z" /></svg>',
+      mail: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3.5" width="12" height="9" rx="1.5" /><path d="m2.5 4.5 5.5 4 5.5-4" /></svg>',
+    };
+    form.innerHTML = `
+      <div class="cp">
+        <div class="cp-head">
+          ${customerAvatar(initial.name, 'cust-avatar cust-avatar-lg')}
+          <div class="cp-id">
+            <div class="cp-name">${escapeHtml(initial.name)}${stats.web ? ' <span class="web-tag">Web</span>' : ''}</div>
+            <div class="cp-since">${since}${lastLine}</div>
           </div>
-        ` : '<div class="muted" style="padding:6px 2px;">No orders yet.</div>'}
-      </div>
-      <button type="button" class="btn danger-outline" id="customerDeleteBtn">Delete Customer</button>
-    ` : ''}
-  `;
+        </div>
+        ${tel || initial.email ? `
+        <div class="cp-actions">
+          ${tel ? `<a class="inv-btn" href="sms:${escapeHtml(tel)}">${ICON.text}Text</a><a class="inv-btn" href="tel:${escapeHtml(tel)}">${ICON.call}Call</a>` : ''}
+          ${initial.email ? `<a class="inv-btn" href="mailto:${escapeHtml(initial.email)}">${ICON.mail}Email</a>` : ''}
+        </div>` : ''}
+        <div class="cp-stats">
+          <div><span>Lifetime</span><b>${fmt$(round2(stats.lifetimeRev))}</b></div>
+          <div><span>Profit</span><b class="inv-pos">${fmt$(round2(stats.lifetimeProfit))}</b></div>
+          <div><span>Orders</span><b>${fmtN(stats.orderCount)}</b></div>
+          <div><span>Avg order</span><b>${fmt$(avg)}</b></div>
+          <div class="${stats.owed > 0.005 ? 'is-owed' : ''}"><span>Owes</span><b>${stats.owed > 0.005 ? fmt$(round2(stats.owed)) : '—'}</b></div>
+        </div>
+        ${favorites.length ? `
+        <div class="cp-section">
+          <div class="cp-section-head">Favorite products</div>
+          <div class="cp-favs">${favorites.map(([n, q]) => `<span class="cp-fav">${escapeHtml(n)}<small>×${fmtN(q)}</small></span>`).join('')}</div>
+        </div>` : ''}
+        <div class="cp-section">
+          <div class="cp-section-head">Orders <span class="muted">${fmtN(stats.orderCount)}</span></div>
+          ${orders.length ? `<div class="cp-orders">${orders.map(o => {
+            const status = orderIsFullyPaid(o)
+              ? (o.delivered ? '<span class="inv-badge inv-badge-in">Complete</span>' : '<span class="inv-badge inv-badge-blue">Paid · to fulfill</span>')
+              : orderIsPartiallyPaid(o)
+                ? `<span class="inv-badge inv-badge-low">${fmt$(round2(orderBalance(o)))} due</span>`
+                : '<span class="inv-badge inv-badge-low">Unpaid</span>';
+            const items = orderItems(o).map(it => `${it.product || ''}${Number(it.qty) > 0 ? ` ×${fmtN(it.qty)}` : ''}`).filter(Boolean).join(', ');
+            return `<button type="button" class="cp-order" data-open-order="${o.id}">
+              <span class="cp-order-date">${fmtDateShort(o.date)}<small>#${escapeHtml(invoiceNumberForOrder(o))}</small></span>
+              <span class="cp-order-items">${escapeHtml(items) || '(no items)'}${o.source === 'woo' ? ' <span class="web-tag">Web</span>' : ''}</span>
+              <span class="cp-order-total">${fmt$(round2(orderTotal(o)))}</span>
+              <span class="cp-order-status">${status}</span>
+            </button>`;
+          }).join('')}</div>` : '<div class="muted">No orders yet.</div>'}
+        </div>
+        <div class="cp-section">
+          <div class="cp-section-head">Contact details</div>
+          ${fields}
+        </div>
+        <button type="button" class="inv-btn inv-btn-danger cp-delete" id="customerDeleteBtn">Delete customer</button>
+      </div>`;
+  }
 
   // Open the order modal when the user taps an order in the history.
   form.querySelectorAll('[data-open-order]').forEach(el => el.addEventListener('click', () => {
     const o = state.orders.find(x => x.id === el.dataset.openOrder);
-    if (o) orderModal(o);
+    if (o) { modal.classList.remove('modal-wide'); orderModal(o); }
   }));
 
   if (existing) {
@@ -4422,7 +4576,9 @@ function customerModal(existing) {
   };
 
   showModal();
-  setTimeout(() => form.querySelector('[name="name"]')?.focus(), 50);
+  // New customers start typing a name; profiles open on the overview instead
+  // of jumping the scroll down to the details form.
+  if (isNew) setTimeout(() => form.querySelector('[name="name"]')?.focus(), 50);
 }
 
 // ---------- INVENTORY ----------

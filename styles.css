@@ -7005,3 +7005,150 @@ button.link:hover, a.link:hover { color: #86efac; }
   overflow: hidden;
 }
 .tm-top-bar i { display: block; height: 100%; border-radius: inherit; background: rgba(56, 189, 248, 0.7); }
+
+/* Shared admin tokens available everywhere (modals included), not just
+   inside .inv-page. */
+:root {
+  --i-panel: #0c0e13;
+  --i-panel-2: #12151c;
+  --i-line: rgba(255, 255, 255, 0.07);
+  --i-line-2: rgba(255, 255, 255, 0.12);
+  --i-ink: #eef0f4;
+  --i-ink-2: #a8aebb;
+  --i-ink-3: #6e7584;
+  --i-green: #4ade80;
+  --i-amber: #fbbf24;
+  --i-red: #f87171;
+  --i-blue: #7cb4ff;
+}
+.inv-badge-blue { background: rgba(124, 180, 255, 0.12); color: var(--i-blue); }
+a.inv-btn { text-decoration: none; }
+.inv-btn svg { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ═══════════════════════════════════════════════════════════════
+   CUSTOMERS
+   ═══════════════════════════════════════════════════════════════ */
+.cust-avatar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: hsl(var(--hue) 70% 55% / 0.14);
+  border: 1px solid hsl(var(--hue) 70% 60% / 0.35);
+  color: hsl(var(--hue) 85% 72%);
+  font-size: 13.5px;
+  font-weight: 650;
+}
+.cust-avatar-lg { width: 52px; height: 52px; font-size: 18px; }
+.cust-grid th:nth-child(2) { width: 100px; }
+.cust-grid th:nth-child(3) { width: 140px; }
+.cust-grid th:nth-child(4) { width: 130px; }
+.cust-grid th:nth-child(5) { width: 160px; }
+.cust-grid .inv-prod-name .web-tag { margin-left: 6px; vertical-align: 1px; }
+.cust-nocontact { font-style: italic; opacity: 0.8; }
+.cust-due { font-size: 14px; font-weight: 600; color: var(--i-amber); font-variant-numeric: tabular-nums; }
+.cust-clear { font-size: 13.5px; color: var(--i-ink-3); }
+.cust-last { font-size: 13.5px; color: var(--i-ink); }
+.cust-last.is-lapsed { color: var(--i-amber); }
+.cust-more { display: flex; justify-content: center; padding: 14px; border-top: 1px solid var(--i-line); }
+
+/* ── Customer profile (modal) ────────────────────────────────── */
+.modal.modal-wide .modal-card { width: min(680px, 94vw); }
+.cp { display: flex; flex-direction: column; gap: 18px; }
+.cp-head { display: flex; align-items: center; gap: 14px; }
+.cp-id { min-width: 0; }
+.cp-name { font-size: 19px; font-weight: 650; color: var(--i-ink); letter-spacing: -0.01em !important; }
+.cp-name .web-tag { vertical-align: 3px; }
+.cp-since { margin-top: 3px; font-size: 13px; color: var(--i-ink-3); }
+.cp-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.cp-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1px;
+  border: 1px solid var(--i-line);
+  border-radius: 12px;
+  background: var(--i-line);
+  overflow: hidden;
+}
+.cp-stats > div { padding: 12px 14px; background: var(--i-panel-2); }
+.cp-stats span { display: block; font-size: 12px; color: var(--i-ink-3); }
+.cp-stats b { display: block; margin-top: 4px; font-size: 17px; font-weight: 650; font-variant-numeric: tabular-nums; color: var(--i-ink); }
+.cp-stats .inv-pos { color: var(--i-green); }
+.cp-stats .is-owed b { color: var(--i-amber); }
+.cp-section { display: flex; flex-direction: column; gap: 10px; }
+.cp-section-head { font-size: 13px; font-weight: 600; color: var(--i-ink-2); }
+.cp-section-head .muted { font-weight: 400; margin-left: 4px; }
+.cp-favs { display: flex; flex-wrap: wrap; gap: 6px; }
+.cp-fav {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--i-line-2);
+  background: var(--i-panel-2);
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--i-ink);
+}
+.cp-fav small { font-size: 11.5px; color: var(--i-ink-3); font-weight: 500; }
+.cp-orders {
+  display: flex;
+  flex-direction: column;
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--i-line);
+  border-radius: 12px;
+}
+.cp-order {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-bottom: 1px solid var(--i-line);
+  background: transparent;
+  color: var(--i-ink);
+  font-family: var(--font-body);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s var(--ease);
+}
+.cp-order:last-child { border-bottom: none; }
+.cp-order:hover { background: rgba(255, 255, 255, 0.03); }
+.cp-order-date { display: flex; flex-direction: column; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cp-order-date small { font-family: var(--font-code); font-size: 10.5px; font-weight: 400; color: var(--i-ink-3); }
+.cp-order-items { color: var(--i-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cp-order-total { font-weight: 600; font-variant-numeric: tabular-nums; }
+.cp-order-status { justify-self: end; }
+.cp-delete { align-self: flex-start; }
+
+@media (max-width: 1100px) {
+  .cust-grid th:nth-child(5), .cust-grid td:nth-child(5) { display: none; }
+}
+@media (max-width: 640px) {
+  .cust-grid th:nth-child(2), .cust-grid td:nth-child(2),
+  .cust-grid th:nth-child(3), .cust-grid td:nth-child(3) { display: none; }
+  .cust-grid th:nth-child(4) { width: 96px; }
+  .cust-avatar { width: 34px; height: 34px; font-size: 12.5px; }
+  .cust-avatar-lg { width: 46px; height: 46px; font-size: 16px; }
+  .cp-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cp-stats > div:last-child { grid-column: 1 / -1; }
+  .cp-actions .inv-btn { flex: 1; }
+  .cp-order { grid-template-columns: 58px minmax(0, 1fr) auto; }
+  .cp-order-status { grid-column: 2 / -1; justify-self: start; }
+}
+/* Customers shares .inv-grid but its column 4 is Balance, which must stay
+   visible at every width (Inventory hides its column 4, Value, when narrow). */
+@media (max-width: 1100px) {
+  .cust-grid th:nth-child(4), .cust-grid td:nth-child(4) { display: table-cell; }
+}
+@media (max-width: 640px) {
+  .cust-grid th:nth-child(4), .cust-grid td:nth-child(4) { display: table-cell; width: 96px; text-align: right; }
+}
