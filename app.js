@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-10-19.15';
+const BUILD_VERSION = '2026-10-19.16';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -7727,8 +7727,31 @@ const isFrom = $('#isFrom');
 const isTo = $('#isTo');
 [isFrom, isTo].forEach(el => el.addEventListener('change', renderIncome));
 $('#isReset').addEventListener('click', () => { isFrom.value = ''; isTo.value = ''; renderIncome(); });
+$('#isExportBtn').addEventListener('click', () => exportIncomeCSV());
 
-function renderIncome() {
+// Period presets fill the From / To dates; any custom range still works.
+const isoOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+function isPresetRange(key) {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  if (key === 'month') return [isoOf(new Date(y, m, 1)), isoOf(new Date(y, m + 1, 0))];
+  if (key === 'last') return [isoOf(new Date(y, m - 1, 1)), isoOf(new Date(y, m, 0))];
+  if (key === 'year') return [isoOf(new Date(y, 0, 1)), isoOf(new Date(y, 11, 31))];
+  return ['', ''];
+}
+$$('.is-presets [data-period]').forEach(b => b.addEventListener('click', () => {
+  [isFrom.value, isTo.value] = isPresetRange(b.dataset.period);
+  renderIncome();
+}));
+function isPeriodLabel(from, to) {
+  if (!from && !to) return 'All time';
+  if (from && to) return `${fmtDateLong(from)} – ${fmtDateLong(to)}`;
+  return from ? `Since ${fmtDateLong(from)}` : `Through ${fmtDateLong(to)}`;
+}
+
+// Everything the statement shows for a period, in one place (also used by
+// the CSV export so the file always matches the screen).
+function incomeFigures() {
   const from = isFrom.value || '';
   const to = isTo.value || '';
   const inRange = (d) => {
@@ -7742,45 +7765,113 @@ function renderIncome() {
     const d = e.dateOrdered || e.dateReceived;
     return !from && !to ? true : inRange(d);
   });
-
   // Cash basis — paid portion of each order (including partials) flows into
-  // revenue / gross. The unpaid balance lands in the Pending block. round2()
+  // revenue / gross. The unpaid balance lands in "Not yet collected". round2()
   // strips floating-point drift that compounds when summing across many orders.
   const rev = round2(orders.reduce((s, o) => s + orderPaidRevenue(o), 0));
   const gross = round2(orders.reduce((s, o) => s + orderPaidProfit(o), 0));
   const cogs = round2(rev - gross);
   // Operating expenses only — capital / owner-funded purchases are held out so
   // Net Profit reflects how the operation itself performed. They come back in
-  // below as All-In Position.
+  // below the line as All-In Position.
   const opex = sumOperating(expenses);
   const capex = sumCapital(expenses);
   const net = round2(gross - opex);
-  const allIn = round2(net - capex);
-  const margin = rev > 0 ? (net / rev * 100) : 0;
-  const pendG = round2(orders.reduce((s, o) => s + orderBalance(o), 0));
-  const pendN = round2(orders.reduce((s, o) => s + orderUnpaidProfit(o), 0));
+  return {
+    from, to, orders, expenses, rev, gross, cogs, opex, capex, net,
+    allIn: round2(net - capex),
+    grossMargin: rev > 0 ? gross / rev * 100 : 0,
+    margin: rev > 0 ? net / rev * 100 : 0,
+    paidOrders: orders.filter(orderHasLandedProfit).length,
+    pendG: round2(orders.reduce((s, o) => s + orderBalance(o), 0)),
+    pendN: round2(orders.reduce((s, o) => s + orderUnpaidProfit(o), 0)),
+    cats: expenseCategoryTotals(expenses),
+  };
+}
 
-  $('#isRev').textContent = fmt$(rev);
-  $('#isCogs').textContent = fmt$(cogs);
-  $('#isGross').textContent = fmt$(gross);
-  $('#isOpex').textContent = fmt$(opex);
-  $('#isNet').textContent = fmt$(net);
-  $('#isMargin').textContent = fmtPct(margin);
-  $('#isCapital').textContent = fmt$(capex);
+function renderIncome() {
+  const f = incomeFigures();
+  const label = isPeriodLabel(f.from, f.to);
+  $('#isSub').textContent = `${label} · cash basis`;
+  $('#isPeriodLabel').textContent = label;
+  $$('.is-presets [data-period]').forEach(b => {
+    const [pf, pt] = isPresetRange(b.dataset.period);
+    b.classList.toggle('active', pf === f.from && pt === f.to);
+  });
+
+  // Headline cards
+  $('#isKpiRev').textContent = fmt$(f.rev);
+  $('#isKpiRevSub').textContent = `${fmtN(f.paidOrders)} paid order${f.paidOrders === 1 ? '' : 's'}`;
+  $('#isKpiGross').textContent = fmt$(f.gross);
+  $('#isKpiGrossSub').textContent = `${fmtPct(f.grossMargin)} gross margin`;
+  $('#isKpiOpex').textContent = fmt$(f.opex);
+  $('#isKpiOpexSub').textContent = f.rev > 0 ? `${fmtPct(f.opex / f.rev * 100)} of revenue` : '—';
+  $('#isKpiNet').textContent = fmt$(f.net);
+  $('#isKpiNetSub').textContent = `${fmtPct(f.margin)} net margin`;
+  $('#isNetCard').classList.toggle('is-loss', f.net < 0);
+
+  // Statement
+  $('#isRev').textContent = fmt$(f.rev);
+  $('#isCogs').textContent = fmt$(f.cogs);
+  $('#isGross').textContent = fmt$(f.gross);
+  $('#isGrossPct').textContent = f.rev > 0 ? fmtPct(f.grossMargin) : '';
+  const opCats = f.cats.filter(r => r.operating > 0.005).sort((a, b) => b.operating - a.operating);
+  $('#isOpexRows').innerHTML = opCats.length
+    ? opCats.map(r => `<tr><td class="is-st-indent">${escapeHtml(expenseCategoryLabel(r.key))}</td><td class="num is-st-neg">${fmt$(r.operating)}</td></tr>`).join('')
+    : '<tr><td class="is-st-indent muted" colspan="2">No operating expenses in this period</td></tr>';
+  $('#isOpex').textContent = fmt$(f.opex);
+  $('#isNet').textContent = fmt$(f.net);
+  $('#isNet').closest('tr').classList.toggle('is-loss', f.net < 0);
+  $('#isMargin').textContent = f.rev > 0 ? fmtPct(f.margin) : '';
+  $('#isCapital').textContent = fmt$(f.capex);
   const allInEl = $('#isAllIn');
-  allInEl.textContent = fmt$(allIn);
-  allInEl.classList.toggle('is-negative', allIn < 0);
-  $('#isPendGross').textContent = fmt$(pendG);
-  $('#isPendNet').textContent = fmt$(pendN);
+  allInEl.textContent = fmt$(f.allIn);
+  allInEl.closest('tr').classList.toggle('is-loss', f.allIn < 0);
+  const capCount = f.expenses.filter(expenseExcluded).length;
+  $('#isCapitalNote').textContent = capCount
+    ? `${capCount} purchase${capCount === 1 ? '' : 's'} flagged as capital or owner-funded — kept out of net profit, added back in the all-in position.`
+    : 'Nothing flagged as capital or owner-funded in this period.';
 
-  const capCount = expenses.filter(expenseExcluded).length;
-  const capNote = $('#isCapitalNote');
-  if (capNote) {
-    capNote.textContent = capCount
-      ? `${capCount} purchase${capCount === 1 ? '' : 's'} flagged as capital or owner-funded. Held out of Net Profit; All-In Position puts ${capCount === 1 ? 'it' : 'them'} back.`
-      : 'Nothing flagged as capital or owner-funded in this period.';
-  }
-  renderIncomeCategories(expenses);
+  // Side cards
+  $('#isPendGross').textContent = fmt$(f.pendG);
+  $('#isPendNet').textContent = fmt$(f.pendN);
+  const spendTotal = f.cats.reduce((s, r) => s + r.total, 0);
+  const top = [...f.cats].sort((a, b) => b.total - a.total).slice(0, 5);
+  $('#isSpendBars').innerHTML = top.length
+    ? top.map(r => {
+        const pct = spendTotal > 0 ? r.total / spendTotal * 100 : 0;
+        return `<div class="is-bar-row">
+          <div class="is-bar-top"><span>${escapeHtml(expenseCategoryShort(r.key))}</span><b>${fmt$(r.total)}</b></div>
+          <div class="is-bar"><i data-cat="${r.key}" style="width:${Math.max(2, Math.round(pct))}%"></i></div>
+        </div>`;
+      }).join('')
+    : '<p class="is-side-note">No expenses in this period.</p>';
+
+  renderIncomeCategories(f.expenses);
+}
+
+function exportIncomeCSV() {
+  const f = incomeFigures();
+  const rows = [
+    ['Period', isPeriodLabel(f.from, f.to)],
+    ['Basis', 'Cash (money received)'],
+    [],
+    ['Sales revenue', f.rev],
+    ['Cost of goods sold', -f.cogs],
+    ['Gross profit', f.gross],
+    [],
+    ...f.cats.filter(r => r.operating > 0.005).map(r => [`Operating · ${expenseCategoryLabel(r.key)}`, -r.operating]),
+    ['Total operating expenses', -f.opex],
+    ['Net profit', f.net],
+    ['Net margin %', round2(f.margin)],
+    [],
+    ['Capital & owner-funded purchases', -f.capex],
+    ['All-in position', f.allIn],
+    [],
+    ['Unpaid balances (not in revenue)', f.pendG],
+  ];
+  downloadBlob(`lumen-income-statement-${todayISO()}.csv`, toCSV(['Line', 'Amount'], rows), 'text/csv;charset=utf-8');
+  toast('Income statement exported.');
 }
 
 // The accountant-facing table: every category with its operating and capital
@@ -7835,6 +7926,7 @@ wireSearchClear(monthlySearch);
 [$('#monthlyFilter'), monthlySearch].forEach(el =>
   el.addEventListener('input', renderMonthly)
 );
+wireTabs('#moTabs', $('#monthlyFilter'));
 $('#monthlyReset').addEventListener('click', () => {
   // Reset returns the calendar to the year overview and forgets the saved spot.
   monthlyView = 'year';
@@ -8072,6 +8164,7 @@ function renderTopProducts() {
 function renderMonthly() {
   // Normalize legacy 'unpaid' filter value (now superseded by 'pending').
   const rawFilter = $('#monthlyFilter').value;
+  paintTabs('#moTabs', ['paid', 'all', 'pending'].includes(rawFilter) ? rawFilter : 'paid', {});
   const filter = rawFilter === 'unpaid' ? 'pending' : rawFilter;
   const q = monthlySearch.value.toLowerCase().trim();
   let orders = state.orders;

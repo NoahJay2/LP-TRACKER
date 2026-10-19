@@ -29,7 +29,7 @@
      fresh JS/CSS instead of serving the cached copy. iOS standalone mode
      caches scripts indefinitely once installed; a query-string change is the
      only thing that reliably busts it without removing/re-adding the bookmark. -->
-<link rel="stylesheet" href="styles.css?v=20261019-15" />
+<link rel="stylesheet" href="styles.css?v=20261019-16" />
 <!-- Preload the Zelle QR so it's already in the browser cache when the first
      invoice opens — guarantees a screenshot captures the image, no race. -->
 <link rel="preload" as="image" href="public/zelle-qr.png" />
@@ -614,81 +614,138 @@
     </section>
 
     <!-- INCOME STATEMENT -->
-    <section class="view" id="view-income">
-      <header class="view-head">
-        <div>
-          <h1>Income Statement</h1>
+    <section class="view inv-page is-page" id="view-income">
+      <header class="inv-head">
+        <div class="inv-head-text">
+          <h1 class="inv-title">Income statement</h1>
+          <p class="inv-sub" id="isSub"></p>
         </div>
-        <div class="period-picker">
-          <label>From</label><input type="date" id="isFrom" />
-          <label>To</label><input type="date" id="isTo" />
-          <button class="btn ghost" id="isReset">All Time</button>
+        <div class="inv-head-actions">
+          <button type="button" class="inv-btn" id="isExportBtn"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v8m0 0L5 7m3 3 3-3M3 12.5h10" /></svg>Export</button>
         </div>
       </header>
 
-      <div class="is-grid">
-        <div class="card">
-          <h3>Revenue</h3>
-          <div class="is-row"><span>Sales Revenue</span><b id="isRev">$0</b></div>
-          <div class="is-row"><span>Cost of Goods Sold</span><b id="isCogs">$0</b></div>
-          <hr />
-          <div class="is-row strong"><span>Gross Profit</span><b id="isGross">$0</b></div>
+      <div class="is-periods">
+        <div class="is-presets" role="tablist" aria-label="Period">
+          <button type="button" data-period="month">This month</button>
+          <button type="button" data-period="last">Last month</button>
+          <button type="button" data-period="year">This year</button>
+          <button type="button" data-period="all">All time</button>
         </div>
-        <div class="card">
-          <h3>Expenses</h3>
-          <div class="is-row"><span>Operating Expenses</span><b id="isOpex">$0</b></div>
-          <hr />
-          <div class="is-row strong"><span>Net Profit</span><b id="isNet">$0</b></div>
-          <div class="is-row"><span>Net Margin</span><b id="isMargin">0%</b></div>
+        <div class="is-custom">
+          <label><span>From</span><input type="date" id="isFrom" /></label>
+          <label><span>To</span><input type="date" id="isTo" /></label>
+          <button type="button" class="inv-btn inv-btn-ghost" id="isReset">Clear</button>
         </div>
-        <div class="card span-2 is-capital-card">
-          <div class="card-head">
-            <h3>Capital &amp; Owner-Funded</h3>
-            <span class="muted">Outside Net Profit — money that didn't leave the business account</span>
+      </div>
+
+      <div class="inv-metrics">
+        <div class="inv-metric">
+          <span class="inv-metric-label">Revenue</span>
+          <b class="inv-metric-value" id="isKpiRev">$0</b>
+          <span class="inv-metric-foot" id="isKpiRevSub"></span>
+        </div>
+        <div class="inv-metric">
+          <span class="inv-metric-label">Gross profit</span>
+          <b class="inv-metric-value" id="isKpiGross">$0</b>
+          <span class="inv-metric-foot" id="isKpiGrossSub"></span>
+        </div>
+        <div class="inv-metric">
+          <span class="inv-metric-label">Operating expenses</span>
+          <b class="inv-metric-value" id="isKpiOpex">$0</b>
+          <span class="inv-metric-foot" id="isKpiOpexSub"></span>
+        </div>
+        <div class="inv-metric is-net-card" id="isNetCard">
+          <span class="inv-metric-label">Net profit</span>
+          <b class="inv-metric-value" id="isKpiNet">$0</b>
+          <span class="inv-metric-foot" id="isKpiNetSub"></span>
+        </div>
+      </div>
+
+      <div class="is-layout">
+        <div class="inv-panel is-statement">
+          <div class="is-st-head">
+            <h3>Profit &amp; loss</h3>
+            <span class="muted" id="isPeriodLabel"></span>
           </div>
-          <div class="is-row"><span>Capital Outlay</span><b id="isCapital">$0</b></div>
-          <hr />
-          <div class="is-row strong"><span>All-In Position</span><b id="isAllIn">$0</b></div>
-          <p class="muted is-note" id="isCapitalNote">Nothing flagged as capital or owner-funded in this period.</p>
+          <table class="is-st">
+            <tbody>
+              <tr class="is-st-section"><td colspan="2">Revenue</td></tr>
+              <tr><td class="is-st-indent">Sales revenue</td><td class="num" id="isRev">$0</td></tr>
+              <tr><td class="is-st-indent">Cost of goods sold</td><td class="num is-st-neg" id="isCogs">$0</td></tr>
+              <tr class="is-st-total"><td>Gross profit <span class="is-st-pct" id="isGrossPct"></span></td><td class="num" id="isGross">$0</td></tr>
+              <tr class="is-st-section"><td colspan="2">Operating expenses</td></tr>
+            </tbody>
+            <tbody id="isOpexRows"></tbody>
+            <tbody>
+              <tr class="is-st-subtotal"><td>Total operating expenses</td><td class="num is-st-neg" id="isOpex">$0</td></tr>
+              <tr class="is-st-grand"><td>Net profit <span class="is-st-pct" id="isMargin"></span></td><td class="num" id="isNet">$0</td></tr>
+              <tr class="is-st-section is-st-below"><td colspan="2">Below the line</td></tr>
+              <tr><td class="is-st-indent">Capital &amp; owner-funded purchases</td><td class="num is-st-neg" id="isCapital">$0</td></tr>
+              <tr class="is-st-total"><td>All-in position</td><td class="num" id="isAllIn">$0</td></tr>
+            </tbody>
+          </table>
+          <p class="is-st-note" id="isCapitalNote"></p>
         </div>
-        <div class="card span-2">
-          <div class="card-head">
-            <h3>Expenses by Category</h3>
-            <span class="muted">Hand this to your accountant</span>
+
+        <div class="is-side">
+          <div class="inv-panel is-side-card">
+            <div class="is-st-head"><h3>Not yet collected</h3></div>
+            <div class="is-side-body">
+              <div class="is-side-row"><span>Unpaid balances</span><b id="isPendGross">$0</b></div>
+              <div class="is-side-row"><span>Profit waiting on payment</span><b id="isPendNet">$0</b></div>
+              <p class="is-side-note">Revenue above is cash basis: only money actually received in the period.</p>
+            </div>
           </div>
-          <div class="is-cat-table" id="isCatTable"></div>
+          <div class="inv-panel is-side-card">
+            <div class="is-st-head"><h3>Where the money goes</h3></div>
+            <div class="is-side-body" id="isSpendBars"></div>
+          </div>
         </div>
-        <div class="card span-2">
-          <h3>Pending (Unpaid Orders)</h3>
-          <div class="is-row"><span>Pending Gross</span><b id="isPendGross">$0</b></div>
-          <div class="is-row"><span>Pending Net</span><b id="isPendNet">$0</b></div>
+      </div>
+
+      <div class="inv-panel is-cat-panel">
+        <div class="is-st-head">
+          <h3>Expenses by category</h3>
+          <span class="muted">For your accountant</span>
         </div>
+        <div class="is-cat-table" id="isCatTable"></div>
       </div>
     </section>
 
     <!-- MONTHLY -->
-    <section class="view" id="view-monthly">
-      <header class="view-head">
-        <h1>Monthly Tracking</h1>
+    <section class="view inv-page mo-page" id="view-monthly">
+      <header class="inv-head">
+        <div class="inv-head-text">
+          <h1 class="inv-title">Monthly</h1>
+          <p class="inv-sub">Revenue and profit by month and by day · tap a month to open its calendar</p>
+        </div>
       </header>
 
-      <div class="toolbar">
-        <div class="search-wrap">
-          <input type="text" id="monthlySearch" placeholder="Search customer or product…" />
-          <button type="button" class="search-clear" data-clear="monthlySearch" aria-label="Clear">×</button>
+      <div class="inv-panel mo-panel">
+        <div class="inv-tabs" id="moTabs" role="tablist" aria-label="Which orders">
+          <button type="button" role="tab" data-tab="paid">Paid <span></span></button>
+          <button type="button" role="tab" data-tab="all">All orders <span></span></button>
+          <button type="button" role="tab" data-tab="pending">Pending <span></span></button>
         </div>
-        <select id="monthlyFilter">
-          <option value="paid">Paid Only</option>
-          <option value="all">All Orders</option>
-          <option value="pending">Pending (Potential)</option>
-        </select>
-        <button type="button" class="btn ghost btn-reset" id="monthlyReset">Reset</button>
-      </div>
-
-      <div class="card cal-card" id="calCard">
+        <div class="inv-toolbar">
+          <div class="search-wrap inv-search">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" /><path d="m10.5 10.5 3 3" /></svg>
+            <input type="text" id="monthlySearch" placeholder="Search customer or product" autocomplete="off" />
+            <button type="button" class="search-clear" data-clear="monthlySearch" aria-label="Clear search">×</button>
+          </div>
+          <select id="monthlyFilter" hidden>
+            <option value="paid">Paid</option>
+            <option value="all">All orders</option>
+            <option value="pending">Pending</option>
+          </select>
+          <button type="button" class="inv-btn inv-btn-ghost btn-reset" id="monthlyReset">Reset</button>
+        </div>
+        <div class="cal-card" id="calCard">
         <div class="cal-head" id="calHead"></div>
         <div class="cal-summary" id="calSummary"></div>
         <div class="cal-content" id="calContent"></div>
+      </div>
       </div>
 
       <div class="card top-products-card">
@@ -814,8 +871,8 @@
      more reliable on iOS Safari than html-to-image (which uses SVG
      foreignObject internally and trips on WebKit's CORS quirks). ~50 KB. -->
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-<script src="config.js?v=20261019-15"></script>
-<script src="seed.js?v=20261019-15"></script>
-<script src="app.js?v=20261019-15"></script>
+<script src="config.js?v=20261019-16"></script>
+<script src="seed.js?v=20261019-16"></script>
+<script src="app.js?v=20261019-16"></script>
 </body>
 </html>
