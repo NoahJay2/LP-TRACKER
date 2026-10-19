@@ -2,7 +2,7 @@
 
 // Bump on each deploy. Shown in the sidebar footer so you can confirm at a
 // glance which build is actually live (handy when cache / deploy is in doubt).
-const BUILD_VERSION = '2026-10-19.5';
+const BUILD_VERSION = '2026-10-19.6';
 
 const STORAGE_KEY = 'lumen-tracker-v1';
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -4425,21 +4425,38 @@ function stockNeedsReorder(s) {
 }
 
 const invOpenRows = new Set();   // product ids whose detail panel is open
+const INV_GROUPS = ['in', 'low', 'out'];
+const INV_GROUP_LABELS = { in: 'In stock', low: 'Low stock', out: 'Out of stock' };
+function invGroup(p) {
+  if (!stockIsActive(p) || (Number(p.qty) || 0) <= 0) return 'out';
+  return stockNeedsReorder(p) ? 'low' : 'in';
+}
+// Placeholder letter for products without a photo: first word that starts
+// with a letter, so "10MG Retatrutide" shows "R", not "1".
+function productInitial(name) {
+  const word = String(name || '').split(/\s+/).find(w => /^[a-z]/i.test(w)) || String(name || '?');
+  return word.charAt(0).toUpperCase();
+}
 function renderInventory() {
   const q = stkSearch.value.toLowerCase().trim();
   const f = stkFilter.value;
   let rows = [...state.stock];
-  if (q) rows = rows.filter(p => (p.name || '').toLowerCase().includes(q));
+  if (q) rows = rows.filter(p => `${p.name || ''} ${p.sku || ''}`.toLowerCase().includes(q));
   if (f === 'active') rows = rows.filter(p => p.status === 'ACTIVE');
   if (f === 'oos') rows = rows.filter(p => p.status !== 'ACTIVE' || Number(p.qty) === 0);
   if (f === 'low') rows = rows.filter(p => stockNeedsReorder(p));
   const cat = stkCategory.value;
   if (cat !== 'all') rows = rows.filter(p => stockCategory(p) === cat);
 
-  // sort: active first, then qty desc
-  rows.sort((a, b) => (a.status === 'ACTIVE' ? 0 : 1) - (b.status === 'ACTIVE' ? 0 : 1) || (b.qty - a.qty));
+  // Grouped In stock → Low stock → Out of stock, most units first within each.
+  rows.sort((a, b) => INV_GROUPS.indexOf(invGroup(a)) - INV_GROUPS.indexOf(invGroup(b)) || (b.qty - a.qty));
+  const groupCounts = rows.reduce((m, p) => { const g = invGroup(p); m[g] = (m[g] || 0) + 1; return m; }, {});
+  let lastGroup = null;
 
   $('#stockBody').innerHTML = rows.map(p => {
+    const group = invGroup(p);
+    const groupHead = group === lastGroup ? '' : `<tr class="inv-group inv-group-${group}"><td colspan="4"><span>${INV_GROUP_LABELS[group]}</span><b>${fmtN(groupCounts[group])}</b></td></tr>`;
+    lastGroup = group;
     const margin = (Number(p.price) || 0) - (Number(p.cost) || 0);
     const valNet = margin * (Number(p.qty) || 0);
     const valGross = (Number(p.price) || 0) * (Number(p.qty) || 0);
@@ -4467,15 +4484,29 @@ function renderInventory() {
     // The table shows only what you scan for — product, price, qty, status.
     // Everything else (costs, margins, stock values, reorder level, web sync)
     // and the edit / delete actions live in the detail panel a click opens.
-    return `<tr class="inv-row${needs ? ' row-reorder' : ''}${open ? ' open' : ''}" data-stock-row="${p.id}" aria-expanded="${open}">
+    const qty = Number(p.qty) || 0;
+    // Level bar: full at 4× the reorder point, so "plenty" reads as full and
+    // anything near the reorder line is visibly short.
+    const fill = Math.max(qty > 0 ? 4 : 0, Math.min(100, Math.round(qty / (lvl * 4) * 100)));
+    const thumb = p.imageUrl
+      ? `<img class="inv-thumb" src="${escapeHtml(p.imageUrl)}" alt="" loading="lazy" />`
+      : `<span class="inv-thumb inv-thumb-ph cat-${cat}" aria-hidden="true">${escapeHtml(productInitial(p.name))}</span>`;
+    const meta = [categoryLabel(cat), p.sku].filter(Boolean).map(escapeHtml).join(' · ');
+    return `${groupHead}<tr class="inv-row inv-${group}${open ? ' open' : ''}" data-stock-row="${p.id}" aria-expanded="${open}">
       <td>
-        <span class="inv-caret" aria-hidden="true">▶</span>
-        ${p.imageUrl ? `<img class="inv-thumb" src="${escapeHtml(p.imageUrl)}" alt="" loading="lazy" />` : ''}
-        <b>${escapeHtml(p.name)}</b>
-        ${p.wooId ? `<span class="web-tag" title="Synced with the website — stock updates both ways">Web</span>` : ''}
+        <div class="inv-prod">
+          <span class="inv-caret" aria-hidden="true">▶</span>
+          ${thumb}
+          <div class="inv-prod-text">
+            <div class="inv-prod-name"><b>${escapeHtml(p.name)}</b>${p.wooId ? `<span class="web-tag" title="Synced with the website — stock updates both ways">Web</span>` : ''}</div>
+            <div class="inv-prod-meta">${meta}</div>
+          </div>
+        </div>
       </td>
       <td class="num">${priceCell}</td>
-      <td class="num"><b>${fmtN(p.qty)}</b></td>
+      <td class="inv-stock-cell">
+        <div class="inv-stock"><b>${fmtN(qty)}</b><span class="inv-meter"><i style="width:${fill}%"></i></span></div>
+      </td>
       <td>${statusPill}</td>
     </tr>
     <tr class="inv-detail" data-stock-detail="${p.id}"${open ? '' : ' hidden'}>

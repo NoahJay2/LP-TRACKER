@@ -4897,21 +4897,15 @@ html, body { overscroll-behavior-y: none; }
    opens a panel with the rest (costs, margins, stock values,
    reorder level, website sync) and the edit / delete actions. */
 #view-inventory .inv-row { cursor: pointer; }
-#view-inventory .inv-row td:first-child { position: relative; padding-left: 26px; }
-.inv-caret {
-  position: absolute;
-  left: 10px;
-  top: 50%;
-  transform: translateY(-50%);
+#view-inventory .inv-caret {
+  flex: none;
+  width: 10px;
   font-size: 9px;
   color: var(--muted-2);
   transition: transform 0.18s var(--ease), color 0.18s var(--ease);
 }
 #view-inventory .inv-row:hover .inv-caret { color: var(--text-2); }
-#view-inventory .inv-row.open .inv-caret {
-  transform: translateY(-50%) rotate(90deg);
-  color: var(--primary);
-}
+#view-inventory .inv-row.open .inv-caret { transform: rotate(90deg); color: var(--primary); }
 #view-inventory .inv-row.open td {
   background: rgba(34, 197, 94, 0.07);
   border-bottom-color: transparent;
@@ -6106,4 +6100,114 @@ button.ship-timeline:active {
   border-color: rgba(245, 158, 11, 0.4);
   background: var(--warn-soft);
   color: var(--warn);
+}
+
+/* ── Inventory · table polish ──────────────────────────────── */
+.kpi-grid.inv-kpi-grid { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 900px) { .kpi-grid.inv-kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+
+.inv-card { padding: 0; overflow: hidden; }
+.inv-table { table-layout: fixed; }
+.inv-table thead th { padding-top: 12px; padding-bottom: 12px; background: rgba(255, 255, 255, 0.02); }
+.inv-table th:nth-child(1) { width: auto; }
+.inv-table th:nth-child(2) { width: 120px; }
+.inv-table th:nth-child(3) { width: 210px; }
+.inv-table th:nth-child(4) { width: 150px; }
+.inv-table th:first-child, .inv-table td:first-child { padding-left: 16px; }
+.inv-table th:last-child, .inv-table td:last-child { padding-right: 16px; }
+.inv-table td { vertical-align: middle; }
+
+/* Section headers: In stock / Low stock / Out of stock */
+.inv-table tr.inv-group td {
+  padding: 9px 16px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: default;
+}
+.inv-table tr.inv-group:hover { background: transparent; }
+.inv-table tr.inv-group td span::before {
+  content: '';
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  margin-right: 8px;
+  vertical-align: 1px;
+  background: var(--success);
+}
+.inv-table tr.inv-group-low td span::before { background: var(--warn); }
+.inv-table tr.inv-group-out td span::before { background: var(--danger); }
+.inv-table tr.inv-group td b {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+/* Product cell: caret · image · name + meta line */
+.inv-prod { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.inv-prod .inv-thumb { width: 36px; height: 36px; margin: 0; flex: none; border-radius: 8px; }
+.inv-thumb-ph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--cat-line, var(--border));
+  background: var(--cat-wash, var(--surface-2));
+  color: var(--cat, var(--muted));
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+}
+.inv-prod-text { min-width: 0; }
+.inv-prod-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.inv-prod-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
+.inv-prod-name .web-tag { margin-left: 0; flex: none; }
+.inv-prod-meta {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Stock cell: count + level bar against the reorder point */
+.inv-stock { display: flex; align-items: center; gap: 10px; }
+.inv-stock b { min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+.inv-meter {
+  flex: 1;
+  max-width: 120px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.inv-meter i { display: block; height: 100%; border-radius: inherit; background: var(--success); }
+.inv-low .inv-meter i { background: var(--warn); }
+.inv-out .inv-meter i { background: var(--danger); }
+.inv-out .inv-prod-name b, .inv-out .inv-stock b { color: var(--muted); }
+.inv-out .inv-thumb { opacity: 0.55; }
+
+@media (max-width: 640px) {
+  .inv-table th:nth-child(2) { width: 64px; }
+  .inv-table th:nth-child(3) { width: 58px; }
+  /* Section headers already say In stock / Low / Out, so the Status column
+     gives its width to product names on phones. */
+  .inv-table th:nth-child(4), .inv-table tr.inv-row td:nth-child(4) { display: none; }
+  .inv-table th:first-child, .inv-table td:first-child { padding-left: 10px; }
+  .inv-table th:nth-child(3), .inv-table td.inv-stock-cell { padding-right: 12px; }
+  .inv-meter { display: none; }
+  .inv-stock b { min-width: 0; }
+  .inv-prod { gap: 8px; }
+  .inv-prod .inv-thumb { width: 30px; height: 30px; }
+  .inv-prod-name b { white-space: normal; }
+  .inv-prod-meta { display: none; }
 }
