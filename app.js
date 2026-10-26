@@ -8431,7 +8431,6 @@ function renderCalendar(mk, dayBuckets) {
   };
 
   let grid = '';
-  const mobileWeeks = [];
   let weekNum = 1;
   for (let r = 0; r < totalRows; r++) {
     for (let c = 0; c < 7; c++) grid += renderDayCell(cells[r * 7 + c]);
@@ -8446,27 +8445,14 @@ function renderCalendar(mk, dayBuckets) {
       if (r6.end != null) end = r6.end;
     }
     grid += renderWeekCell(weekNum, start, end, g, n, q, pg, pn, pq, foldRow6 && r === 4);
-    mobileWeeks.push(renderWeekCell(weekNum, start, end, g, n, q, pg, pn, pq, false));
     weekNum++;
   }
 
-  const mobileDays = Array.from({ length: daysInMonth }, (_, i) => i + 1)
-    .map(d => {
-      const cell = renderDayCell(d);
-      if (!cell.includes('data-cal-day=')) return '';
-      const label = new Date(yr, mo - 1, d).toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' });
-      return cell.replace(`<span class="cal-cell-day">${d}</span>`, `<span class="cal-cell-day">${label}</span>`);
-    }).join('');
   content.innerHTML = `
     <div class="cal-weekdays" aria-hidden="true">
       <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Week</span>
     </div>
     <div class="cal-grid">${grid}</div>
-    <div class="mo-mobile-days">
-      <p class="mo-day-hint">Tap a day for order details</p>
-      ${mobileDays || '<p class="muted">No activity for these filters.</p>'}
-      <details class="mo-week-details"><summary>Weekly totals</summary><div>${mobileWeeks.join('')}</div></details>
-    </div>
   `;
 }
 

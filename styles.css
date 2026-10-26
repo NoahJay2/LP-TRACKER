@@ -7840,7 +7840,7 @@ button.ord-badge { cursor: pointer; }
   #view-income .is-custom #isReset { grid-column: 1 / -1; }
 }
 
-/* Monthly: compact summaries and readable mobile day rows. */
+/* Monthly: compact summaries with the original calendar layout. */
 #view-monthly .cal-card { padding: 12px; }
 #view-monthly .cal-head { margin-bottom: 10px; gap: 8px; }
 #view-monthly .cal-title { font-size: 16px; }
@@ -7854,27 +7854,9 @@ button.ord-badge { cursor: pointer; }
 #view-monthly .top-products-body { margin-top: 10px; }
 #view-monthly .top-products-body .toolbar { gap: 6px; }
 #view-monthly .top-products-body td, #view-monthly .top-products-body th { font-size: 12px; padding: 8px; }
-.mo-mobile-days { display: none; }
+
 @media (max-width: 640px) {
   #view-monthly .inv-toolbar { padding: 10px; gap: 6px; }
-  #view-monthly .cal-months-grid { grid-template-columns: minmax(0, 1fr) !important; gap: 5px; }
-  #view-monthly .cal-month-cell { display: grid; grid-template-columns: 38px minmax(0, 1fr) minmax(0, 1fr); min-height: 44px; gap: 4px 8px; align-items: center; padding: 8px 10px; }
-  #view-monthly .cal-month-name { grid-row: 1 / span 3; font-size: 12px; }
-  #view-monthly .cal-month-gross, #view-monthly .cal-month-net { display: flex; flex-wrap: wrap; font-size: 13px; margin: 0; gap: 3px; }
-  #view-monthly .cal-month-gross::before, #view-monthly .cal-month-net::before { font-size: 10px; }
-  #view-monthly .cal-month-qty, #view-monthly .cal-month-delta, #view-monthly .cal-month-proj-tag { font-size: 10px; margin: 0; }
-  #view-monthly .cal-month-empty { grid-column: 2 / -1; text-align: right; }
-  #view-monthly .cal-weekdays, #view-monthly .cal-grid { display: none; }
-  .mo-mobile-days { display: grid; gap: 6px; }
-  .mo-day-hint { color: var(--muted); font-size: 11px; margin: 0 0 4px; }
-  #view-monthly .mo-mobile-days .cal-cell, #view-monthly .mo-mobile-days .cal-week-total { display: grid; grid-template-columns: 65px minmax(0, 1fr) minmax(0, 1fr); gap: 4px 8px; padding: 10px; min-height: 48px; width: 100%; text-align: left; }
-  #view-monthly .mo-mobile-days .cal-cell-day { grid-row: 1 / span 2; align-self: center; width: auto; height: auto; font-size: 12px; }
-  #view-monthly .mo-mobile-days .cal-cell-gross, #view-monthly .mo-mobile-days .cal-cell-net { font-size: 13px; overflow-wrap: anywhere; }
-  #view-monthly .mo-mobile-days .cal-cell-qty { grid-column: 2 / -1; font-size: 10px; }
-  .mo-week-details { border: 1px solid var(--border); border-radius: 8px; margin-top: 6px; }
-  .mo-week-details > summary { padding: 12px; font-size: 12px; cursor: pointer; }
-  .mo-week-details > div { display: grid; gap: 5px; padding: 0 8px 8px; }
-  #view-monthly .cal-week-qty { grid-column: 2 / -1; }
   #view-monthly .top-products-body .toolbar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   #view-monthly .top-products-body select { width: 100%; min-width: 0; }
   #view-monthly .top-products-body table { min-width: 0; width: 100%; }
@@ -7888,18 +7870,6 @@ button.ord-badge { cursor: pointer; }
   #view-monthly .tp-cat-bar { flex-wrap: wrap; padding: 6px; gap: 6px; }
   #view-monthly .tp-cat-stats { width: 100%; justify-content: space-between; margin: 0; }
 }
-@media (max-width: 640px) {
-  #view-monthly .cal-month-gross { grid-column: 2; }
-  #view-monthly .cal-month-net { grid-column: 3; }
-  #view-monthly .cal-month-proj-tag { grid-column: 2 / -1; }
-  #view-monthly .mo-mobile-days .cal-cell-qty { display: block; }
-  #view-monthly .mo-mobile-days .cal-cell-gross::before { display: block; content: 'Gross'; font-size: 9px; }
-  #view-monthly .mo-mobile-days .cal-cell-net::before { display: block; content: 'Profit'; font-size: 9px; }
-  #view-monthly .cal-pending-mode .mo-mobile-days .cal-cell-gross::before { content: 'Pending'; }
-  #view-monthly .cal-pending-mode .mo-mobile-days .cal-cell-net::before { content: 'Potential'; }
-  #view-monthly .mo-mobile-days .cal-cell-pending-inline::after, #view-monthly .mo-mobile-days .cal-cell-pending-net-inline::after { content: ' pending'; font-size: 9px; }
-}
-
 /* Integrations: compact status and expandable product links. */
 #view-integrations .integ-card { padding: 12px; margin-bottom: 10px; }
 #view-integrations .card-head { gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
