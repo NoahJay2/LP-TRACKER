@@ -9301,18 +9301,18 @@ function renderWooProducts() {
       ...stockByName.map(p => `<option value="${escapeHtml(p.id)}"${p.id === selected ? ' selected' : ''}>${escapeHtml(p.name)}${p.wooId && p.wooId !== wp.wooId ? ' (linked elsewhere)' : ''}</option>`),
     ].join('');
     const wooQty = wp.stockQty == null ? '<span class="muted">untracked</span>' : fmtN(wp.stockQty);
-    return `<tr data-woo-id="${escapeHtml(wp.wooId)}">
-      <td>${wp.image ? `<img class="inv-thumb" src="${escapeHtml(wp.image)}" alt="" loading="lazy" />` : ''}</td>
-      <td><b>${escapeHtml(wp.name)}</b>${wp.sku ? `<span class="integ-sub">SKU ${escapeHtml(wp.sku)}</span>` : ''}${wp.status !== 'publish' ? `<span class="integ-sub">${escapeHtml(wp.status)}</span>` : ''}</td>
-      <td class="num">${wooQty}</td>
-      <td><select class="woo-link-select">${opts}</select>${suggested ? '<span class="integ-sub">suggested match</span>' : ''}</td>
-      <td class="num woo-link-effect"></td>
-    </tr>`;
+    return `<details class="integ-product" data-woo-id="${escapeHtml(wp.wooId)}">
+      <summary><span class="integ-product-name"><b>${escapeHtml(wp.name)}</b><small>Store qty: ${wooQty}</small></span><span class="integ-link-state ${current ? 'is-linked' : ''}">${current ? 'Linked' : suggested ? 'Suggested' : 'Not linked'}</span><span class="pending-chevron" aria-hidden="true">›</span></summary>
+      <div class="integ-product-detail">
+        ${wp.image ? `<img class="inv-thumb" src="${escapeHtml(wp.image)}" alt="" loading="lazy" />` : ''}
+        ${wp.sku ? `<span class="integ-sub">SKU ${escapeHtml(wp.sku)}</span>` : ''}${wp.status !== 'publish' ? `<span class="integ-sub">${escapeHtml(wp.status)}</span>` : ''}
+        <label class="integ-product-select">Tracker product<select class="woo-link-select">${opts}</select></label>
+        ${suggested ? '<span class="integ-sub integ-suggestion">Suggested match · review before saving</span>' : ''}
+        <div class="integ-effect-row"><span>After save</span><b class="woo-link-effect"></b></div>
+      </div>
+    </details>`;
   }).join('');
-  wrap.innerHTML = `<table class="table integ-table">
-    <thead><tr><th></th><th>Store product</th><th class="num">Store qty</th><th>Tracker product</th><th class="num">After save</th></tr></thead>
-    <tbody>${rows || '<tr><td colspan="5" class="muted">No products in the store.</td></tr>'}</tbody>
-  </table>`;
+  wrap.innerHTML = rows || '<p class="muted">No products in the store.</p>';
   const refreshEffect = (tr) => {
     const wp = wooProducts.find(p => p.wooId === tr.dataset.wooId);
     const val = tr.querySelector('select').value;
@@ -9329,9 +9329,15 @@ function renderWooProducts() {
       ? `<span class="woo-qty-change">store → ${fmtN(qty)}</span>`
       : `<span class="muted">${fmtN(qty)}</span>`;
   };
-  $$('#wooProductsWrap tr[data-woo-id]').forEach(tr => {
+  $$('#wooProductsWrap [data-woo-id]').forEach(tr => {
     refreshEffect(tr);
-    tr.querySelector('select').addEventListener('change', () => refreshEffect(tr));
+    tr.querySelector('select').addEventListener('change', () => {
+      refreshEffect(tr);
+      const badge = tr.querySelector('.integ-link-state');
+      badge.textContent = 'Unsaved';
+      badge.classList.remove('is-linked');
+      tr.querySelector('.integ-suggestion')?.remove();
+    });
   });
 }
 
@@ -9347,7 +9353,7 @@ $('#wooSaveLinksBtn').addEventListener('click', (e) => runWooAction(e.currentTar
   const links = [];
   const creates = [];
   const chosen = new Map();   // stockId → wooId, to catch double-linking
-  for (const tr of $$('#wooProductsWrap tr[data-woo-id]')) {
+  for (const tr of $$('#wooProductsWrap [data-woo-id]')) {
     const wooId = tr.dataset.wooId;
     const val = tr.querySelector('select').value;
     if (val === '__create') { creates.push(wooId); continue; }
