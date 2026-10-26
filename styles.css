@@ -7936,3 +7936,31 @@ button.ord-badge { cursor: pointer; }
   #view-integrations .integ-actions .btn { width: 100%; white-space: normal; }
   #view-integrations #wooCatchUpBtn { grid-column: 1 / -1; }
 }
+
+/* Order editor: compact, clearly labeled mobile fields. */
+#modalForm:has(.order-editor-marker) { padding: 12px; gap: 10px; }
+#modalForm:has(.order-editor-marker) .row-2 { gap: 8px; }
+#modalForm:has(.order-editor-marker) label { font-size: 11px; gap: 4px; }
+#modalForm:has(.order-editor-marker) input, #modalForm:has(.order-editor-marker) textarea { min-width: 0; padding: 8px 10px; }
+#modalForm:has(.order-editor-marker) .order-status-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+#modalForm:has(.order-editor-marker) .toggle-row { padding: 9px; gap: 6px; }
+#modalForm:has(.order-editor-marker) .toggle-row-label { font-size: 11px; }
+#modalForm:has(.order-editor-marker) .items-col-head { display: none; }
+#modalForm:has(.order-editor-marker) #itemsList { display: grid; gap: 6px; }
+#modalForm:has(.order-editor-marker) .item-row { align-items: end; padding: 8px; border: 1px solid var(--border); border-radius: 8px; }
+#modalForm:has(.order-editor-marker) .item-row .icon-btn { min-width: 40px; min-height: 40px; }
+#modalForm:has(.order-editor-marker) .item-row { grid-template-columns: minmax(0, 1.8fr) 65px 90px 40px; }
+#modalForm:has(.order-editor-marker) .items-summary, #modalForm:has(.order-editor-marker) .payments-summary { gap: 6px 12px; padding: 9px; font-size: 11px; flex-wrap: wrap; }
+#modalForm:has(.order-editor-marker) .btn { min-height: 40px; padding: 8px 10px; font-size: 12px; }
+.order-payment-details { border: 1px solid var(--border); border-radius: 8px; }
+.order-payment-details > summary { padding: 12px; font-size: 12px; cursor: pointer; }
+.order-payment-details > .payments-head, .order-payment-details > .payments-col-head, .order-payment-details > #paymentsList { margin: 0 10px 8px; }
+#modal:has(.order-editor-marker) .modal-foot { padding: 10px 12px; }
+#modal:has(.order-editor-marker) .modal-head { padding: 10px 12px; }
+@media (max-width: 640px) {
+  #modalForm:has(.order-editor-marker) > .row-2:first-of-type { grid-template-columns: minmax(0, 1fr); }
+  #modalForm:has(.order-editor-marker) .item-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 40px; grid-template-areas: 'product product remove' 'qty price remove'; gap: 6px; }
+  #modalForm:has(.order-editor-marker) .item-row > :first-child { min-width: 0; }
+  #modalForm:has(.order-editor-marker) .item-row > [data-remove] { align-self: center; }
+  #modalForm:has(.order-editor-marker) input, #modalForm:has(.order-editor-marker) select, #modalForm:has(.order-editor-marker) textarea { font-size: 16px; }
+}

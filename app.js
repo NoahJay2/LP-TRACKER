@@ -3497,10 +3497,11 @@ function orderModal(existing, draft) {
 
   form.innerHTML = `
     <datalist id="orderProductList">${productOptions}</datalist>
+    <span class="order-editor-marker" hidden></span>
     <datalist id="orderCustomerList">${customerOptions}</datalist>
     <div class="row-2">
       <label><span class="req">Customer</span><input type="text" name="customer" list="orderCustomerList" autocomplete="off" required value="${escapeHtml(data.customer || '')}" placeholder="Search or add customer…" /></label>
-      <label><span class="req">Order Date</span><input type="date" name="date" required value="${data.date || todayISO()}" /></label>
+      <label><span class="req">Order / delivery date</span><input type="date" name="date" required value="${data.date || todayISO()}" /></label>
     </div>
     <div class="items-section">
       <div class="items-head">
@@ -3568,6 +3569,7 @@ function orderModal(existing, draft) {
       </label>
     </div>
     <div class="payments-section">
+      <details class="order-payment-details"><summary>Payment history</summary>
       <div class="payments-head">
         <span class="label">Payments</span>
         <button type="button" class="btn ghost add-payment-btn" id="addPaymentBtn">+ Add Payment</button>
@@ -3576,6 +3578,7 @@ function orderModal(existing, draft) {
         <span>Amount</span><span>Date</span><span></span>
       </div>
       <div id="paymentsList"></div>
+      </details>
       <div class="payments-summary">
         <span><span class="muted">Paid</span> <b id="sumPaid">$0</b></span>
         <span><span class="muted">Balance</span> <b id="sumBalance">$0</b></span>
@@ -3597,12 +3600,16 @@ function orderModal(existing, draft) {
       <button type="button" class="btn ghost notes-toggle-btn" id="notesToggleBtn"${data.notes ? ' hidden' : ''}>+ Add Notes</button>
       <label class="notes-field"${data.notes ? '' : ' hidden'}>
         <span>Notes</span>
-        <textarea name="notes" rows="3" placeholder="Add a note for this order…">${escapeHtml(data.notes || '')}</textarea>
+        <textarea name="notes" rows="2" placeholder="Add a note for this order…">${escapeHtml(data.notes || '')}</textarea>
       </label>
     </div>
     <button type="button" class="btn ghost" id="viewInvoiceBtn">View Invoice</button>
     ${existing ? '<button type="button" class="btn danger-outline" id="orderDeleteBtn">Delete Order</button>' : ''}
   `;
+
+  const statusRow = form.querySelector('[name="paid"]').closest('.row-2');
+  statusRow.classList.add('order-status-row');
+  form.insertBefore(statusRow, form.querySelector('.items-section'));
 
   function blankItem() {
     return { product: '', qty: 1, price: 0, cogs: 0, discount: null };
@@ -3617,9 +3624,9 @@ function orderModal(existing, draft) {
     const row = document.createElement('div');
     row.className = 'item-row';
     row.innerHTML = `
-      <input type="text" list="orderProductList" data-field="product" value="${escapeHtml(it.product || '')}" placeholder="Search product…" autocomplete="off" />
-      <input type="number" inputmode="numeric" min="1" step="1" data-field="qty" value="${it.qty ?? ''}" placeholder="Qty" />
-      <input type="number" inputmode="decimal" min="0" step="any" data-field="price" value="${it.price ?? ''}" placeholder="Price" />
+      <input type="text" aria-label="Product" list="orderProductList" data-field="product" value="${escapeHtml(it.product || '')}" placeholder="Search product…" autocomplete="off" />
+      <label class="order-item-number"><span>Qty</span><input type="number" inputmode="numeric" min="1" step="1" data-field="qty" value="${it.qty ?? ''}" placeholder="Qty" /></label>
+      <label class="order-item-number"><span>Price</span><input type="number" inputmode="decimal" min="0" step="any" data-field="price" value="${it.price ?? ''}" placeholder="Price" /></label>
       <button type="button" class="icon-btn danger" data-remove title="Remove">×</button>
     `;
     const priceInput = row.querySelector('[data-field="price"]');
