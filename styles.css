@@ -7661,3 +7661,89 @@ button.ord-badge { cursor: pointer; }
   #todayCard .today-actions .btn { flex: 1 1 auto; min-height: 42px; }
   #todayCard .today-complete-step { flex: 1 1 auto; min-height: 42px; }
 }
+.daily-money-overview { margin-bottom: 16px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+.daily-money-head { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; font-weight: 600; margin-bottom: 10px; }
+.daily-money-head > span { color: var(--muted); font-weight: 400; }
+.daily-money-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.daily-money-grid > div { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.daily-money-grid span { font-size: 10px; line-height: 1.4; color: var(--muted); }
+.daily-money-grid b { font-size: 18px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.month-overview-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-size: 12px; margin-bottom: 12px; }
+.month-overview-head span { color: var(--muted); font-size: 10px; }
+.month-overview-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
+.month-overview-table th, .month-overview-table td { text-align: right; padding: 10px 3px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.month-overview-table thead th { color: var(--muted); font-size: 10px; font-weight: 500; }
+.month-overview-table th:first-child { text-align: left; width: 27%; }
+.month-overview-table tbody th { font-size: 11px; font-weight: 500; }
+.month-overview-table tbody td:first-of-type { font-weight: 700; }
+.month-overview-table tbody td:nth-of-type(2) { color: var(--muted); }
+.month-overview-foot { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 12px; font-size: 10px; color: var(--muted); }
+.month-overview-foot b { color: var(--text); margin-left: 4px; }
+.month-overview-note { font-size: 10px; color: var(--muted); line-height: 1.5; margin: 10px 0 0; }
+@media (max-width: 480px) {
+  .daily-money-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; }
+  .daily-money-grid b { font-size: 17px; }
+  .month-overview-table { font-size: 11px; }
+}
+
+/* Compact dashboard totals; preserve the existing metric colors. */
+#view-dashboard > .kpi-grid { gap: 6px; }
+#view-dashboard > .kpi-grid .kpi { padding: 9px 11px; min-width: 0; }
+#view-dashboard > .kpi-grid .kpi-label { font-size: 11px; line-height: 1.3; gap: 5px; letter-spacing: 0; }
+#view-dashboard > .kpi-grid .kpi-label::before { width: 6px; height: 6px; }
+#view-dashboard > .kpi-grid .kpi-value { font-size: 19px; line-height: 1.15; margin-top: 4px; overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  #view-dashboard > .kpi-grid .kpi { padding: 8px 10px; }
+  #view-dashboard > .kpi-grid .kpi-value { font-size: 17px; }
+}
+
+/* Pending orders: direct editing beside a compact disclosure row. */
+.pending-order-list { display: grid; gap: 6px; }
+.pending-entry { position: relative; min-width: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+.pending-order > summary { display: flex; align-items: center; min-height: 54px; gap: 9px; padding: 9px 74px 9px 12px; list-style: none; cursor: pointer; }
+.pending-order > summary::-webkit-details-marker { display: none; }
+.pending-customer { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.pending-customer small { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; font-weight: 400; }
+.pending-due { font-size: 11px; white-space: nowrap; }
+.pending-order .pending-status-done { color: #93eab7; }
+.pending-chevron { color: var(--muted); font-size: 20px; }
+.pending-order[open] .pending-chevron { transform: rotate(90deg); }
+.pending-entry > .pending-edit { position: absolute; right: 8px; top: 7px; min-height: 40px; padding: 6px 10px; font-size: 11px; }
+.pending-order-detail { border-top: 1px solid var(--border); padding: 10px 12px; }
+.pending-item { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; padding: 5px 0; }
+.pending-item > span { min-width: 0; overflow-wrap: anywhere; }
+.pending-item b { white-space: nowrap; }
+.pending-item small { color: var(--muted); }
+.pending-order-totals { display: flex; flex-wrap: wrap; gap: 7px 16px; margin-top: 9px; font-size: 11px; color: var(--muted); }
+.pending-order-totals b { color: var(--text); margin-left: 3px; }
+.pending-notes { font-size: 12px; line-height: 1.5; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; margin-bottom: 0; }
+.pending-order > summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 8px; }
+.recent-order-list .pending-order > summary { padding-right: 12px; }
+
+.dashboard-compact-list { display: grid; gap: 6px; }
+.dashboard-disclosure { border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); min-width: 0; }
+.dashboard-disclosure > summary { display: flex; align-items: center; gap: 10px; padding: 9px 12px; min-height: 50px; cursor: pointer; list-style: none; font-size: 11px; }
+.dashboard-disclosure > summary::-webkit-details-marker { display: none; }
+.dashboard-row-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.dashboard-row-name small { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; font-weight: 400; }
+.dashboard-disclosure[open] > summary .pending-chevron { transform: rotate(90deg); }
+.dashboard-status-danger { color: #fca5a5; }
+.dashboard-status-warn { color: #fcd34d; }
+.dashboard-status-transit { color: #93c5fd; }
+.dashboard-row-detail { padding: 10px 12px; border-top: 1px solid var(--border); }
+.dashboard-row-detail .pending-order-totals { margin: 0 0 10px; }
+.dashboard-row-detail .btn { min-height: 38px; font-size: 11px; padding: 6px 10px; }
+.dashboard-shipment-item { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.dashboard-shipment-item > div { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
+.dashboard-shipment-item small { display: block; color: var(--muted); font-size: 10px; margin-top: 4px; line-height: 1.5; }
+.export-layout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.export-panel { padding: 14px; border: 1px solid var(--border); border-radius: 10px; min-width: 0; }
+.export-panel h4 { font-size: 13px; margin: 0; }
+.export-panel p { font-size: 11px; line-height: 1.5; color: var(--muted); margin: 6px 0 12px; }
+.export-panel > .btn { width: 100%; min-height: 40px; font-size: 12px; }
+.export-panel details { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.export-panel summary { font-size: 11px; color: var(--muted); cursor: pointer; padding: 4px 0; }
+.export-report-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
+.export-report-grid .btn, .export-restore .btn { min-height: 40px; font-size: 11px; }
+.dashboard-disclosure > summary:focus-visible, .export-panel summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+@media (max-width: 640px) { .export-layout { grid-template-columns: minmax(0, 1fr); gap: 10px; } }

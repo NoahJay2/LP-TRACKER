@@ -1677,6 +1677,29 @@ modal.addEventListener('click', (e) => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && modal.classList.contains('open')) closeModal(); });
 
+function dashboardMonthOverview(orders, expenses, today) {
+  const [year, month, day] = today.split('-').map(Number);
+  const days = new Date(year, month, 0).getDate();
+  const previousEnd = new Date(year, month - 1, 0);
+  const previousKey = `${previousEnd.getFullYear()}-${String(previousEnd.getMonth() + 1).padStart(2, '0')}`;
+  const key = today.slice(0, 7);
+  const totals = (monthKey, cutoff) => {
+    const selected = orders.filter(o => o.date && o.date.slice(0, 7) === monthKey && o.date <= cutoff);
+    const revenue = round2(selected.reduce((sum, o) => sum + orderPaidRevenue(o), 0));
+    const gross = round2(selected.reduce((sum, o) => sum + orderPaidProfit(o), 0));
+    const spend = sumOperating(expenses.filter(e => {
+      const date = e.dateOrdered || e.dateReceived;
+      return date && date.slice(0, 7) === monthKey && date <= cutoff;
+    }));
+    return { revenue, gross, expenses: spend, net: round2(gross - spend) };
+  };
+  const current = totals(key, today);
+  const previous = totals(previousKey, `${previousKey}-${previousEnd.getDate()}`);
+  const pace = Object.fromEntries(Object.entries(current).map(([k, value]) => [k, round2(value / day * days)]));
+  const pending = round2(orders.filter(o => o.date && o.date.slice(0, 7) === key).reduce((sum, o) => sum + orderBalance(o), 0));
+  return { current, previous, pace, pending, day, days };
+}
+
 function todayDeliveryGroups(orders, day) {
   const groups = new Map();
   for (const o of orders) {
@@ -1929,78 +1952,17 @@ function renderDashboard() {
     }
   }
 
-  // "This Month" card — current calendar month only, with a See more link to the
-  // Monthly page. Revenue / Net Profit tiles use cash-basis (paid portion of
-  // each order, including partials). The card surfaces whenever there's any
-  // activity for the month, even if no order is fully paid yet.
-  const curMonthKey = monthKey(todayISO());
-  const inMonth = (o) => monthKey(o.date) === curMonthKey;
-  const monthOrders = orders.filter(inMonth);
-  const monthPending = monthOrders.filter(o => orderBalance(o) > 0.005);
-  const monthRev = round2(monthOrders.reduce((s, o) => s + orderPaidRevenue(o), 0));
-  const monthNet = round2(monthOrders.reduce((s, o) => s + orderPaidProfit(o), 0));
-  const monthLabel = monthName(curMonthKey + '-01');
+  const monthOverview = dashboardMonthOverview(orders, state.expenses, todayISO());
   const tmCard = $('#thisMonthCard');
-  // Keep monthPending in the hasAny check so a month with only pending orders
-  // still renders the card (the empty state otherwise reads "no orders yet"
-  // which would be misleading when there ARE orders, just none completed).
-  const hasAny = monthOrders.length || monthPending.length;
   if (tmCard) {
-    // Orders that have landed (paid) this month, the base for count, average
-    // and top products — same cash basis as the Revenue / Net Profit tiles.
-    const landed = monthOrders.filter(orderHasLandedProfit);
-    const avgOrder = landed.length ? monthRev / landed.length : 0;
-    // Pace: month-to-date revenue against last month's total, plus a straight
-    // line projection to month end (the same projection the Monthly page uses).
-    const now = new Date();
-    const day = now.getDate();
-    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    const prevKey = monthKey(new Date(now.getFullYear(), now.getMonth() - 1, 15).toISOString().slice(0, 10));
-    const prevRev = round2(orders.filter(o => monthKey(o.date) === prevKey).reduce((s, o) => s + orderPaidRevenue(o), 0));
-    const projected = day > 0 ? monthRev / day * daysInMonth : 0;
-    const pacePct = prevRev > 0 ? Math.min(100, Math.round(monthRev / prevRev * 100)) : 0;
-    const prevName = monthName(prevKey + '-01').split(' ')[0];
-    // Top sellers this month by revenue.
-    const byProduct = new Map();
-    landed.forEach(o => orderItems(o).forEach(it => {
-      const name = (it.product || '').trim();
-      if (!name) return;
-      const row = byProduct.get(name) || { name, qty: 0, gross: 0 };
-      row.qty += Number(it.qty) || 0;
-      row.gross += itemLineTotal(it);
-      byProduct.set(name, row);
-    }));
-    const top = [...byProduct.values()].sort((a, b) => b.gross - a.gross).slice(0, 5);
-    const topMax = top.length ? top[0].gross : 0;
-    tmCard.innerHTML = hasAny
-      ? `
-        <div class="this-month-head">${monthLabel} <span class="muted">· Day ${day} of ${daysInMonth}</span></div>
-        <div class="this-month-stats">
-          <div class="tm-stat tm-stat-revenue"><span class="tm-label">Revenue</span><b>${fmt$(monthRev)}</b></div>
-          <div class="tm-stat tm-stat-net"><span class="tm-label">Net Profit</span><b>${fmt$(monthNet)}</b></div>
-          <div class="tm-stat"><span class="tm-label">Orders paid</span><b>${fmtN(landed.length)}</b></div>
-          <div class="tm-stat"><span class="tm-label">Avg order</span><b>${fmt$(avgOrder)}</b></div>
-        </div>
-        ${prevRev > 0 ? `
-        <div class="tm-pace">
-          <div class="tm-pace-row">
-            <span>${pacePct}% of ${escapeHtml(prevName)}'s ${fmt$(prevRev)}</span>
-            <span class="muted">On pace for ${fmt$(projected)}</span>
-          </div>
-          <div class="tm-pace-bar"><i style="width:${pacePct}%"></i></div>
-        </div>` : ''}
-        ${top.length ? `
-        <div class="tm-top">
-          <div class="tm-top-head"><span>Top products</span><span class="muted">Revenue</span></div>
-          ${top.map(t => `
-            <div class="tm-top-row">
-              <div class="tm-top-name"><span>${escapeHtml(t.name)}</span><small>×${fmtN(t.qty)}</small></div>
-              <b>${fmt$(t.gross)}</b>
-              <div class="tm-top-bar"><i style="width:${topMax ? Math.max(4, Math.round(t.gross / topMax * 100)) : 0}%"></i></div>
-            </div>`).join('')}
-        </div>` : ''}
-      `
-      : `<div class="this-month-head">${monthLabel}</div><div class="muted" style="padding:6px 0;">No orders yet this month.</div>`;
+    const m = monthOverview;
+    const row = (label, key) => `<tr><th scope="row">${label}</th><td>${fmt$(m.current[key])}</td><td>${fmt$(m.previous[key])}</td><td>${fmt$(m.pace[key])}</td></tr>`;
+    tmCard.innerHTML = `<div class="month-overview-head">${monthName(todayISO().slice(0, 7) + '-01')}<span>Day ${m.day} of ${m.days}</span></div>
+      <table class="month-overview-table"><thead><tr><th scope="col">Metric</th><th scope="col">So far</th><th scope="col">Last month</th><th scope="col">Pace</th></tr></thead><tbody>
+      ${row('Revenue', 'revenue')}${row('Gross profit', 'gross')}${row('Net profit', 'net')}
+      </tbody></table>
+      <div class="month-overview-foot"><span>Operating expenses <b>${fmt$(m.current.expenses)}</b></span><span>Unpaid this month <b>${fmt$(m.pending)}</b></span></div>
+      `;
   }
 
   // "Today" snapshot — orders dated today, regardless of paid/delivered status,
@@ -2031,6 +1993,13 @@ function renderDashboard() {
   const todayPendingNet = round2(todayOrders.reduce((s, o) => s + orderUnpaidProfit(o), 0));
   const todayLabel = fmtDateShort(todayKey);
 
+  $('#todayMoneyOverview').innerHTML = `<div class="daily-money-head">Today’s payments & balances <span>${todayLabel}</span></div><div class="daily-money-grid">
+    <div><span>Collected today</span><b>${fmt$(todayPaidRev)}</b></div>
+    <div><span>Gross profit paid</span><b>${fmt$(todayPaidNet)}</b></div>
+    <div><span>Due on today’s orders</span><b>${fmt$(todayPendingRev)}</b></div>
+    <div><span>Profit pending today</span><b>${fmt$(todayPendingNet)}</b></div>
+  </div>`;
+
   const deliveryGroups = todayDeliveryGroups(orders, todayKey);
   const groupIndex = [];
   const expandedDeliveryKeys = new Set([...document.querySelectorAll('#todayCard .today-delivery[open]')].map(el => el.dataset.deliveryKey));
@@ -2046,7 +2015,7 @@ function renderDashboard() {
       <div class="today-expanded">
       <p class="today-items">${escapeHtml(items)}</p>
       ${notes ? `<p class="today-notes">${escapeHtml(notes)}</p>` : ''}
-      <div class="today-delivery-meta"><span>${g.allDelivered ? 'Fulfilled' : 'Delivery pending'}</span><span>${g.date < todayKey ? `Scheduled ${fmtDateShort(g.date)}` : 'Today'} · Total ${fmt$(g.total)}</span></div>
+      <div class="today-delivery-meta"><span>${g.allDelivered ? 'Fulfilled' : 'Delivery pending'}</span><span>${g.date === todayKey ? 'Today' : `Scheduled ${fmtDateShort(g.date)}`} · Total ${fmt$(g.total)}</span></div>
       <div class="today-actions">
         <button type="button" class="btn ghost" data-delivery-action="detail" data-group="${index}">Order details</button>
         <button type="button" class="btn ${g.allPaid ? 'today-complete-step' : 'today-step'}" aria-pressed="${g.allPaid}" data-delivery-action="paid" data-group="${index}">${g.allPaid ? '✓ Paid' : 'Mark paid'}</button>
@@ -2069,12 +2038,7 @@ function renderDashboard() {
       ${section('Ready to deliver', deliveryGroups.ready)}
       ${!pending ? `<p class="today-empty">${todayOrders.length ? 'Today’s scheduled orders are complete.' : 'No deliveries scheduled for today.'}${deliveryGroups.overdue.length ? ' Earlier orders still need attention above.' : ''}</p>` : ''}
       ${deliveryGroups.done.length ? `<details class="today-completed" ${deliveryGroups.done.some(g => expandedDeliveryKeys.has(deliveryKey(g))) ? 'open' : ''}><summary>Completed (${deliveryGroups.done.length})</summary><div class="today-deliveries">${deliveryGroups.done.map(deliveryRow).join('')}</div></details>` : ''}
-      <details class="today-financials"><summary>Today’s payments & balances</summary><div class="this-month-stats">
-        <div class="tm-stat"><span class="tm-label">Collected today</span><b>${fmt$(todayPaidRev)}</b></div>
-        <div class="tm-stat"><span class="tm-label">Net profit paid</span><b>${fmt$(todayPaidNet)}</b></div>
-        <div class="tm-stat"><span class="tm-label">Due on today’s orders</span><b>${fmt$(todayPendingRev)}</b></div>
-        <div class="tm-stat"><span class="tm-label">Profit pending</span><b>${fmt$(todayPendingNet)}</b></div>
-      </div></details>`;
+      `;
     tdCard.querySelectorAll('[data-delivery-action]').forEach(button => button.addEventListener('click', () => {
       const group = groupIndex[Number(button.dataset.group)];
       const action = button.dataset.deliveryAction;
@@ -2098,33 +2062,46 @@ function renderDashboard() {
   }
   const recentGroups = [...recentGroupsMap.values()].slice(0, 5);
   const recentBody = $('#recentOrdersBody');
-  const recentExpanded = getExpandedGroupIds(recentBody);
-  recentBody.innerHTML = recentGroups.map(g => renderRecentOrderGroup(g, true)).join('') ||
-    `<tr><td colspan="8" class="muted">No completed orders yet.</td></tr>`;
-  restoreGroupExpansion(recentBody, recentExpanded);
-  wireGroupExpand(recentBody);
+  const recentExpanded = new Set([...recentBody.querySelectorAll('.pending-order[open]')].map(el => el.dataset.recentKey));
+  recentBody.innerHTML = recentGroups.map(g => {
+    const key = JSON.stringify([(g.customer || '').trim().toLowerCase(), g.date]);
+    const total = g.orders.reduce((sum, o) => sum + orderTotal(o), 0);
+    const profit = g.orders.reduce((sum, o) => sum + orderProfit(o), 0);
+    const notes = [...new Set(g.orders.map(o => (o.notes || '').trim()).filter(Boolean))].join(' · ');
+    return `<div class="pending-entry"><details class="pending-order" data-recent-key="${escapeHtml(key)}" ${recentExpanded.has(key) ? 'open' : ''}>
+      <summary><span class="pending-customer">${escapeHtml(g.customer || 'Unnamed customer')}<small>${g.date ? fmtDateShort(g.date) : 'No date'} · <span class="pending-status-done">✓ Paid · ✓ Fulfilled</span></small></span><span class="pending-due">${fmt$(total)}</span><span class="pending-chevron" aria-hidden="true">›</span></summary>
+      <div class="pending-order-detail">
+        ${g.orders.flatMap(o => orderItems(o)).map(it => `<div class="pending-item"><span>${escapeHtml(it.product || 'Item')} <small>×${fmtN(Number(it.qty) || 0)}</small></span><b>${fmt$(itemLineTotal(it))}</b></div>`).join('')}
+        <div class="pending-order-totals"><span>Total <b>${fmt$(total)}</b></span><span>Profit <b>${fmt$(profit)}</b></span><span>${g.orders.length} order${g.orders.length === 1 ? '' : 's'}</span></div>
+        ${notes ? `<p class="pending-notes">${escapeHtml(notes)}</p>` : ''}
+      </div>
+    </details></div>`;
+  }).join('') || '<p class="muted">No completed orders yet.</p>';
 
   // Pending orders — anything not fully completed (unpaid OR undelivered).
   // Sorted oldest-first so the user can fulfill them in date order (5/2 before 5/5).
   const incompleteOrders = orders.filter(o => !o.paid || !o.delivered);
   const pendingOrdersList = [...incompleteOrders].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
-  const pendingGroupsMap = new Map();
-  for (const o of pendingOrdersList) {
-    const key = (o.customer || '').toLowerCase().trim() + '|' + (o.date || '');
-    if (!pendingGroupsMap.has(key)) pendingGroupsMap.set(key, { customer: o.customer, date: o.date, orders: [] });
-    pendingGroupsMap.get(key).orders.push(o);
-  }
-  const pendingGroups = [...pendingGroupsMap.values()];
   const pendingBody = $('#pendingOrdersBody');
-  const pendingExpanded = getExpandedGroupIds(pendingBody);
-  pendingBody.innerHTML = pendingGroups.length
-    ? pendingGroups.map(g => renderRecentOrderGroup(g)).join('')
-    : `<tr><td colspan="8" class="muted">No pending orders.</td></tr>`;
-  restoreGroupExpansion(pendingBody, pendingExpanded);
-  wireGroupExpand(pendingBody);
-  wireOrderInteractions(pendingBody);
-  // Edit now requires explicitly tapping the pencil icon — the tap-anywhere
-  // helper was too easy to trigger by accident while scrolling on mobile.
+  const expandedPending = new Set([...pendingBody.querySelectorAll('.pending-order[open]')].map(el => el.dataset.orderId));
+  // One compact row per order keeps Edit unambiguous, even when a customer
+  // has multiple orders scheduled on the same date.
+  pendingBody.innerHTML = pendingOrdersList.length ? pendingOrdersList.map((o, index) => {
+    const balance = orderBalance(o);
+    return `<div class="pending-entry">
+      <details class="pending-order" data-order-id="${escapeHtml(String(o.id))}" ${expandedPending.has(String(o.id)) ? 'open' : ''}>
+        <summary><span class="pending-customer">${escapeHtml(o.customer || 'Unnamed customer')}<small>${o.date ? fmtDateShort(o.date) : 'No date'} · <span class="${o.paid ? 'pending-status-done' : ''}">${o.paid ? '✓ Paid' : 'Payment pending'}</span> · <span class="${o.delivered ? 'pending-status-done' : ''}">${o.delivered ? '✓ Fulfilled' : 'Delivery pending'}</span></small></span><span class="pending-due ${o.paid ? 'pending-status-done' : ''}">${o.paid ? '✓ Paid' : `${fmt$(balance)} due`}</span><span class="pending-chevron" aria-hidden="true">›</span></summary>
+        <div class="pending-order-detail">
+          ${orderItems(o).map(it => `<div class="pending-item"><span>${escapeHtml(it.product || 'Item')} <small>×${fmtN(Number(it.qty) || 0)}</small></span><b>${fmt$(itemLineTotal(it))}</b></div>`).join('')}
+          <div class="pending-order-totals"><span>Total <b>${fmt$(orderTotal(o))}</b></span><span>Paid <b>${fmt$(orderPaidRevenue(o))}</b></span><span>Balance <b>${fmt$(balance)}</b></span><span>Profit <b>${fmt$(orderProfit(o))}</b></span></div>
+          ${o.notes ? `<p class="pending-notes">${escapeHtml(o.notes)}</p>` : ''}
+          ${o.source === 'woo' ? webOrderBadge(o) : ''}
+        </div>
+      </details>
+      <button type="button" class="btn ghost pending-edit" data-pending-edit="${index}" aria-label="Edit order for ${escapeHtml(o.customer || 'unnamed customer')}${o.date ? ` on ${fmtDateShort(o.date)}` : ''}">Edit</button>
+    </div>`;
+  }).join('') : '<p class="muted">No pending orders.</p>';
+  pendingBody.querySelectorAll('[data-pending-edit]').forEach(button => button.addEventListener('click', () => orderModal(pendingOrdersList[Number(button.dataset.pendingEdit)])));
   // Pending header total/profit = outstanding balance only. Paid-but-undelivered
   // orders contribute $0 here (cash already collected); partial orders contribute
   // just the unpaid portion.
@@ -2142,55 +2119,39 @@ function renderDashboard() {
     .sort((a, b) => (Number(a.qty) || 0) - (Number(b.qty) || 0));
   const reorderCountEl = $('#reorderCount');
   if (reorderCountEl) reorderCountEl.textContent = low.length ? `${low.length} to reorder` : '';
-  $('#lowStock').innerHTML = low.length
-    ? low.slice(0, 8).map(p => {
-        const q = Number(p.qty) || 0;
-        const right = q <= 0 ? `<b class="reorder-out">Out</b>` : `<b>${fmtN(q)} left</b>`;
-        return `<li><span>${escapeHtml(p.name)}</span>${right}</li>`;
-      }).join('')
-    : '<li class="muted">All products well-stocked.</li>';
-
-  // Pending shipments — consolidate by vendor+date OR shared tracking number.
-  const pendingShipments = state.shipments
-    .filter(s => !s.delivered)
-    .sort((a, b) => (b.dateOrdered || '').localeCompare(a.dateOrdered || ''));
-  const psGroups = consolidateShipments(pendingShipments).slice(0, 8);
-  const pendingShipsEl = $('#pendingShips');
-  if (!psGroups.length) {
-    pendingShipsEl.innerHTML = '<li class="muted">No pending shipments.</li>';
-  } else {
-    pendingShipsEl.innerHTML = psGroups.map((g, i) => {
-      if (g.shipments.length === 1) {
-        const s = g.shipments[0];
-        return `<li><span><b>${escapeHtml(s.vendor || '')}</b> <span class="muted">— ${escapeHtml(s.product || '')}</span></span><b>${escapeHtml(String(s.kits || ''))}</b></li>`;
-      }
-      const groupId = `pds_${i}`;
-      const totalKits = g.shipments.reduce((sum, s) => {
-        const n = parseInt(s.kits, 10);
-        return sum + (Number.isFinite(n) ? n : 0);
-      }, 0);
-      const headRight = totalKits > 0 ? fmtN(totalKits) : `${g.shipments.length}`;
-      const children = g.shipments.map(s =>
-        `<li class="ps-child"><span>${escapeHtml(s.product || '')}</span><b>${escapeHtml(String(s.kits || ''))}</b></li>`
-      ).join('');
-      return `<li class="ps-group">
-        <div class="ps-head" data-ps-toggle="${groupId}">
-          <span><span class="chevron">▶</span><b>${escapeHtml(g.vendor || '')}</b> <span class="muted">— ${g.shipments.length} items</span></span>
-          <b>${headRight}</b>
-        </div>
-        <ul class="ps-children" data-ps-children="${groupId}" hidden>${children}</ul>
-      </li>`;
-    }).join('');
-    pendingShipsEl.querySelectorAll('[data-ps-toggle]').forEach(el => {
-      el.addEventListener('click', () => {
-        const id = el.dataset.psToggle;
-        const chev = el.querySelector('.chevron');
-        const child = pendingShipsEl.querySelector(`[data-ps-children="${id}"]`);
-        const expanded = chev.classList.toggle('expanded');
-        if (child) child.hidden = !expanded;
-      });
-    });
+  const lowStockEl = $('#lowStock');
+  const openStock = new Set([...lowStockEl.querySelectorAll('details[open]')].map(el => el.dataset.key));
+  lowStockEl.innerHTML = low.length ? low.slice(0, 8).map((p, i) => {
+    const qty = Number(p.qty) || 0;
+    return `<details class="dashboard-disclosure" data-key="${escapeHtml(String(p.id))}" ${openStock.has(String(p.id)) ? 'open' : ''}>
+      <summary><span class="dashboard-row-name">${escapeHtml(p.name)}<small>${escapeHtml(categoryLabel(stockCategory(p)))}</small></span><span class="${qty <= 0 ? 'dashboard-status-danger' : 'dashboard-status-warn'}">${qty <= 0 ? 'Out of stock' : `${fmtN(qty)} left`}</span><span class="pending-chevron" aria-hidden="true">›</span></summary>
+      <div class="dashboard-row-detail"><div class="pending-order-totals"><span>On hand <b>${fmtN(qty)}</b></span><span>Reorder at <b>${fmtN(stockReorderLevel(p))}</b></span><span>Sell price <b>${fmt$(p.price)}</b></span></div><button type="button" class="btn ghost" data-alert-edit="${i}">Edit product</button></div>
+    </details>`;
+  }).join('') : '<p class="muted">All products well-stocked.</p>';
+  lowStockEl.querySelectorAll('[data-alert-edit]').forEach(button => button.addEventListener('click', () => stockModal(low[Number(button.dataset.alertEdit)])));
+  if (low.length > 8) {
+    const more = document.createElement('button'); more.type = 'button'; more.className = 'btn ghost';
+    more.textContent = `View all ${low.length} alerts in inventory`; more.addEventListener('click', () => { switchView('inventory'); }); lowStockEl.appendChild(more);
   }
+
+  const pendingShipments = state.shipments.filter(s => !s.delivered);
+  const psGroups = consolidateShipments(pendingShipments);
+  const pendingShipsEl = $('#pendingShips');
+  const openShips = new Set([...pendingShipsEl.querySelectorAll('details[open]')].map(el => el.dataset.key));
+  pendingShipsEl.innerHTML = psGroups.length ? psGroups.slice(0, 8).map((g, index) => {
+    const key = JSON.stringify(g.shipments.map(s => s.id).sort());
+    const statuses = g.shipments.map(shipmentStatus);
+    const status = statuses.find(s => s.key === 'overdue') || statuses.find(s => s.key === 'aging') || statuses[0];
+    return `<details class="dashboard-disclosure" data-key="${escapeHtml(key)}" ${openShips.has(key) ? 'open' : ''}>
+      <summary><span class="dashboard-row-name">${escapeHtml(g.vendor || 'Unknown vendor')}<small>${g.dateOrdered ? fmtDateShort(g.dateOrdered) : 'No date'} · ${g.shipments.length} item${g.shipments.length === 1 ? '' : 's'}</small></span><span class="${status.key === 'overdue' ? 'dashboard-status-danger' : status.key === 'aging' ? 'dashboard-status-warn' : 'dashboard-status-transit'}">${escapeHtml(status.label)}</span><span class="pending-chevron" aria-hidden="true">›</span></summary>
+      <div class="dashboard-row-detail">${g.shipments.map((s, i) => `<div class="dashboard-shipment-item"><div><b>${escapeHtml(s.product || 'Item')}</b><small>${fmtN(Number(s.kits) || 0)} ${s.unit === 'qty' ? 'units' : 'kits'}${s.tracking ? ` · Tracking: ${escapeHtml(s.tracking)}` : ''}</small></div><button type="button" class="btn ghost" data-shipment-group="${index}" data-shipment-item="${i}" aria-label="Edit shipment for ${escapeHtml(s.product || 'item')}">Edit</button></div>`).join('')}</div>
+    </details>`;
+  }).join('') : '<p class="muted">No pending shipments.</p>';
+  pendingShipsEl.querySelectorAll('[data-shipment-group]').forEach(button => button.addEventListener('click', () => shipModal(psGroups[Number(button.dataset.shipmentGroup)].shipments[Number(button.dataset.shipmentItem)])));
+  if (psGroups.length > 8) {
+    const more = document.createElement('button'); more.type = 'button'; more.className = 'btn ghost'; more.textContent = `View all ${psGroups.length} shipments`; more.addEventListener('click', () => switchView('shipments')); pendingShipsEl.appendChild(more);
+  }
+
 }
 
 function pillBool(v, yes, no) {
