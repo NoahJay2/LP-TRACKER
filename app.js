@@ -4360,65 +4360,47 @@ function renderCustomers() {
   const more = $('#custMore');
   if (!rows.length) {
     const filtered = q || tab !== 'all';
-    body.innerHTML = `<tr class="inv-empty"><td colspan="6">
+    body.innerHTML = `<div class="inv-empty">
       <div class="inv-empty-box">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5" /><path d="M3 20a6 6 0 0 1 12 0" /><path d="M16 4.5a3.5 3.5 0 0 1 0 7M21 20a6 6 0 0 0-3.5-5.5" /></svg>
         <b>${filtered ? 'No customers match' : 'No customers yet'}</b>
         <span>${filtered ? 'Try a different search or tab.' : 'Customers appear here as you record orders.'}</span>
         ${filtered ? '<button type="button" class="inv-btn" data-cust-clear>Clear filters</button>' : ''}
-      </div></td></tr>`;
+      </div></div>`;
     body.querySelector('[data-cust-clear]')?.addEventListener('click', () => $('#custReset').click());
     more.hidden = true;
     return;
   }
 
   const shown = rows.slice(0, custLimit);
+  const expanded = new Set([...body.querySelectorAll('details[open]')].map(el => el.dataset.customerId));
   body.innerHTML = shown.map(c => {
-    const contact = [formatPhone(c.phone), c.email].filter(Boolean).map(escapeHtml).join('<i>·</i>');
+    const tel = (c.phone || '').replace(/[^\d+]/g, '');
     const avg = c.completedCount ? c.lifetimeRev / c.completedCount : 0;
-    const balance = c.owed > 0.005
-      ? `<div class="cust-due">${fmt$(round2(c.owed))}</div><div class="inv-price-sub">${c.openOwed} open order${c.openOwed === 1 ? '' : 's'}</div>`
-      : c.pendingCount
-        ? `<div class="cust-clear">Paid</div><div class="inv-price-sub">${c.pendingCount} to fulfill</div>`
-        : `<div class="cust-clear">—</div>`;
-    const lapsed = c.orderCount > 0 && daysSince(c.lastDate) >= CUST_LAPSED_DAYS;
-    return `<tr class="inv-r" data-open-customer="${c.id}" tabindex="0">
-      <td>
-        <div class="inv-prod">
-          ${customerAvatar(c.name)}
-          <div class="inv-prod-text">
-            <div class="inv-prod-name">${escapeHtml(c.name)}${c.web ? ' <span class="web-tag" title="Has ordered on the website">Web</span>' : ''}</div>
-            <div class="inv-prod-meta">${contact || '<span class="cust-nocontact">No contact info</span>'}</div>
-          </div>
+    return `<div class="pending-entry"><details class="pending-order" data-customer-id="${escapeHtml(String(c.id))}" ${expanded.has(String(c.id)) ? 'open' : ''}>
+      <summary><span class="pending-customer">${escapeHtml(c.name)}<small>${fmtN(c.orderCount)} order${c.orderCount === 1 ? '' : 's'} · ${c.lastDate ? `Last ${fmtDateShort(c.lastDate)}` : 'No orders yet'}${c.web ? ' · Web' : ''}</small></span><span class="pending-due ${c.owed <= 0.005 && c.orderCount ? 'pending-status-done' : ''}">${c.owed > 0.005 ? `${fmt$(round2(c.owed))} due` : 'No balance'}</span><span class="pending-chevron" aria-hidden="true">›</span></summary>
+      <div class="pending-order-detail">
+        <div class="customer-contact-details">
+          ${tel ? `<a href="tel:${escapeHtml(tel)}">${escapeHtml(formatPhone(c.phone))}</a>` : ''}
+          ${c.email ? `<a href="mailto:${escapeHtml(c.email)}">${escapeHtml(c.email)}</a>` : ''}
+          ${!tel && !c.email ? '<span class="muted">No contact info</span>' : ''}
+          ${c.address ? `<span>${escapeHtml(c.address)}</span>` : ''}
         </div>
-      </td>
-      <td class="num">
-        <div class="inv-price">${fmtN(c.completedCount)}</div>
-        <div class="inv-price-sub">${c.pendingCount ? `+${fmtN(c.pendingCount)} unpaid` : c.completedCount ? `${fmt$(avg)} avg` : ''}</div>
-      </td>
-      <td class="num">
-        <div class="inv-price">${fmt$(round2(c.lifetimeRev))}</div>
-        <div class="inv-price-sub">${fmt$(round2(c.lifetimeProfit))} profit</div>
-      </td>
-      <td class="num">${balance}</td>
-      <td>
-        <div class="cust-last${lapsed ? ' is-lapsed' : ''}">${c.lastDate ? relativeDay(c.lastDate) : '—'}</div>
-        ${c.lastDate ? `<div class="inv-price-sub">${fmtDateLong(c.lastDate)}</div>` : ''}
-      </td>
-      <td class="inv-col-caret"><span class="inv-chev">${INV_CHEVRON}</span></td>
-    </tr>`;
+        <div class="pending-order-totals"><span>Lifetime <b>${fmt$(round2(c.lifetimeRev))}</b></span><span>Profit <b>${fmt$(round2(c.lifetimeProfit))}</b></span><span>Avg order <b>${fmt$(avg)}</b></span></div>
+        ${c.notes ? `<p class="pending-notes">${escapeHtml(c.notes)}</p>` : ''}
+        <button type="button" class="btn ghost customer-profile-btn" data-customer-profile="${escapeHtml(String(c.id))}">View profile &amp; order history</button>
+      </div>
+    </details><button type="button" class="btn ghost pending-edit" data-edit-customer="${escapeHtml(String(c.id))}" aria-label="Edit ${escapeHtml(c.name)}">Edit</button></div>`;
   }).join('');
   more.hidden = rows.length <= shown.length;
   $('#custMoreBtn').textContent = `Show more (${fmtN(rows.length - shown.length)} left)`;
 
-  body.querySelectorAll('[data-open-customer]').forEach(row => {
-    const open = () => {
-      const c = state.customers.find(x => x.id === row.dataset.openCustomer);
-      if (c) customerModal(c);
-    };
-    row.addEventListener('click', open);
-    row.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
-  });
+  body.querySelectorAll('[data-edit-customer], [data-customer-profile]').forEach(button => button.addEventListener('click', () => {
+    const edit = button.hasAttribute('data-edit-customer');
+    const id = edit ? button.dataset.editCustomer : button.dataset.customerProfile;
+    const customer = state.customers.find(c => String(c.id) === id);
+    if (customer) customerModal(customer, edit);
+  }));
 }
 
 // Overview cards — always across every customer, independent of filters.
@@ -4453,14 +4435,14 @@ function exportCustomersCSV() {
   toast(`Exported ${rows.length} customer${rows.length === 1 ? '' : 's'}.`);
 }
 
-function customerModal(existing) {
+function customerModal(existing, editOnly = false) {
   const isNew = !existing;
   const initial = existing
     ? { ...existing }
     : { name: '', phone: '', email: '', address: '', notes: '' };
 
-  $('#modalTitle').textContent = isNew ? 'New customer' : 'Customer';
-  modal.classList.toggle('modal-wide', !isNew);
+  $('#modalTitle').textContent = isNew ? 'New customer' : editOnly ? 'Edit customer' : 'Customer';
+  modal.classList.toggle('modal-wide', !isNew && !editOnly);
   const form = $('#modalForm');
   const stats = existing ? customerStats(existing) : null;
 
@@ -4473,7 +4455,7 @@ function customerModal(existing) {
     <label><span>Address</span><input type="text" name="address" value="${escapeHtml(initial.address)}" placeholder="Optional — pickup or delivery info" /></label>
     <label><span>Notes</span><textarea name="notes" rows="3" placeholder="Preferences, recurring orders, payment quirks…">${escapeHtml(initial.notes || '')}</textarea></label>`;
 
-  if (isNew) {
+  if (isNew || editOnly) {
     form.innerHTML = fields;
   } else {
     const orders = stats.orders.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
@@ -4551,7 +4533,7 @@ function customerModal(existing) {
   }));
 
   if (existing) {
-    form.querySelector('#customerDeleteBtn').addEventListener('click', () => {
+    form.querySelector('#customerDeleteBtn')?.addEventListener('click', () => {
       const hasOrders = stats.orderCount > 0;
       const warn = hasOrders
         ? `Delete ${existing.name}? They have ${stats.orderCount} order${stats.orderCount === 1 ? '' : 's'} on record — those orders stay; only the profile (contact info + notes) is removed.`
@@ -4622,7 +4604,7 @@ function customerModal(existing) {
   showModal();
   // New customers start typing a name; profiles open on the overview instead
   // of jumping the scroll down to the details form.
-  if (isNew) setTimeout(() => form.querySelector('[name="name"]')?.focus(), 50);
+  if (isNew || editOnly) setTimeout(() => form.querySelector('[name="name"]')?.focus(), 50);
 }
 
 // ---------- INVENTORY ----------

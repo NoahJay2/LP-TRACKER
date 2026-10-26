@@ -7758,3 +7758,9 @@ button.ord-badge { cursor: pointer; }
 .orders-row-actions .orders-status-toggle > span:first-child { font-size: 11px; text-transform: none; letter-spacing: 0; }
 .orders-row-actions .btn { min-height: 40px; padding: 6px 10px; font-size: 11px; margin-left: auto; }
 @media (max-width: 480px) { .orders-compact-list { padding: 8px; } }
+
+.customers-compact-list { padding: 10px; }
+.customer-contact-details { display: grid; gap: 6px; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.customer-contact-details a { color: var(--text); text-underline-offset: 3px; }
+.customer-profile-btn { margin-top: 12px; min-height: 40px; font-size: 11px; }
+@media (max-width: 480px) { .customers-compact-list { padding: 8px; } }
