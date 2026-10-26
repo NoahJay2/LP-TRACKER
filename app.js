@@ -7769,38 +7769,17 @@ function renderIncomeCategories(expenses) {
     el.innerHTML = '<p class="muted" style="margin:0;">No expenses in this period.</p>';
     return;
   }
-  const anyCapital = totals.some(r => r.capital > 0);
   const grand = { total: 0, operating: 0, capital: 0, count: 0 };
   totals.forEach(r => {
     grand.total += r.total; grand.operating += r.operating;
     grand.capital += r.capital; grand.count += r.count;
   });
-  const row = (r, cls) => `
-    <tr${cls ? ` class="${cls}"` : ''}>
-      <td>${escapeHtml(r.label)}</td>
-      <td class="num muted">${r.count}</td>
-      <td class="num">${fmt$(round2(r.operating))}</td>
-      ${anyCapital ? `<td class="num">${r.capital > 0 ? fmt$(round2(r.capital)) : '<span class="muted">—</span>'}</td>` : ''}
-      <td class="num"><b>${fmt$(round2(r.total))}</b></td>
-    </tr>`;
-  el.innerHTML = `
-    <table class="table compact">
-      <thead>
-        <tr>
-          <th>Category</th>
-          <th class="num">#</th>
-          <th class="num">Operating</th>
-          ${anyCapital ? '<th class="num">Capital</th>' : ''}
-          <th class="num">Total</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${totals.map(r => row({ ...r, label: expenseCategoryLabel(r.key) })).join('')}
-      </tbody>
-      <tfoot>
-        ${row({ ...grand, label: 'Total' }, 'is-cat-total')}
-      </tfoot>
-    </table>`;
+  const expanded = new Set([...el.querySelectorAll('details[open]')].map(d => d.dataset.category));
+  el.innerHTML = totals.map(r => `<details class="income-category-row" data-category="${escapeHtml(r.key)}" ${expanded.has(r.key) ? 'open' : ''}>
+    <summary><span>${escapeHtml(expenseCategoryLabel(r.key))}<small>${r.count} expense${r.count === 1 ? '' : 's'}</small></span><b>${fmt$(round2(r.total))}</b><span class="pending-chevron" aria-hidden="true">›</span></summary>
+    <div class="income-category-detail"><span>Operating <b>${fmt$(round2(r.operating))}</b></span><span>Capital <b>${fmt$(round2(r.capital))}</b></span></div>
+  </details>`).join('') + `<div class="income-category-total"><span>Total expenses</span><b>${fmt$(round2(grand.total))}</b></div>`;
+
 }
 
 // ---------- MONTHLY (calendar view) ----------

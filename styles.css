@@ -7793,3 +7793,49 @@ button.ord-badge { cursor: pointer; }
 #view-expenses .exp-stat { padding: 10px 12px; }
 #view-expenses .exp-stat-value { font-size: 21px; }
 @media (max-width: 480px) { .expenses-compact-list { padding: 8px; } }
+
+/* Income statement: compact figures and optional supporting detail. */
+#view-income .inv-metrics { gap: 6px; margin-bottom: 12px; }
+#view-income .inv-metric { padding: 10px 12px; }
+#view-income .inv-metric-label { font-size: 11px; }
+#view-income .inv-metric-value { font-size: 20px; margin: 4px 0; }
+#view-income .inv-metric-foot { font-size: 10px; line-height: 1.4; }
+#view-income .is-periods { gap: 10px; margin-bottom: 12px; align-items: stretch; }
+.is-custom-disclosure { min-width: 0; }
+.is-custom-disclosure > summary { padding: 9px 0; font-size: 11px; color: var(--muted); cursor: pointer; }
+.is-custom-disclosure .is-custom { margin-top: 6px; }
+#view-income .is-layout, #view-income .is-side { gap: 10px; }
+#view-income .is-st-head { padding: 12px; gap: 8px; flex-wrap: wrap; }
+#view-income .is-st-head h3 { font-size: 13px; }
+#view-income .is-st-head .muted { font-size: 10px; }
+.is-disclosure > summary { cursor: pointer; list-style: none; }
+.is-disclosure > summary::-webkit-details-marker { display: none; }
+.is-disclosure > summary::after { content: '›'; color: var(--muted); font-size: 18px; margin-left: auto; }
+.is-disclosure[open] > summary::after { transform: rotate(90deg); }
+#view-income .is-st td { padding: 8px 12px; font-size: 12px; }
+#view-income .is-st .is-st-indent { padding-left: 18px !important; }
+#view-income .is-st-section td { padding-top: 12px; font-size: 10px; }
+#view-income .is-st-grand td { font-size: 15px; padding-block: 12px; }
+#view-income .is-st-pct { font-size: 10px; margin-left: 4px; }
+#view-income .is-st-note { padding: 10px 12px; font-size: 10px; line-height: 1.5; }
+#view-income .is-side-body { padding: 10px 12px; gap: 9px; }
+#view-income .is-side-row, #view-income .is-bar-top { font-size: 12px; }
+#view-income .is-side-note { font-size: 10px; line-height: 1.5; }
+#view-income #isCatTable { padding: 8px; }
+.income-category-row { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px; }
+.income-category-row > summary { display: flex; align-items: center; gap: 10px; list-style: none; padding: 9px 10px; min-height: 46px; font-size: 12px; cursor: pointer; }
+.income-category-row > summary::-webkit-details-marker { display: none; }
+.income-category-row > summary > span:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.income-category-row small { display: block; color: var(--muted); font-size: 10px; margin-top: 3px; }
+.income-category-row[open] .pending-chevron { transform: rotate(90deg); }
+.income-category-detail { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 10px; border-top: 1px solid var(--border); font-size: 11px; color: var(--muted); }
+.income-category-detail b { color: var(--text); margin-left: 4px; }
+.income-category-total { display: flex; justify-content: space-between; gap: 10px; padding: 10px; font-size: 12px; }
+#view-income summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+@media (max-width: 640px) {
+  #view-income .is-layout { grid-template-columns: minmax(0, 1fr); }
+  #view-income .is-custom { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #view-income .is-custom label { min-width: 0; }
+  #view-income .is-custom input { width: 100%; box-sizing: border-box; }
+  #view-income .is-custom #isReset { grid-column: 1 / -1; }
+}

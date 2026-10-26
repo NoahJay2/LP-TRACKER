@@ -29,7 +29,7 @@
      fresh JS/CSS instead of serving the cached copy. iOS standalone mode
      caches scripts indefinitely once installed; a query-string change is the
      only thing that reliably busts it without removing/re-adding the bookmark. -->
-<link rel="stylesheet" href="styles.css?v=20261026-20" />
+<link rel="stylesheet" href="styles.css?v=20261026-21" />
 <!-- Preload the Zelle QR so it's already in the browser cache when the first
      invoice opens — guarantees a screenshot captures the image, no race. -->
 <link rel="preload" as="image" href="public/zelle-qr.png" />
@@ -573,11 +573,11 @@
           <button type="button" data-period="year">This year</button>
           <button type="button" data-period="all">All time</button>
         </div>
-        <div class="is-custom">
+        <details class="is-custom-disclosure"><summary>Custom dates</summary><div class="is-custom">
           <label><span>From</span><input type="date" id="isFrom" /></label>
           <label><span>To</span><input type="date" id="isTo" /></label>
           <button type="button" class="inv-btn inv-btn-ghost" id="isReset">Clear</button>
-        </div>
+        </div></details>
       </div>
 
       <div class="inv-metrics">
@@ -604,11 +604,11 @@
       </div>
 
       <div class="is-layout">
-        <div class="inv-panel is-statement">
-          <div class="is-st-head">
+        <details class="inv-panel is-statement is-disclosure" open>
+          <summary class="is-st-head">
             <h3>Profit &amp; loss</h3>
             <span class="muted" id="isPeriodLabel"></span>
-          </div>
+          </summary>
           <table class="is-st">
             <tbody>
               <tr class="is-st-section"><td colspan="2">Revenue</td></tr>
@@ -627,7 +627,7 @@
             </tbody>
           </table>
           <p class="is-st-note" id="isCapitalNote"></p>
-        </div>
+        </details>
 
         <div class="is-side">
           <div class="inv-panel is-side-card">
@@ -638,20 +638,20 @@
               <p class="is-side-note">Revenue above is cash basis: only money actually received in the period.</p>
             </div>
           </div>
-          <div class="inv-panel is-side-card">
-            <div class="is-st-head"><h3>Where the money goes</h3></div>
+          <details class="inv-panel is-side-card is-disclosure">
+            <summary class="is-st-head"><h3>Where the money goes</h3></summary>
             <div class="is-side-body" id="isSpendBars"></div>
-          </div>
+          </details>
         </div>
       </div>
 
-      <div class="inv-panel is-cat-panel">
-        <div class="is-st-head">
+      <details class="inv-panel is-cat-panel is-disclosure">
+        <summary class="is-st-head">
           <h3>Expenses by category</h3>
-          <span class="muted">For your accountant</span>
-        </div>
+          <span class="muted">Tap to expand</span>
+        </summary>
         <div class="is-cat-table" id="isCatTable"></div>
-      </div>
+      </details>
     </section>
 
     <!-- MONTHLY -->
@@ -815,6 +815,6 @@
 <script src="config.js?v=20261019-17"></script>
 <script src="seed.js?v=20261019-17"></script>
 <script src="price-list.js?v=20261026-3"></script>
-<script src="app.js?v=20261026-20"></script>
+<script src="app.js?v=20261026-21"></script>
 </body>
 </html>
