@@ -7785,3 +7785,11 @@ button.ord-badge { cursor: pointer; }
   .inventory-compact-list, .shipments-compact-list { padding: 8px; }
   .shipments-compact-list .orders-row-actions .btn { flex: 1 1 auto; }
 }
+
+.expenses-compact-list { padding: 10px; }
+.expense-funding-capital { color: #c4b5fd; }
+.expense-compact-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.expense-compact-actions .btn { margin-left: auto; min-height: 40px; font-size: 11px; }
+#view-expenses .exp-stat { padding: 10px 12px; }
+#view-expenses .exp-stat-value { font-size: 21px; }
+@media (max-width: 480px) { .expenses-compact-list { padding: 8px; } }

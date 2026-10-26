@@ -7018,17 +7018,14 @@ function renderExpenses() {
   if (funding === 'operating') rows = rows.filter(e => !expenseExcluded(e));
   else if (funding === 'capital') rows = rows.filter(e => expenseExcluded(e));
 
-  // consolidateExpenses sorts internally desc — re-sort here so the user's
-  // chosen direction wins.
-  const groups = consolidateExpenses(rows).sort((a, b) =>
-    expDir * ((a.dateOrdered || '').localeCompare(b.dateOrdered || ''))
-  );
-
   const body = $('#expBody');
-  const expandedBefore = getExpandedGroupIds(body);
-  body.innerHTML = groups.map(g => renderExpenseGroup(g)).join('') ||
-    `<tr><td colspan="6" class="muted" style="padding:24px;text-align:center;">No expenses match.</td></tr>`;
-  restoreGroupExpansion(body, expandedBefore);
+  const expandedBefore = new Set([...body.querySelectorAll('details[open]')].map(el => el.dataset.expenseId));
+  body.innerHTML = rows.map(e => renderCompactExpenseRow(e, expandedBefore.has(String(e.id)))).join('') ||
+    '<p class="muted orders-empty">No expenses match. Try changing your filters.</p>';
+  body.querySelectorAll('[data-edit-expense]').forEach(button => button.addEventListener('click', () => {
+    const expense = state.expenses.find(e => String(e.id) === button.dataset.editExpense);
+    if (expense) expModal(expense);
+  }));
 
   const expCount = rows.length;
   const itemCount = rows.reduce((s, e) => s + expenseItems(e).length, 0);
@@ -7082,6 +7079,20 @@ function renderExpenses() {
   }));
   wireCategorySelects(body);
   wireGroupExpand(body);
+}
+
+function renderCompactExpenseRow(e, expanded = false) {
+  const id = escapeHtml(String(e.id));
+  const items = expenseItems(e);
+  const capital = expenseExcluded(e);
+  return `<div class="pending-entry"><details class="pending-order" data-expense-id="${id}" ${expanded ? 'open' : ''}>
+    <summary><span class="pending-customer">${escapeHtml(e.vendor || 'Unknown vendor')}<small>${e.dateOrdered ? fmtDateShort(e.dateOrdered) : 'No date'} · ${escapeHtml(expenseCategoryShort(expenseCategory(e)))} · <span class="${capital ? 'expense-funding-capital' : ''}">${capital ? 'Capital' : 'Operating'}</span></small></span><span class="pending-due">${fmt$(expenseCost(e))}</span><span class="pending-chevron" aria-hidden="true">›</span></summary>
+    <div class="pending-order-detail">
+      ${items.map(it => `<div class="pending-item"><span>${expenseItemLabel(it)}</span>${e.costMode === 'perItem' ? `<b>${fmt$(it.cost)}</b>` : ''}</div>`).join('')}
+      <div class="pending-order-totals"><span>Total <b>${fmt$(expenseCost(e))}</b></span><span>${e.costMode === 'perItem' ? 'Costs per item' : 'Total cost for all items'}</span>${e.dateReceived ? `<span>Received <b>${fmtDateShort(e.dateReceived)}</b></span>` : ''}</div>
+      <div class="expense-compact-actions">${expenseCategoryChip(e)}<button type="button" class="btn ghost" data-exp-menu="${id}">More actions</button></div>
+    </div>
+  </details><button type="button" class="btn ghost pending-edit" data-edit-expense="${id}" aria-label="Edit expense from ${escapeHtml(e.vendor || 'unknown vendor')}">Edit</button></div>`;
 }
 
 // Three tiles above the table: what the business itself paid, what the owner
