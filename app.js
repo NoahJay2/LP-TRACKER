@@ -1656,6 +1656,7 @@ function closeModal() {
   modal.classList.remove('modal-readonly');
   modal.classList.remove('modal-wide');
   $('#modalCancel').textContent = 'Cancel';
+  $('#modalSave').textContent = 'Save';
   modalOnSave = null;
   unlockBodyScroll();
 }
@@ -4703,6 +4704,7 @@ wireSearchClear(stkSearch);
 $('#stkReset').addEventListener('click', () => resetFilters([stkSearch, stkFilter, stkCategory, stkSort]));
 $('#addStockBtn').addEventListener('click', () => stockModal());
 $('#invExportBtn').addEventListener('click', () => exportInventoryCSV());
+$('#invPriceListBtn').addEventListener('click', priceListModal);
 const setInvTab = (tab) => { stkFilter.value = tab; stkFilter.dispatchEvent(new Event('input')); };
 $$('#invTabs [data-tab]').forEach(b => b.addEventListener('click', () => setInvTab(b.dataset.tab)));
 // "Needs attention" jumps to whichever problem list has products in it.
@@ -8911,6 +8913,39 @@ function exportShipmentsCSV() {
     });
   downloadBlob(`lumen-shipments-${todayISO()}.csv`, toCSV(headers, rows), 'text/csv;charset=utf-8');
   toast(`Exported ${rows.length} shipment${rows.length === 1 ? '' : 's'}.`);
+}
+
+let priceListExporting = false;
+function priceListModal() {
+  if (priceListExporting) { toast('Your PDF is being prepared.'); return; }
+  openModal('Export customer price list', [
+    { name: 'title', label: 'PDF heading', required: true },
+    { name: 'category', label: 'Include category', type: 'select', options: [
+      { value: 'all', label: 'All categories' }, ...CATEGORIES.map(c => ({ value: c.key, label: c.label })),
+    ] },
+    { name: 'inStock', label: 'Only include items currently in stock', type: 'checkbox' },
+  ], data => {
+    const title = data.title.trim();
+    if (!title || title.length > 80) { toast('Enter a heading between 1 and 80 characters.'); return false; }
+    const rows = window.LumenPriceList.rowsFor(state.stock.map(p => ({ ...p,
+      category: stockCategory(p), categoryLabel: categoryLabel(stockCategory(p)),
+    })), data);
+    if (!rows.length) { toast('No items match. Choose another category or include out-of-stock items.'); return false; }
+    priceListExporting = true;
+    const button = $('#invPriceListBtn');
+    button.disabled = true;
+    button.textContent = 'Preparing PDF…';
+    window.LumenPriceList.download(rows, { title, fileDate: todayISO(),
+      date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+    }).then(() => toast(`Exported ${rows.length} items to PDF.`))
+      .catch(error => { console.error('Price list export failed', error); toast(error.message || 'PDF export failed. Please try again.'); })
+      .finally(() => { priceListExporting = false; button.disabled = false; button.textContent = 'Price list (PDF)'; });
+  }, { title: 'Price list', category: 'all', inStock: true });
+  $('#modalSave').textContent = 'Download PDF';
+  const note = document.createElement('p');
+  note.className = 'muted';
+  note.textContent = 'One-page PDF with the Lumen Research logo, available product photos, item names, regular prices and current selling prices. Large lists use a larger page to keep text readable. Regular price uses the original price when an item is on sale. Costs and stock quantities are excluded.';
+  $('#modalForm').prepend(note);
 }
 
 function exportInventoryCSV() {
