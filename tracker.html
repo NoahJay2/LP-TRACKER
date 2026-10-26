@@ -29,7 +29,7 @@
      fresh JS/CSS instead of serving the cached copy. iOS standalone mode
      caches scripts indefinitely once installed; a query-string change is the
      only thing that reliably busts it without removing/re-adding the bookmark. -->
-<link rel="stylesheet" href="styles.css?v=20261026-18" />
+<link rel="stylesheet" href="styles.css?v=20261026-19" />
 <!-- Preload the Zelle QR so it's already in the browser cache when the first
      invoice opens — guarantees a screenshot captures the image, no race. -->
 <link rel="preload" as="image" href="public/zelle-qr.png" />
@@ -406,19 +406,7 @@
           <button type="button" class="inv-btn inv-btn-ghost" id="stkReset">Reset</button>
         </div>
 
-        <table class="inv-grid">
-          <thead>
-            <tr>
-              <th>Product</th>
-              <th class="num">Price</th>
-              <th>Inventory</th>
-              <th class="num">Value</th>
-              <th>Status</th>
-              <th class="inv-col-caret" aria-hidden="true"></th>
-            </tr>
-          </thead>
-          <tbody id="stockBody"></tbody>
-        </table>
+        <div class="pending-order-list inventory-compact-list" id="stockBody"></div>
       </div>
     </section>
 
@@ -493,21 +481,8 @@
             </select>
           </label>
         </div>
-        <table class="table ship-table">
-          <thead>
-            <tr>
-              <th>Vendor</th><th>Timeline</th><th>Category</th><th>Product</th><th>Tracking</th><th>Delivered</th><th></th>
-            </tr>
-          </thead>
-          <tbody id="shipBody"></tbody>
-          <tfoot>
-            <tr>
-              <td colspan="5" class="muted" id="shipCount">0 shipments</td>
-              <td class="num" id="shipItems"></td>
-              <td></td>
-            </tr>
-          </tfoot>
-        </table>
+        <div class="pending-order-list shipments-compact-list" id="shipBody"></div>
+        <div class="orders-compact-footer"><span id="shipCount">0 shipments</span><span id="shipItems"></span></div>
       </div>
     </section>
 
@@ -854,6 +829,6 @@
 <script src="config.js?v=20261019-17"></script>
 <script src="seed.js?v=20261019-17"></script>
 <script src="price-list.js?v=20261026-3"></script>
-<script src="app.js?v=20261026-18"></script>
+<script src="app.js?v=20261026-19"></script>
 </body>
 </html>

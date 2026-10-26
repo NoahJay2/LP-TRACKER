@@ -4746,104 +4746,30 @@ function renderInventory() {
 
   if (!rows.length) {
     const filtered = q || cat !== 'all' || tab !== 'all';
-    $('#stockBody').innerHTML = `<tr class="inv-empty"><td colspan="6">
-      <div class="inv-empty-box">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5z" /><path d="m4 7.5 8 4.5 8-4.5M12 12v9" /></svg>
-        <b>${filtered ? 'No products match' : 'No products yet'}</b>
-        <span>${filtered ? 'Try a different search, category or tab.' : 'Add your first product to start tracking stock.'}</span>
-        ${filtered ? '<button type="button" class="inv-btn" data-inv-clear>Clear filters</button>' : ''}
-      </div></td></tr>`;
+    $('#stockBody').innerHTML = `<div class="inv-empty-box"><b>${filtered ? 'No products match' : 'No products yet'}</b><span>${filtered ? 'Try a different search, category or tab.' : 'Add your first product to start tracking stock.'}</span>${filtered ? '<button type="button" class="inv-btn" data-inv-clear>Clear filters</button>' : ''}</div>`;
     $('#stockBody [data-inv-clear]')?.addEventListener('click', () => $('#stkReset').click());
     return;
   }
-
   $('#stockBody').innerHTML = rows.map(p => {
-    const g = invGroup(p);
-    const qty = Number(p.qty) || 0;
-    const price = Number(p.price) || 0;
-    const cost = Number(p.cost) || 0;
-    const margin = price - cost;
-    const marginPct = price > 0 ? margin / price * 100 : 0;
-    const lvl = stockReorderLevel(p);
-    const customLvl = Number(p.reorder) > 0;
-    const pcat = stockCategory(p);
-    const open = invOpenRows.has(p.id);
-    // Level bar is full at 4× the reorder point, so "plenty" reads as full
-    // and anything near the reorder line is visibly short.
-    const fill = qty > 0 ? Math.max(6, Math.min(100, Math.round(qty / (lvl * 4) * 100))) : 0;
-    const origPrice = Number(p.originalPrice) || 0;
-    const onSale = origPrice > price;
-    const thumb = p.imageUrl
-      ? `<img class="inv-img" src="${escapeHtml(p.imageUrl)}" alt="" loading="lazy" />`
-      : `<span class="inv-img inv-img-ph cat-${pcat}" aria-hidden="true">${escapeHtml(productInitial(p.name))}</span>`;
-    const meta = [p.sku ? `<span class="inv-sku">${escapeHtml(p.sku)}</span>` : '', escapeHtml(categoryLabel(pcat))]
-      .filter(Boolean).join('<i>·</i>');
-    return `<tr class="inv-r inv-${g}${open ? ' open' : ''}" data-stock-row="${p.id}" tabindex="0" aria-expanded="${open}">
-      <td>
-        <div class="inv-prod">
-          ${thumb}
-          <div class="inv-prod-text">
-            <div class="inv-prod-name">${escapeHtml(p.name)}</div>
-            <div class="inv-prod-meta">${meta}${p.wooId ? `<i>·</i><span class="inv-site" title="Synced with your website — stock updates both ways">${INV_GLOBE}On website</span>` : ''}</div>
-          </div>
-        </div>
-      </td>
-      <td class="num">
-        <div class="inv-price">${fmt$(price)}</div>
-        ${onSale ? `<div class="inv-price-sub"><s>${fmt$(origPrice)}</s> <span class="inv-sale">Sale</span></div>` : ''}
-      </td>
-      <td>
-        <div class="inv-qty"><b>${fmtN(qty)}</b><span>${qty === 1 ? 'unit' : 'units'}</span></div>
-        <div class="inv-meter" title="Reorder at ${fmtN(lvl)}"><i style="width:${fill}%"></i></div>
-      </td>
-      <td class="num">
-        <div class="inv-price">${fmt$(invRetailValue(p))}</div>
-        <div class="inv-price-sub">${fmt$(invCostValue(p))} cost</div>
-      </td>
-      <td>${invBadge(g)}</td>
-      <td class="inv-col-caret"><span class="inv-chev">${INV_CHEVRON}</span></td>
-    </tr>
-    <tr class="inv-detail" data-stock-detail="${p.id}"${open ? '' : ' hidden'}>
-      <td colspan="6">
-        <div class="inv-detail-box">
-          <dl class="inv-facts">
-            <div><dt>Unit cost</dt><dd>${fmt$(cost)}</dd></div>
-            <div><dt>Unit margin</dt><dd class="inv-pos">${fmt$(margin)} <small>${fmtPct(marginPct)}</small></dd></div>
-            <div><dt>Profit on hand</dt><dd class="inv-pos">${fmt$(margin * qty)}</dd></div>
-            <div><dt>Reorder point</dt><dd>${fmtN(lvl)} <small>${customLvl ? 'custom' : 'default'}</small></dd></div>
-            <div><dt>Category</dt><dd>${escapeHtml(categoryLabel(pcat))}</dd></div>
-            <div><dt>SKU</dt><dd>${p.sku ? escapeHtml(p.sku) : '—'}</dd></div>
-            <div><dt>Website</dt><dd>${p.wooId ? 'Synced' : 'Not listed'}</dd></div>
-            <div><dt>List price</dt><dd>${onSale ? `${fmt$(origPrice)} <small>on sale</small>` : fmt$(price)}</dd></div>
-          </dl>
-          <div class="inv-detail-actions">
-            <button type="button" class="inv-btn inv-btn-danger" data-del-stock="${p.id}">Delete</button>
-            <button type="button" class="inv-btn inv-btn-primary" data-edit-stock="${p.id}">Edit product</button>
-          </div>
-        </div>
-      </td>
-    </tr>`;
+    const id = escapeHtml(String(p.id));
+    const qty = Number(p.qty) || 0, price = Number(p.price) || 0, cost = Number(p.cost) || 0;
+    const margin = price - cost, level = stockReorderLevel(p), group = invGroup(p);
+    const original = Number(p.originalPrice) || 0;
+    const status = group === 'out' ? 'Out of stock' : group === 'low' ? 'Low stock' : 'In stock';
+    return `<div class="pending-entry"><details class="pending-order" data-stock-row="${id}" ${invOpenRows.has(String(p.id)) ? 'open' : ''}>
+      <summary>${p.imageUrl ? `<img class="compact-product-image" src="${escapeHtml(p.imageUrl)}" alt="" loading="lazy" />` : ''}<span class="pending-customer">${escapeHtml(p.name)}<small>${escapeHtml(categoryLabel(stockCategory(p)))} · <span class="${group === 'out' ? 'dashboard-status-danger' : group === 'low' ? 'dashboard-status-warn' : 'pending-status-done'}">${status} · ${fmtN(qty)} left</span></small></span><span class="pending-due">${fmt$(price)}</span><span class="pending-chevron" aria-hidden="true">›</span></summary>
+      <div class="pending-order-detail"><dl class="compact-stock-facts">
+        <div><dt>Unit cost</dt><dd>${fmt$(cost)}</dd></div><div><dt>Unit margin</dt><dd>${fmt$(margin)} · ${fmtPct(price > 0 ? margin / price * 100 : 0)}</dd></div>
+        <div><dt>Retail value</dt><dd>${fmt$(invRetailValue(p))}</dd></div><div><dt>Cost value</dt><dd>${fmt$(invCostValue(p))}</dd></div>
+        <div><dt>Profit on hand</dt><dd>${fmt$(margin * qty)}</dd></div><div><dt>Reorder point</dt><dd>${fmtN(level)} · ${Number(p.reorder) > 0 ? 'custom' : 'default'}</dd></div>
+        <div><dt>SKU</dt><dd>${escapeHtml(p.sku || '—')}</dd></div><div><dt>Website</dt><dd>${p.wooId ? 'Synced' : 'Not listed'}</dd></div>
+        <div><dt>Regular price</dt><dd>${fmt$(original > price ? original : price)}${original > price ? ' · On sale' : ''}</dd></div>
+      </dl><button type="button" class="btn danger-outline compact-delete" data-del-stock="${id}">Delete product</button></div>
+    </details><button type="button" class="btn ghost pending-edit" data-edit-stock="${id}" aria-label="Edit ${escapeHtml(p.name)}">Edit</button></div>`;
   }).join('');
-
-  // Click (or Enter / Space) a product to open its details. Open panels are
-  // remembered so a background refresh doesn't snap them shut.
-  const toggle = (row) => {
-    const id = row.dataset.stockRow;
-    const detail = $(`#stockBody [data-stock-detail="${id}"]`);
-    if (!detail) return;
-    const open = detail.hidden;
-    detail.hidden = !open;
-    row.classList.toggle('open', open);
-    row.setAttribute('aria-expanded', String(open));
-    if (open) invOpenRows.add(id); else invOpenRows.delete(id);
-  };
-  $$('#stockBody [data-stock-row]').forEach(row => {
-    row.addEventListener('click', () => toggle(row));
-    row.addEventListener('keydown', (e) => {
-      if (e.target !== row) return;
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(row); }
-    });
-  });
+  $$('#stockBody [data-stock-row]').forEach(el => el.addEventListener('toggle', () => {
+    if (el.open) invOpenRows.add(el.dataset.stockRow); else invOpenRows.delete(el.dataset.stockRow);
+  }));
 
   $$('#stockBody [data-edit-stock]').forEach(el => el.addEventListener('click', () => {
     const p = state.stock.find(x => x.id === el.dataset.editStock);
@@ -5964,10 +5890,16 @@ function renderShipments() {
   );
 
   const body = $('#shipBody');
-  const expandedBefore = getExpandedGroupIds(body);
-  body.innerHTML = groups.map(g => renderShipmentGroup(g)).join('') ||
-    `<tr><td colspan="7" class="muted" style="padding:24px;text-align:center;">No shipments match.</td></tr>`;
-  restoreGroupExpansion(body, expandedBefore);
+  const expandedBefore = new Set([...body.querySelectorAll('details[open]')].map(el => el.dataset.shipKey));
+  body.innerHTML = groups.map((g, index) => renderCompactShipmentGroup(g, index, expandedBefore)).join('') || '<p class="muted orders-empty">No shipments match. Try changing your filters.</p>';
+  body.querySelectorAll('[data-edit-shipment-group]').forEach(button => button.addEventListener('click', () => {
+    const group = groups[Number(button.dataset.editShipmentGroup)];
+    if (group.shipments.length === 1) shipModal(group.shipments[0]); else shipGroupModal(group.shipments);
+  }));
+  body.querySelectorAll('[data-edit-shipment]').forEach(button => button.addEventListener('click', () => {
+    const sh = state.shipments.find(s => String(s.id) === button.dataset.editShipment);
+    if (sh) shipModal(sh);
+  }));
 
   const itemTotal = shipmentsItemTotal(rows);
   $('#shipCount').textContent = `${rows.length} shipment${rows.length === 1 ? '' : 's'}`;
@@ -6079,6 +6011,29 @@ function renderShipments() {
 
 // Four tiles: what's still out, what's late, how much stock is riding on the
 // pending boxes, and how fast things have actually been arriving.
+function renderCompactShipmentGroup(g, index, expanded) {
+  const key = JSON.stringify(g.shipments.map(s => String(s.id)).sort());
+  const ids = escapeHtml(g.shipments.map(s => s.id).join(','));
+  const allDelivered = g.shipments.every(s => s.delivered);
+  const mixed = !allDelivered && g.shipments.some(s => s.delivered);
+  const statuses = g.shipments.map(shipmentStatus);
+  const status = statuses.find(s => s.key === 'overdue') || statuses.find(s => s.key === 'aging') || statuses[0];
+  const label = mixed ? 'Part received' : allDelivered ? '✓ Received' : status.label;
+  return `<div class="pending-entry"><details class="pending-order" data-ship-key="${escapeHtml(key)}" ${expanded.has(key) ? 'open' : ''}>
+    <summary><span class="pending-customer">${escapeHtml(g.vendor || 'Unknown vendor')}<small>${g.dateOrdered ? fmtDateShort(g.dateOrdered) : 'No date'} · ${g.shipments.length} product${g.shipments.length === 1 ? '' : 's'}</small></span><span class="pending-due ${allDelivered ? 'pending-status-done' : status.key === 'overdue' ? 'dashboard-status-danger' : 'dashboard-status-transit'}">${escapeHtml(label)}</span><span class="pending-chevron" aria-hidden="true">›</span></summary>
+    <div class="pending-order-detail">
+      ${g.shipments.map(s => {
+        const id = escapeHtml(String(s.id)), tracking = trackingUrl(s.tracking), st = shipmentStatus(s);
+        return `<div class="compact-shipment-line"><div class="pending-item"><span>${escapeHtml(s.product || 'Item')} <small>· ${escapeHtml(categoryLabel(shipmentCategory(s)))}</small></span><b>${fmtN(Number(s.kits) || 0)} ${s.unit === 'qty' ? 'units' : 'kits'}</b></div>
+          <div class="shipment-line-meta"><span>${escapeHtml(st.label)}${st.detail ? ` · ${escapeHtml(st.detail)}` : ''}</span><span>${s.dateReceived ? `Received ${fmtDateShort(s.dateReceived)}` : 'Not received'}</span></div>
+          ${s.tracking ? `<div class="shipment-tracking">${tracking ? `<a href="${escapeHtml(tracking.url)}" target="_blank" rel="noopener">${escapeHtml(s.tracking)} ↗</a>` : escapeHtml(s.tracking)}</div>` : '<div class="shipment-line-meta">No tracking number</div>'}
+          <div class="orders-row-actions"><label class="orders-status-toggle"><span>Received</span><span class="switch"><input type="checkbox" data-ship-delivered="${id}" ${s.delivered ? 'checked' : ''}/><span class="slider"></span></span></label>
+            <button type="button" class="btn ghost" data-ship-when="${id}">Dates</button><button type="button" class="btn ghost" data-edit-shipment="${id}">Edit</button><button type="button" class="btn ghost" data-ship-menu="${id}">More</button></div></div>`;
+      }).join('')}
+      ${g.shipments.length > 1 ? `<div class="orders-row-actions"><label class="orders-status-toggle"><span>All received${mixed ? ' (mixed)' : ''}</span><span class="switch"><input type="checkbox" data-group-ship-delivered="${ids}" ${allDelivered ? 'checked' : ''}/><span class="slider"></span></span></label><button type="button" class="btn ghost" data-ship-group-when="${ids}">Group dates</button></div>` : ''}
+    </div></details><button type="button" class="btn ghost pending-edit" data-edit-shipment-group="${index}" aria-label="Edit shipments from ${escapeHtml(g.vendor || 'unknown vendor')}">Edit</button></div>`;
+}
+
 function renderShipSummary(rows) {
   const el = $('#shipSummary');
   if (!el) return;
