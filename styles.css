@@ -7622,3 +7622,42 @@ button.ord-badge { cursor: pointer; }
   .mo-panel .cal-card { padding: 12px; }
 }
 .inv-tabs button span:empty { display: none; }
+
+/* Today: delivery work first, financial details on demand. */
+#todayCard .today-help { color: var(--muted); font-size: 12px; margin: 5px 0 12px; }
+#todayCard .today-summary { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 8px 0; border-block: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+#todayCard .today-summary b { color: var(--text); font-size: 14px; margin-right: 4px; }
+#todayCard .today-section { margin-top: 12px; }
+#todayCard .today-section-overdue > .today-section-head { color: var(--danger); }
+#todayCard .today-deliveries { display: grid; gap: 5px; margin-top: 5px; }
+#todayCard .today-delivery { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 0; min-width: 0; }
+#todayCard .today-delivery-head { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 9px 10px; list-style: none; }
+#todayCard .today-delivery-head::-webkit-details-marker { display: none; }
+#todayCard .today-delivery-head .today-customer { flex: 1; min-width: 0; font-size: 13px; line-height: 1.35; }
+#todayCard .today-customer small { display: block; color: var(--muted); font-size: 10px; font-weight: 400; }
+#todayCard .today-row-status { color: var(--muted); font-size: 10px; flex-shrink: 0; }
+#todayCard .today-chevron { font-size: 20px; color: var(--muted); line-height: 1; }
+#todayCard .today-delivery[open] > summary .today-chevron { transform: rotate(90deg); }
+#todayCard .today-expanded { border-top: 1px solid var(--border); padding: 4px 10px 12px; }
+#todayCard .today-customer { appearance: none; background: none; border: 0; padding: 0; text-align: left; color: var(--text); font: 600 15px var(--font-body); cursor: pointer; overflow-wrap: anywhere; }
+#todayCard .today-customer:hover { text-decoration: underline; text-underline-offset: 3px; }
+#todayCard .today-customer:focus-visible, #todayCard summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 4px; }
+#todayCard .today-balance { flex-shrink: 0; color: var(--text); font-size: 12px; font-weight: 600; }
+#todayCard .today-items { font-size: 12px; line-height: 1.6; margin: 9px 0; overflow-wrap: anywhere; }
+#todayCard .today-notes { border-left: 2px solid var(--border-strong); padding-left: 9px; color: var(--muted); font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; margin: 10px 0; }
+#todayCard .today-delivery-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 5px 12px; color: var(--muted); font-size: 11px; }
+.today-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.today-actions:empty { display: none; }
+#todayCard .today-actions .btn { min-height: 36px; font-size: 11px; padding: 7px 10px; }
+#todayCard .today-actions .today-step { background: transparent; border: 1px solid var(--border-strong); color: var(--text); opacity: 1; }
+#todayCard .today-actions .today-step:hover { background: var(--surface); }
+#todayCard .today-complete-step { display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 7px 10px; border: 1px solid #28794d; border-radius: var(--radius); background: #143725; color: #93eab7; font-size: 11px; font-weight: 600; }
+#todayCard .today-status-done { color: #93eab7; }
+#todayCard .today-completed, #todayCard .today-financials { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+#todayCard summary { cursor: pointer; color: var(--muted); font-size: 12px; font-weight: 600; }
+#todayCard .today-completed .today-delivery { opacity: .8; }
+@media (max-width: 480px) {
+  #todayCard .today-delivery { padding: 0; }
+  #todayCard .today-actions .btn { flex: 1 1 auto; min-height: 42px; }
+  #todayCard .today-complete-step { flex: 1 1 auto; min-height: 42px; }
+}

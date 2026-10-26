@@ -1677,6 +1677,75 @@ modal.addEventListener('click', (e) => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && modal.classList.contains('open')) closeModal(); });
 
+function todayDeliveryGroups(orders, day) {
+  const groups = new Map();
+  for (const o of orders) {
+    if (!o.date || o.date > day) continue;
+    const customer = (o.customer || '').trim().toLowerCase();
+    const key = JSON.stringify([customer, o.date]);
+    if (!groups.has(key)) groups.set(key, { customer, date: o.date, name: (o.customer || '').trim() || 'Unnamed customer', orders: [], total: 0, balance: 0, allPaid: true, allDelivered: true });
+    const g = groups.get(key);
+    g.orders.push(o);
+    g.total += orderTotal(o);
+    g.balance += Math.max(0, orderTotal(o) - orderPaidRevenue(o));
+    g.allPaid = g.allPaid && !!o.paid;
+    g.allDelivered = g.allDelivered && !!o.delivered;
+  }
+  const result = { overdue: [], needsPayment: [], ready: [], done: [] };
+  for (const g of groups.values()) {
+    if (g.date < day) { if (!g.allPaid || !g.allDelivered) result.overdue.push(g); }
+    else result[g.allPaid ? (g.allDelivered ? 'done' : 'ready') : 'needsPayment'].push(g);
+  }
+  for (const list of Object.values(result)) list.sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
+  return result;
+}
+
+function updateTodayDeliveryGroup(group, action, date) {
+  const touched = new Set();
+  const updated = [];
+  const nextPaid = !group.orders.every(o => o.paid);
+  const nextFulfilled = !group.orders.every(o => o.delivered);
+  for (const o of group.orders) {
+    if (action === 'paid' && !!o.paid !== nextPaid) setOrderFullyPaid(o, nextPaid);
+    else if (action === 'fulfilled' && !!o.delivered !== nextFulfilled) o.delivered = nextFulfilled;
+    else if (action === 'reschedule' && !o.delivered && o.date !== date) o.date = date;
+    else continue;
+    // Moving a delivery must not change payment dates or inventory.
+    if (action !== 'reschedule') reconcileOrderInventory(o).forEach(p => touched.add(p));
+    updated.push(o);
+  }
+  if (!updated.length) return;
+  saveState(); cloudUpsertMany('orders', updated);
+  if (touched.size) cloudUpsertMany('stock', [...touched]);
+  renderOrders(); renderInventory(); renderDashboard(); renderMonthly(); renderCustomers();
+  toast(action === 'reschedule' ? 'Delivery date updated.' : action === 'paid' ? (nextPaid ? 'Payment recorded.' : 'Marked unpaid.') : (nextFulfilled ? 'Marked fulfilled.' : 'Fulfillment undone.'));
+}
+
+function rescheduleTodayDelivery(group) {
+  openModal('Reschedule delivery', [{ name: 'date', label: 'Delivery date', type: 'date', required: true }], data => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(data.date) || data.date < todayISO()) { toast('Choose today or a future delivery date.'); return false; }
+    updateTodayDeliveryGroup(group, 'reschedule', data.date);
+  }, { date: group.date < todayISO() ? todayISO() : group.date });
+  $('#modalSave').textContent = 'Move delivery';
+  const note = document.createElement('p');
+  note.className = 'muted';
+  note.textContent = 'Moves only unfulfilled orders for this customer and date. Payments stay on their original dates. Usual delivery days: Tuesday, Thursday and Friday; any date is available.';
+  $('#modalForm').prepend(note);
+  const shortcuts = document.createElement('div');
+  shortcuts.className = 'today-actions';
+  for (const [day, label] of [[2, 'Tuesday'], [4, 'Thursday'], [5, 'Friday']]) {
+    const next = new Date(todayISO() + 'T12:00:00');
+    next.setDate(next.getDate() + ((day - next.getDay() + 7) % 7 || 7));
+    const iso = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-${String(next.getDate()).padStart(2, '0')}`;
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'btn ghost';
+    button.textContent = `${label} ${fmtDateShort(iso)}`;
+    button.addEventListener('click', () => { $('#modalForm [name="date"]').value = iso; });
+    shortcuts.appendChild(button);
+  }
+  $('#modalForm').appendChild(shortcuts);
+}
+
 // ---------- DASHBOARD ----------
 // `readonly` skips paid/delivered toggles (used by the Recently Completed card,
 // where everything is paid AND delivered — toggling there would un-complete it).
@@ -1962,166 +2031,60 @@ function renderDashboard() {
   const todayPendingNet = round2(todayOrders.reduce((s, o) => s + orderUnpaidProfit(o), 0));
   const todayLabel = fmtDateShort(todayKey);
 
-  // Group today's orders by customer so each customer is one row in To Do /
-  // Completed. A customer goes to "Completed" only if ALL their orders today
-  // are both paid AND delivered — otherwise they appear in "To Do" with pills
-  // showing what's still outstanding.
-  const todayCustomers = new Map();
-  for (const o of todayOrders) {
-    const key = (o.customer || '').toLowerCase().trim();
-    if (!todayCustomers.has(key)) {
-      todayCustomers.set(key, { name: o.customer || '', total: 0, paid: 0, allPaid: true, allDelivered: true });
-    }
-    const bucket = todayCustomers.get(key);
-    bucket.total += orderTotal(o);
-    bucket.paid += orderPaidRevenue(o);   // cap each at orderTotal in case of overpay
-    if (!o.paid) bucket.allPaid = false;
-    if (!o.delivered) bucket.allDelivered = false;
-  }
-  const todoList = [];
-  const doneList = [];
-  for (const c of todayCustomers.values()) {
-    if (c.allPaid && c.allDelivered) doneList.push(c);
-    else todoList.push(c);
-  }
-
-  // Overdue — incomplete orders with a date BEFORE today. Grouped by
-  // customer+date so a customer with two outstanding past dates shows as two
-  // rows. Sorted oldest first so the most-aged work surfaces at the top.
-  const overdueGroupsMap = new Map();
-  for (const o of orders) {
-    if (o.paid && o.delivered) continue;
-    if (!o.date || o.date >= todayKey) continue;
-    const ck = (o.customer || '').toLowerCase().trim();
-    const key = ck + '|' + o.date;
-    if (!overdueGroupsMap.has(key)) {
-      overdueGroupsMap.set(key, {
-        name: o.customer || '', custKey: ck, date: o.date,
-        total: 0, paid: 0, allPaid: true, allDelivered: true,
-      });
-    }
-    const bucket = overdueGroupsMap.get(key);
-    bucket.total += orderTotal(o);
-    bucket.paid += orderPaidRevenue(o);
-    if (!o.paid) bucket.allPaid = false;
-    if (!o.delivered) bucket.allDelivered = false;
-  }
-  const overdueList = [...overdueGroupsMap.values()].sort((a, b) => a.date.localeCompare(b.date));
-  const daysLate = (iso) => {
-    const a = new Date(iso + 'T00:00:00');
-    const b = new Date(todayKey + 'T00:00:00');
-    return Math.max(0, Math.round((b - a) / 86400000));
+  const deliveryGroups = todayDeliveryGroups(orders, todayKey);
+  const groupIndex = [];
+  const expandedDeliveryKeys = new Set([...document.querySelectorAll('#todayCard .today-delivery[open]')].map(el => el.dataset.deliveryKey));
+  const deliveryKey = g => JSON.stringify([g.customer, g.date]);
+  const deliveryRow = (g) => {
+    const index = groupIndex.push(g) - 1;
+    const items = g.orders.flatMap(o => orderItems(o)).map(it => `${fmtN(Number(it.qty) || 0)} × ${it.product || 'Item'}`).join(' · ');
+    const notes = [...new Set(g.orders.map(o => (o.notes || '').trim()).filter(Boolean))].join(' · ');
+    return `<details class="today-delivery" data-delivery-key="${escapeHtml(deliveryKey(g))}" ${expandedDeliveryKeys.has(deliveryKey(g)) ? 'open' : ''}>
+      <summary class="today-delivery-head"><span class="today-customer">${escapeHtml(g.name)}${g.date < todayKey ? `<small>${fmtDateShort(g.date)}</small>` : ''}</span>
+        <span class="today-row-status ${g.allDelivered ? 'today-status-done' : ''}">${g.allDelivered ? '✓ Fulfilled' : g.allPaid ? 'Ready' : 'Unpaid'}</span>
+        <span class="today-balance ${g.allPaid ? 'today-status-done' : ''}">${g.allPaid ? '✓ Paid' : `${fmt$(g.balance)} due`}</span><span class="today-chevron" aria-hidden="true">›</span></summary>
+      <div class="today-expanded">
+      <p class="today-items">${escapeHtml(items)}</p>
+      ${notes ? `<p class="today-notes">${escapeHtml(notes)}</p>` : ''}
+      <div class="today-delivery-meta"><span>${g.allDelivered ? 'Fulfilled' : 'Delivery pending'}</span><span>${g.date < todayKey ? `Scheduled ${fmtDateShort(g.date)}` : 'Today'} · Total ${fmt$(g.total)}</span></div>
+      <div class="today-actions">
+        <button type="button" class="btn ghost" data-delivery-action="detail" data-group="${index}">Order details</button>
+        <button type="button" class="btn ${g.allPaid ? 'today-complete-step' : 'today-step'}" aria-pressed="${g.allPaid}" data-delivery-action="paid" data-group="${index}">${g.allPaid ? '✓ Paid' : 'Mark paid'}</button>
+        <button type="button" class="btn ${g.allDelivered ? 'today-complete-step' : 'today-step'}" aria-pressed="${g.allDelivered}" data-delivery-action="fulfilled" data-group="${index}">${g.allDelivered ? '✓ Fulfilled' : 'Mark fulfilled'}</button>
+        ${!g.allDelivered ? `<button type="button" class="btn ghost" data-delivery-action="reschedule" data-group="${index}">Reschedule</button>` : ''}
+        <button type="button" class="btn ghost" data-delivery-action="invoice" data-group="${index}">Show Invoice</button>
+        <button type="button" class="btn ghost" data-delivery-action="send-invoice" data-group="${index}">Send Invoice</button>
+      </div>
+      </div>
+    </details>`;
   };
-
-  const customerKey = (c) => (c.name || '').toLowerCase().trim();
-  // Pills always show both Pay and Send status — green confirms a step is done,
-  // amber flags it as still owed. "Send" covers both shipments and in-person
-  // deliveries since either way it leaves the user's hands.
-  const statusTags = (c) => {
-    const paid = Math.max(0, Number(c.paid) || 0);
-    const total = Math.max(0, Number(c.total) || 0);
-    const balance = Math.max(0, total - paid);
-    let pay;
-    if (c.allPaid || balance <= 0.005) {
-      pay = `<span class="pill green">Paid</span>`;
-    } else if (paid > 0.005) {
-      pay = `<span class="pill partial" title="${fmt$(round2(paid))} of ${fmt$(round2(total))} paid · ${fmt$(round2(balance))} due">Partial ${fmt$(round2(paid))}</span>`;
-    } else {
-      pay = `<span class="pill amber">Pay</span>`;
-    }
-    const send = c.allDelivered
-      ? `<span class="pill green">Sent</span>`
-      : `<span class="pill amber">Send</span>`;
-    return `${pay}${send}`;
-  };
-  const todoRow = (c) => `<div class="today-row" data-today-customer="${escapeHtml(customerKey(c))}" role="button" tabindex="0">
-    <span class="today-name">${escapeHtml(c.name)}</span>
-    <span class="today-amount">${fmt$(c.total)}</span>
-    <span class="today-tags">${statusTags(c)}</span>
-  </div>`;
-  const doneRow = (c) => `<div class="today-row today-row-done" data-today-customer="${escapeHtml(customerKey(c))}" role="button" tabindex="0">
-    <span class="today-name">${escapeHtml(c.name)}</span>
-    <span class="today-amount">${fmt$(c.total)}</span>
-    <span class="today-tags">${statusTags(c)}</span>
-  </div>`;
-  const overdueRow = (c) => {
-    const days = daysLate(c.date);
-    return `<div class="today-row today-row-overdue" data-today-customer="${escapeHtml(c.custKey)}" data-today-date="${c.date}" role="button" tabindex="0">
-      <span class="today-name">${escapeHtml(c.name)}<span class="today-row-date">${fmtDateShort(c.date)} · ${days}d late</span></span>
-      <span class="today-amount">${fmt$(c.total)}</span>
-      <span class="today-tags">${statusTags(c)}</span>
-    </div>`;
-  };
-
-  const overdueSectionHtml = overdueList.length ? `
-    <div class="today-section today-section-overdue">
-      <div class="today-section-head today-section-head-overdue">Overdue <span class="muted">(${overdueList.length})</span></div>
-      <div class="today-list">${overdueList.map(overdueRow).join('')}</div>
-    </div>
-  ` : '';
-
+  const section = (label, list, extra = '') => list.length ? `<section class="today-section ${extra}"><div class="today-section-head">${label} <span class="muted">(${list.length})</span></div><div class="today-deliveries">${list.map(deliveryRow).join('')}</div></section>` : '';
   const tdCard = $('#todayCard');
   if (tdCard) {
-    // Show the stats block whenever there's any cash activity today OR any
-    // orders dated today — so a payment collected today for a future-dated
-    // order still surfaces under Total Paid / Net Profit Paid.
-    const hasCashToday = todayPaidRev > 0.005 || todayPaidNet > 0.005;
-    const headSuffix = todayOrders.length
-      ? `· ${fmtN(todayOrderCount)} order${todayOrderCount === 1 ? '' : 's'}`
-      : (hasCashToday ? `· Payments collected` : `· No orders today`);
-    const statsBlock = (todayOrders.length || hasCashToday) ? `
-      <div class="this-month-stats">
-        <div class="tm-stat tm-stat-revenue"><span class="tm-label">Total Paid</span><b>${fmt$(todayPaidRev)}</b></div>
-        <div class="tm-stat tm-stat-net"><span class="tm-label">Net Profit Paid</span><b>${fmt$(todayPaidNet)}</b></div>
-        <div class="tm-stat tm-stat-pending"><span class="tm-label">Total Pending</span><b>${fmt$(todayPendingRev)}</b></div>
-        <div class="tm-stat tm-stat-pending"><span class="tm-label">Profit Pending</span><b>${fmt$(todayPendingNet)}</b></div>
-      </div>
-    ` : '';
-    if (todayOrders.length) {
-      tdCard.innerHTML = `
-        <div class="this-month-head">${todayLabel} <span class="muted">${headSuffix}</span></div>
-        ${statsBlock}
-        ${overdueSectionHtml}
-        <div class="today-section">
-          <div class="today-section-head">To Do <span class="muted">(${todoList.length})</span></div>
-          <div class="today-list">${
-            todoList.length
-              ? todoList.map(todoRow).join('')
-              : `<div class="today-empty">All caught up.</div>`
-          }</div>
-        </div>
-        <div class="today-section">
-          <div class="today-section-head">Completed <span class="muted">(${doneList.length})</span></div>
-          <div class="today-list">${
-            doneList.length
-              ? doneList.map(doneRow).join('')
-              : `<div class="today-empty">No completed orders yet.</div>`
-          }</div>
-        </div>
-      `;
-    } else if (hasCashToday || overdueList.length) {
-      // No orders dated today, but either cash came in today or past orders
-      // still need attention — surface both so the dashboard doesn't read as
-      // "nothing happening" while real activity exists.
-      tdCard.innerHTML = `
-        <div class="this-month-head">${todayLabel} <span class="muted">${headSuffix}</span></div>
-        ${statsBlock}
-        ${overdueSectionHtml}
-      `;
-    } else {
-      tdCard.innerHTML = `<div class="this-month-head">${todayLabel}</div><div class="muted" style="padding:6px 0;">No orders today yet.</div>`;
-    }
-    // Tap a customer row to see what they ordered. Overdue rows include a
-    // data-today-date attribute so the popup loads that customer's past orders
-    // for the right day instead of defaulting to today.
-    tdCard.querySelectorAll('[data-today-customer]').forEach(el => {
-      const open = () => openTodayOrderDetail(el.dataset.todayCustomer, el.dataset.todayDate || todayISO());
-      el.addEventListener('click', open);
-      el.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
-      });
-    });
+    const pending = deliveryGroups.needsPayment.length + deliveryGroups.ready.length;
+    tdCard.innerHTML = `<div class="this-month-head">${todayLabel} <span class="muted">· ${todayOrderCount} customer${todayOrderCount === 1 ? '' : 's'} scheduled</span></div>
+      <div class="today-summary"><span><b>${pending}</b> need attention today</span><span><b>${deliveryGroups.done.length}</b> completed</span></div>
+      ${section('Overdue · needs attention', deliveryGroups.overdue, 'today-section-overdue')}
+      ${section('Needs payment', deliveryGroups.needsPayment)}
+      ${section('Ready to deliver', deliveryGroups.ready)}
+      ${!pending ? `<p class="today-empty">${todayOrders.length ? 'Today’s scheduled orders are complete.' : 'No deliveries scheduled for today.'}${deliveryGroups.overdue.length ? ' Earlier orders still need attention above.' : ''}</p>` : ''}
+      ${deliveryGroups.done.length ? `<details class="today-completed" ${deliveryGroups.done.some(g => expandedDeliveryKeys.has(deliveryKey(g))) ? 'open' : ''}><summary>Completed (${deliveryGroups.done.length})</summary><div class="today-deliveries">${deliveryGroups.done.map(deliveryRow).join('')}</div></details>` : ''}
+      <details class="today-financials"><summary>Today’s payments & balances</summary><div class="this-month-stats">
+        <div class="tm-stat"><span class="tm-label">Collected today</span><b>${fmt$(todayPaidRev)}</b></div>
+        <div class="tm-stat"><span class="tm-label">Net profit paid</span><b>${fmt$(todayPaidNet)}</b></div>
+        <div class="tm-stat"><span class="tm-label">Due on today’s orders</span><b>${fmt$(todayPendingRev)}</b></div>
+        <div class="tm-stat"><span class="tm-label">Profit pending</span><b>${fmt$(todayPendingNet)}</b></div>
+      </div></details>`;
+    tdCard.querySelectorAll('[data-delivery-action]').forEach(button => button.addEventListener('click', () => {
+      const group = groupIndex[Number(button.dataset.group)];
+      const action = button.dataset.deliveryAction;
+      if (action === 'detail') return openTodayOrderDetail(group.customer, group.date);
+      if (action === 'invoice' || action === 'send-invoice') return openTodayOrderDetail(group.customer, group.date, action);
+      if (action === 'reschedule') return rescheduleTodayDelivery(group);
+      updateTodayDeliveryGroup(group, action);
+    }));
   }
+
 
   // Recently Completed Orders — last 5 customer-day groups across fully completed orders
   // (paid AND delivered). In-flight orders show up under Pending Orders below.
@@ -2801,7 +2764,7 @@ function invoiceSmsNumber(customerName) {
 // "Show Invoice" button that swaps to a screenshot-friendly invoice view.
 // dateKey defaults to today; the Today card also passes past dates for overdue
 // rows so the popup shows that customer's old order day.
-function openTodayOrderDetail(customerKey, dateKey) {
+function openTodayOrderDetail(customerKey, dateKey, initialView = 'detail') {
   const todayKey = dateKey || todayISO();
   const orders = state.orders.filter(o =>
     o.date === todayKey &&
@@ -3012,6 +2975,11 @@ function openTodayOrderDetail(customerKey, dateKey) {
   modal.classList.add('modal-readonly');
   $('#modalCancel').textContent = 'Close';
   showModal();
+  if (initialView === 'invoice' || initialView === 'send-invoice') {
+    renderInvoice();
+    // Keep sharing in the original tap's call stack for mobile user activation.
+    if (initialView === 'send-invoice') form.querySelector('#invoiceSendBtn')?.click();
+  }
 }
 
 // ---------- ORDERS ----------
