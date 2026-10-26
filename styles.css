@@ -7747,3 +7747,14 @@ button.ord-badge { cursor: pointer; }
 .export-report-grid .btn, .export-restore .btn { min-height: 40px; font-size: 11px; }
 .dashboard-disclosure > summary:focus-visible, .export-panel summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 @media (max-width: 640px) { .export-layout { grid-template-columns: minmax(0, 1fr); gap: 10px; } }
+
+.orders-compact-list { padding: 10px; }
+.orders-empty { padding: 18px 8px; text-align: center; font-size: 12px; }
+.orders-compact-footer { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 12px 14px; border-top: 1px solid var(--border); color: var(--muted); font-size: 11px; }
+.orders-compact-footer b { color: var(--text); margin-left: 4px; font-variant-numeric: tabular-nums; }
+.orders-detail-meta { display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: 10px; margin-bottom: 8px; }
+.orders-row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; padding-top: 12px; margin-top: 12px; border-top: 1px solid var(--border); }
+.orders-row-actions .orders-status-toggle { display: inline-flex; flex-direction: row; align-items: center; gap: 8px; min-height: 40px; margin: 0; cursor: pointer; }
+.orders-row-actions .orders-status-toggle > span:first-child { font-size: 11px; text-transform: none; letter-spacing: 0; }
+.orders-row-actions .btn { min-height: 40px; padding: 6px 10px; font-size: 11px; margin-left: auto; }
+@media (max-width: 480px) { .orders-compact-list { padding: 8px; } }

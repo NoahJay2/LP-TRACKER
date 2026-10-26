@@ -3148,25 +3148,13 @@ function renderOrders() {
   if (f === 'delivered') rows = rows.filter(o => o.delivered);
   if (f === 'pending') rows = rows.filter(o => !o.paid && !o.delivered);
 
-  // Group rows by customer + date so multiple same-day orders collapse into one row
-  const groupsMap = new Map();
-  for (const o of rows) {
-    const key = (o.customer || '').toLowerCase().trim() + '|' + (o.date || '');
-    if (!groupsMap.has(key)) groupsMap.set(key, { customer: o.customer, date: o.date, orders: [] });
-    groupsMap.get(key).orders.push(o);
-  }
-  const groups = [...groupsMap.values()].sort((a, b) =>
-    ordDir * ((a.date || '').localeCompare(b.date || ''))
-  );
-
   const body = $('#ordersBody');
-  const expandedBefore = getExpandedGroupIds(body);
-  body.innerHTML = groups.map(g => renderOrderGroup(g)).join('') ||
-    `<tr><td colspan="9" class="muted" style="padding:24px;text-align:center;">No orders match.</td></tr>`;
-  restoreGroupExpansion(body, expandedBefore);
+  const expandedBefore = new Set([...body.querySelectorAll('.pending-order[open]')].map(el => el.dataset.orderId));
+  body.innerHTML = rows.map(o => renderCompactOrderRow(o, expandedBefore.has(String(o.id)))).join('') ||
+    '<p class="muted orders-empty">No orders match. Try changing your filters.</p>';
 
   const totalQty = rows.reduce((s, o) => s + orderQty(o), 0);
-  const groupCount = groups.length;
+  const groupCount = rows.length;
   $('#ordCount').innerHTML =
     `<span class="foot-label">Total Orders</span> <span>${fmtN(groupCount)}</span>` +
     ` <span class="muted">· ${fmtN(totalQty)} item${totalQty === 1 ? '' : 's'}</span>`;
@@ -3181,8 +3169,26 @@ function renderOrders() {
   // dashboard's pending/recent cards get the same interactions as the Orders page.
   wireOrderInteractions(body);
 
-  // Group expand/collapse + row-click + Mixed-pill behavior (shared helper)
-  wireGroupExpand(body);
+
+}
+
+function renderCompactOrderRow(o, expanded = false) {
+  const id = escapeHtml(String(o.id));
+  const balance = orderBalance(o);
+  return `<div class="pending-entry"><details class="pending-order" data-order-id="${id}" ${expanded ? 'open' : ''}>
+    <summary><span class="pending-customer">${escapeHtml(o.customer || 'Unnamed customer')}<small>${o.date ? fmtDateShort(o.date) : 'No date'} · <span class="${o.paid ? 'pending-status-done' : ''}">${o.paid ? '✓ Paid' : orderIsPartiallyPaid(o) ? 'Partial payment' : 'Payment pending'}</span> · <span class="${o.delivered ? 'pending-status-done' : ''}">${o.delivered ? '✓ Fulfilled' : 'Delivery pending'}</span></small></span><span class="pending-due ${o.paid ? 'pending-status-done' : ''}">${o.paid ? fmt$(orderTotal(o)) : `${fmt$(balance)} due`}</span><span class="pending-chevron" aria-hidden="true">›</span></summary>
+    <div class="pending-order-detail">
+      <div class="orders-detail-meta"><span>Invoice #${escapeHtml(invoiceNumberForOrder(o))}</span>${webOrderBadge(o)}</div>
+      ${orderItems(o).map(it => `<div class="pending-item"><span>${escapeHtml(it.product || 'Item')} <small>×${fmtN(Number(it.qty) || 0)}</small></span><b>${fmt$(itemLineTotal(it))}</b></div>`).join('')}
+      <div class="pending-order-totals"><span>Total <b>${fmt$(orderTotal(o))}</b></span><span>Paid <b>${fmt$(orderPaidRevenue(o))}</b></span><span>Balance <b>${fmt$(balance)}</b></span><span>Profit <b>${fmt$(orderProfit(o))}</b></span></div>
+      ${o.notes ? `<p class="pending-notes">${escapeHtml(o.notes)}</p>` : ''}
+      <div class="orders-row-actions">
+        <label class="orders-status-toggle"><span>Paid</span><span class="switch"><input type="checkbox" data-toggle-paid="${id}" ${o.paid ? 'checked' : ''} /><span class="slider"></span></span></label>
+        <label class="orders-status-toggle"><span>Fulfilled</span><span class="switch"><input type="checkbox" data-toggle-delivered="${id}" ${o.delivered ? 'checked' : ''} /><span class="slider"></span></span></label>
+        <button type="button" class="btn danger-outline" data-del-order="${id}">Delete</button>
+      </div>
+    </div>
+  </details><button type="button" class="btn ghost pending-edit" data-edit-order="${id}" aria-label="Edit order for ${escapeHtml(o.customer || 'unnamed customer')}${o.date ? ` on ${fmtDateShort(o.date)}` : ''}">Edit</button></div>`;
 }
 
 // Wire paid/delivered toggles, group toggles, edit, and delete buttons inside
