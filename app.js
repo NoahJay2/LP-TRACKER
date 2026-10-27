@@ -533,6 +533,7 @@ const Adapters = {
       // Product line (peptides / gear / other). Older schemas without the
       // column keep working — the value is re-derived from the name on load.
       if (orderColumnAvailable('category')) row.category = stockCategory(s);
+      if (s.imageChanged) row.image_url = s.imageUrl || null;
       return row;
     },
     fromRow: (r) => ({
@@ -863,6 +864,7 @@ function upsertWithColumnRetry(table, items, attemptsLeft, cb) {
 
 function cloudUpsert(table, item) {
   if (!sb) return;
+  const savedImage = item.imageUrl;
   setCloudStatus('syncing', 'Syncing…');
   upsertWithColumnRetry(table, [item], ALL_OPTIONAL_COLUMNS.length, (error) => {
     if (error) {
@@ -870,6 +872,11 @@ function cloudUpsert(table, item) {
       setCloudStatus('offline', 'Sync error');
       toast(`Cloud save failed: ${error.message}`);
     } else {
+      if (table === 'stock' && item.imageChanged && item.imageUrl === savedImage) {
+        delete item.imageChanged;
+        saveState();
+        if (!savedImage && item.wooId) refreshInventoryImages(true);
+      }
       setCloudStatus('online', 'Synced');
       if (table === 'stock') queueWooStockPush([item]);
     }
@@ -1043,6 +1050,7 @@ async function manualSync() {
   if (!sb) { toast('No cloud configured.'); return; }
   setCloudStatus('syncing', 'Syncing…');
   try {
+    await refreshInventoryImages(true);
     const cloud = await cloudFetchAll();
     cloud.orders = mergeCloudOrders(cloud.orders);
     state = { ...state, ...cloud };
@@ -1544,7 +1552,7 @@ function switchView(name) {
   if (name === 'dashboard') renderDashboard();
   if (name === 'orders') renderOrders();
   if (name === 'customers') renderCustomers();
-  if (name === 'inventory') renderInventory();
+  if (name === 'inventory') { renderInventory(); refreshInventoryImages(); }
   if (name === 'shipments') renderShipments();
   if (name === 'expenses') renderExpenses();
   if (name === 'income') renderIncome();
@@ -4791,7 +4799,53 @@ function renderInventory() {
   }));
 }
 
+let inventoryImageRefreshAt = 0;
+let inventoryImageRefreshRunning = false;
+setInterval(() => {
+  if (document.visibilityState === 'visible' && $('#view-inventory')?.classList.contains('active')) refreshInventoryImages();
+}, 60000);
+async function refreshInventoryImages(force = false) {
+  if (!sb || inventoryImageRefreshRunning || !state.stock.some(p => p.wooId)) return;
+  if (!force && Date.now() - inventoryImageRefreshAt < 60000) return;
+  inventoryImageRefreshRunning = true;
+  try {
+    const result = await wooApi('refresh-images', { method: 'POST' });
+    for (const update of result.updates || []) {
+      const product = state.stock.find(p => p.id === update.id);
+      if (product && !product.imageChanged && !/^data:image\//i.test(product.imageUrl || '')) product.imageUrl = update.imageUrl;
+    }
+    inventoryImageRefreshAt = Date.now();
+    saveState();
+    renderInventory();
+    if (result.errors?.length) toast('Some store photos could not refresh. Try Sync now.');
+  } catch (error) {
+    console.warn('Product photo refresh failed', error.message);
+    toast('Store photos could not refresh. Try Sync now.');
+  } finally { inventoryImageRefreshRunning = false; }
+}
+
+async function readProductPhoto(file) {
+  if (!/^image\/(jpeg|png|webp)$/i.test(file.type)) throw new Error('Choose a JPG, PNG, or WebP photo.');
+  if (file.size > 15 * 1024 * 1024) throw new Error('Choose a photo smaller than 15 MB.');
+  const bitmap = await createImageBitmap(file);
+  try {
+    const scale = Math.min(1, 800 / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const image = canvas.toDataURL('image/jpeg', 0.8);
+    if (image.length > 600000) throw new Error('Photo is too detailed. Please choose a smaller image.');
+    return image;
+  } finally { bitmap.close(); }
+}
+
 function stockModal(existing) {
+  let pendingImage = existing?.imageUrl || '';
+  let photoChanged = false;
+  let photoLoading = false;
   const initial = existing
     ? { ...existing }
     : { name: '', cost: 0, price: 0, originalPrice: '', qty: 0, status: 'ACTIVE', reorder: '', category: DEFAULT_CATEGORY };
@@ -4819,7 +4873,9 @@ function stockModal(existing) {
       ]},
     ]},
   ], (data) => {
+    if (photoLoading) { toast('Please wait for the photo to finish loading.'); return false; }
     if (!data.name) { alert('Name is required.'); return false; }
+    if (photoChanged) { data.imageUrl = pendingImage; data.imageChanged = true; }
     let saved;
     let renameSummary = null;
     if (existing) {
@@ -4877,6 +4933,28 @@ function stockModal(existing) {
       toast(existing ? 'Product updated.' : 'Product added.');
     }
   }, initial);
+  const photo = document.createElement('div');
+  photo.className = 'stock-photo-editor';
+  photo.innerHTML = `<span class="label">Product photo</span><img alt="Product photo preview" class="stock-photo-preview" hidden />
+    <label>Upload photo<input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Upload product photo" /></label>
+    <button type="button" class="btn ghost" data-photo-reset>${existing?.wooId ? 'Use store photo' : 'Remove photo'}</button>
+    <small class="muted">JPG, PNG, or WebP. Uploaded photos override the store photo and are saved with this product.</small>`;
+  $('#modalForm').appendChild(photo);
+  const preview = photo.querySelector('img');
+  const paint = () => { preview.hidden = !pendingImage; if (pendingImage) preview.src = pendingImage; else preview.removeAttribute('src'); };
+  paint();
+  photo.querySelector('input').addEventListener('change', async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    photoLoading = true;
+    try { pendingImage = await readProductPhoto(file); photoChanged = true; paint(); }
+    catch (error) { toast(error.message); }
+    finally { photoLoading = false; event.target.value = ''; }
+  });
+  photo.querySelector('[data-photo-reset]').addEventListener('click', () => {
+    if (photoLoading) return;
+    pendingImage = ''; photoChanged = true; paint();
+  });
 }
 
 

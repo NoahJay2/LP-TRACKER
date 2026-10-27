@@ -5,6 +5,7 @@ import { json } from '../_lib/http.js';
 import { db, patchState } from '../_lib/supabase.js';
 import { sellablesForProduct } from '../_lib/woo.js';
 import { processWooOrder, deleteWooOrder } from '../_lib/orders.js';
+import { storeImagePatch } from '../_lib/product-images.js';
 
 function validSignature(raw, header) {
   const secret = process.env.WOO_WEBHOOK_SECRET || '';
@@ -18,7 +19,12 @@ function validSignature(raw, header) {
 async function refreshProduct(productId) {
   const items = await sellablesForProduct(productId);
   for (const it of items) {
-    await db.update('stock', db.eq('woo_id', it.wooId), { image_url: it.image || null, sku: it.sku || null });
+    const rows = await db.select('stock', `select=id,image_url&${db.eq('woo_id', it.wooId)}`);
+    for (const row of rows) {
+      await db.update('stock', db.eq('id', row.id), { sku: it.sku || null });
+      const patch = storeImagePatch(row, it);
+      if (patch) await db.update('stock', `${db.eq('id', row.id)}&${row.image_url == null ? 'image_url=is.null' : db.eq('image_url', row.image_url)}`, patch);
+    }
   }
   return { action: 'product-refreshed', count: items.length };
 }

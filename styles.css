@@ -7934,3 +7934,8 @@ button.ord-badge { cursor: pointer; }
   #modalForm:has(.order-editor-marker) .item-row > [data-remove] { align-self: center; }
   #modalForm:has(.order-editor-marker) input, #modalForm:has(.order-editor-marker) select, #modalForm:has(.order-editor-marker) textarea { font-size: 16px; }
 }
+
+.stock-photo-editor { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--border); }
+.stock-photo-preview { width: 90px; height: 90px; object-fit: contain; border-radius: 8px; background: white; }
+.stock-photo-editor input { max-width: 100%; min-width: 0; }
+.stock-photo-editor small { font-size: 11px; line-height: 1.5; }
