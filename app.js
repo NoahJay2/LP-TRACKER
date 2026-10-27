@@ -9455,7 +9455,28 @@ $('#wooSaveLinksBtn').addEventListener('click', (e) => runWooAction(e.currentTar
     unlinks.length && `unlink ${unlinks.length}`,
   ].filter(Boolean).join(', ') + '.'
     + (qtyPushes ? `\n\n${qtyPushes} store quantit${qtyPushes === 1 ? 'y' : 'ies'} will change to match the tracker.` : '');
-  if (!confirm(msg)) return;
+  const confirmed = await new Promise(resolve => {
+    openOverlayPanel({
+      anchor: e.currentTarget,
+      title: 'Save product links?',
+      buildBody(body, close) {
+        const description = document.createElement('p');
+        description.textContent = msg;
+        description.style.whiteSpace = 'pre-line';
+        const actions = document.createElement('div');
+        actions.className = 'integ-actions';
+        const cancel = document.createElement('button');
+        cancel.type = 'button'; cancel.className = 'btn ghost'; cancel.textContent = 'Cancel';
+        cancel.addEventListener('click', close);
+        const save = document.createElement('button');
+        save.type = 'button'; save.className = 'btn primary'; save.textContent = 'Confirm links';
+        save.addEventListener('click', () => { resolve(true); close(); });
+        actions.append(cancel, save); body.append(description, actions);
+      },
+      onClose: () => resolve(false),
+    });
+  });
+  if (!confirmed) return;
   const r = await wooApi('link', { method: 'POST', body: { links, creates, unlinks } });
   if (r.errors && r.errors.length) { console.warn('link errors', r.errors); toast(`Saved with ${r.errors.length} error(s): ${r.errors[0]}`); }
   else toast(`Saved · ${r.linked} linked · ${r.created} added · ${r.unlinked} unlinked`);
