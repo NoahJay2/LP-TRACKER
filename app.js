@@ -1964,11 +1964,23 @@ function renderDashboard() {
   const tmCard = $('#thisMonthCard');
   if (tmCard) {
     const m = monthOverview;
-    const row = (label, key) => `<tr><th scope="row">${label}</th><td>${fmt$(m.current[key])}</td><td>${fmt$(m.previous[key])}</td><td>${fmt$(m.pace[key])}</td></tr>`;
+    const metrics = [['Gross revenue', 'revenue'], ['Gross profit', 'gross'], ['Net profit', 'net']];
+    const row = (label, key) => {
+      const loss = m.pace[key] < 0;
+      const portion = m.pace[key] ? Math.min(100, Math.abs(m.current[key] / m.pace[key]) * 100) : 0;
+      return `<div class="month-pace-row month-pace-${key}${loss ? ' is-loss' : ''}">
+        <div class="month-pace-line"><span>${label}${loss ? ' <small>· loss</small>' : ''}</span><strong>${fmt$(m.pace[key])}</strong></div>
+        <div class="month-pace-track" aria-hidden="true"><span style="width:${portion}%"></span></div>
+        <div class="month-pace-caption"><span>${fmt$(m.current[key])} so far</span><span>Month-end estimate</span></div>
+      </div>`;
+    };
     tmCard.innerHTML = `<div class="month-overview-head">${monthName(todayISO().slice(0, 7) + '-01')}<span>Day ${m.day} of ${m.days}</span></div>
-      <table class="month-overview-table"><thead><tr><th scope="col">Metric</th><th scope="col">So far</th><th scope="col">Last month</th><th scope="col">Pace</th></tr></thead><tbody>
-      ${row('Revenue', 'revenue')}${row('Gross profit', 'gross')}${row('Net profit', 'net')}
-      </tbody></table>
+      <div class="month-pace-heading">On pace for <span>at your daily average so far</span></div>
+      <div class="month-pace-rows">${metrics.map(([label, key]) => row(label, key)).join('')}</div>
+      <details class="month-pace-comparison"><summary>Compare with last month</summary>
+        <div class="month-pace-compare-head"><span>Metric</span><span>Last month</span><span>This month’s pace</span></div>
+        ${metrics.map(([label, key]) => `<div class="month-pace-compare-row"><span>${label}</span><span>${fmt$(m.previous[key])}</span><b>${fmt$(m.pace[key])}</b></div>`).join('')}
+      </details>
       <div class="month-overview-foot"><span>Operating expenses <b>${fmt$(m.current.expenses)}</b></span><span>Unpaid this month <b>${fmt$(m.pending)}</b></span></div>
       `;
   }

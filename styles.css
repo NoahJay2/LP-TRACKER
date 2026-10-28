@@ -7670,20 +7670,33 @@ button.ord-badge { cursor: pointer; }
 .daily-money-grid b { font-size: 18px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .month-overview-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-size: 12px; margin-bottom: 12px; }
 .month-overview-head span { color: var(--muted); font-size: 10px; }
-.month-overview-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
-.month-overview-table th, .month-overview-table td { text-align: right; padding: 10px 3px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.month-overview-table thead th { color: var(--muted); font-size: 10px; font-weight: 500; }
-.month-overview-table th:first-child { text-align: left; width: 27%; }
-.month-overview-table tbody th { font-size: 11px; font-weight: 500; }
-.month-overview-table tbody td:first-of-type { font-weight: 700; }
-.month-overview-table tbody td:nth-of-type(2) { color: var(--muted); }
+.month-pace-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 13px; font-weight: 650; }
+.month-pace-heading > span { color: var(--muted); font-size: 10px; font-weight: 400; }
+.month-pace-rows { display: grid; gap: 13px; margin: 14px 0; }
+.month-pace-row { --pace-color: #60a5fa; min-width: 0; }
+.month-pace-gross { --pace-color: #34d399; }
+.month-pace-net { --pace-color: #a78bfa; }
+.month-pace-row.is-loss { --pace-color: #fb7185; }
+.month-pace-line, .month-pace-caption { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.month-pace-line { font-size: 12px; }
+.month-pace-line strong { color: var(--pace-color); font-size: 19px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.month-pace-line small { color: var(--pace-color); font-size: 10px; }
+.month-pace-track { height: 4px; border-radius: 4px; background: var(--surface-2); overflow: hidden; margin: 5px 0; }
+.month-pace-track > span { display: block; height: 100%; border-radius: inherit; background: var(--pace-color); }
+.month-pace-caption { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.month-pace-comparison { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); font-size: 11px; }
+.month-pace-comparison summary { padding: 12px 0; cursor: pointer; color: var(--muted); }
+.month-pace-comparison summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.month-pace-compare-head, .month-pace-compare-row { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 6px; padding: 6px 0; font-variant-numeric: tabular-nums; }
+.month-pace-compare-head { color: var(--muted); font-size: 9px; }
+.month-pace-compare-head > :not(:first-child), .month-pace-compare-row > :not(:first-child) { text-align: right; overflow-wrap: anywhere; }
+.month-pace-compare-row:last-child { padding-bottom: 12px; }
 .month-overview-foot { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 12px; font-size: 10px; color: var(--muted); }
 .month-overview-foot b { color: var(--text); margin-left: 4px; }
 .month-overview-note { font-size: 10px; color: var(--muted); line-height: 1.5; margin: 10px 0 0; }
 @media (max-width: 480px) {
   .daily-money-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; }
   .daily-money-grid b { font-size: 17px; }
-  .month-overview-table { font-size: 11px; }
 }
 
 /* Compact dashboard totals; preserve the existing metric colors. */
