@@ -1685,6 +1685,28 @@ modal.addEventListener('click', (e) => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && modal.classList.contains('open')) closeModal(); });
 
+function dashboardTopItems(orders, today) {
+  const products = new Map();
+  for (const order of orders) {
+    if (!order.date || order.date.slice(0, 7) !== today.slice(0, 7) || order.date > today || !orderHasLandedProfit(order)) continue;
+    const eligible = orderDiscountableSubtotal(order);
+    const discount = orderDiscountAmount(order);
+    for (const item of orderItems(order)) {
+      const name = String(item.product || '').trim();
+      const qty = Number(item.qty) || 0;
+      if (!name || qty <= 0) continue;
+      const subtotal = itemLineTotal(item);
+      const sales = subtotal - (!item.excludeDiscount && eligible > 0 ? discount * subtotal / eligible : 0);
+      const entry = products.get(name) || { name, qty: 0, sales: 0, profit: 0 };
+      entry.qty += qty;
+      entry.sales += sales;
+      entry.profit += sales - qty * (Number(item.cogs) || 0);
+      products.set(name, entry);
+    }
+  }
+  return [...products.values()].sort((a, b) => b.sales - a.sales || b.qty - a.qty || a.name.localeCompare(b.name)).slice(0, 5);
+}
+
 function dashboardMonthOverview(orders, expenses, today) {
   const [year, month, day] = today.split('-').map(Number);
   const days = new Date(year, month, 0).getDate();
@@ -1974,7 +1996,15 @@ function renderDashboard() {
             <div><span>Last month</span><b>${fmt$(m.previous[key])}</b></div>
             <div class="month-simple-pace"><span>On pace for</span><b>${fmt$(m.pace[key])}</b></div>
           </div>
-        </div>`).join('')}</div>`;
+        </div>`).join('')}</div>
+      <div class="month-top-items">
+        <div class="month-top-heading"><b>Top 5 items</b><span>By paid sales · this month</span></div>
+        ${dashboardTopItems(orders, todayISO()).map((item, index) => `
+          <div class="month-top-item"><span class="month-top-rank">${index + 1}</span><div>
+            <div class="month-top-name">${escapeHtml(item.name)}</div>
+            <div class="month-top-stats"><span>${fmtN(item.qty)} sold</span><span>Sales <b>${fmt$(round2(item.sales))}</b></span><span>Profit <b>${fmt$(round2(item.profit))}</b></span></div>
+          </div></div>`).join('') || '<p class="month-top-empty">No paid sales this month yet.</p>'}
+      </div>`;
   }
 
   // "Today" snapshot — orders dated today, regardless of paid/delivered status,

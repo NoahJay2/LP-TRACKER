@@ -7680,6 +7680,15 @@ button.ord-badge { cursor: pointer; }
 .month-simple-values span { font-size: 10px; color: var(--muted); }
 .month-simple-values b { font-size: 15px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .month-simple-values .month-simple-pace b { color: var(--metric-color); }
+.month-top-items { border-top: 1px solid var(--border); margin-top: 14px; padding-top: 12px; }
+.month-top-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 8px; margin-bottom: 4px; font-size: 12px; }
+.month-top-heading > span, .month-top-empty { color: var(--muted); font-size: 10px; }
+.month-top-item { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 7px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.month-top-item:last-child { border-bottom: 0; padding-bottom: 0; }
+.month-top-rank { color: var(--muted); font-size: 10px; padding-top: 2px; }
+.month-top-name { font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.month-top-stats { display: flex; flex-wrap: wrap; gap: 3px 12px; margin-top: 3px; font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.month-top-stats b { color: var(--text); font-weight: 500; }
 .month-overview-foot { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 12px; font-size: 10px; color: var(--muted); }
 .month-overview-foot b { color: var(--text); margin-left: 4px; }
 .month-overview-note { font-size: 10px; color: var(--muted); line-height: 1.5; margin: 10px 0 0; }
