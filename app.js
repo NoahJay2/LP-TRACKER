@@ -1964,25 +1964,17 @@ function renderDashboard() {
   const tmCard = $('#thisMonthCard');
   if (tmCard) {
     const m = monthOverview;
-    const metrics = [['Gross revenue', 'revenue'], ['Gross profit', 'gross'], ['Net profit', 'net']];
-    const row = (label, key) => {
-      const loss = m.pace[key] < 0;
-      const portion = m.pace[key] ? Math.min(100, Math.abs(m.current[key] / m.pace[key]) * 100) : 0;
-      return `<div class="month-pace-row month-pace-${key}${loss ? ' is-loss' : ''}">
-        <div class="month-pace-line"><span>${label}${loss ? ' <small>· loss</small>' : ''}</span><strong>${fmt$(m.pace[key])}</strong></div>
-        <div class="month-pace-track" aria-hidden="true"><span style="width:${portion}%"></span></div>
-        <div class="month-pace-caption"><span>${fmt$(m.current[key])} so far</span><span>Month-end estimate</span></div>
-      </div>`;
-    };
+    const metrics = [['Gross revenue', 'revenue'], ['Profit', 'gross']];
     tmCard.innerHTML = `<div class="month-overview-head">${monthName(todayISO().slice(0, 7) + '-01')}<span>Day ${m.day} of ${m.days}</span></div>
-      <div class="month-pace-heading">On pace for <span>at your daily average so far</span></div>
-      <div class="month-pace-rows">${metrics.map(([label, key]) => row(label, key)).join('')}</div>
-      <details class="month-pace-comparison"><summary>Compare with last month</summary>
-        <div class="month-pace-compare-head"><span>Metric</span><span>Last month</span><span>This month’s pace</span></div>
-        ${metrics.map(([label, key]) => `<div class="month-pace-compare-row"><span>${label}</span><span>${fmt$(m.previous[key])}</span><b>${fmt$(m.pace[key])}</b></div>`).join('')}
-      </details>
-      <div class="month-overview-foot"><span>Operating expenses <b>${fmt$(m.current.expenses)}</b></span><span>Unpaid this month <b>${fmt$(m.pending)}</b></span></div>
-      `;
+      <div class="month-simple-grid">${metrics.map(([label, key]) => `
+        <div class="month-simple-metric month-simple-${key}">
+          <div class="month-simple-title">${label}</div>
+          <div class="month-simple-values">
+            <div><span>So far</span><b>${fmt$(m.current[key])}</b></div>
+            <div><span>Last month</span><b>${fmt$(m.previous[key])}</b></div>
+            <div class="month-simple-pace"><span>On pace for</span><b>${fmt$(m.pace[key])}</b></div>
+          </div>
+        </div>`).join('')}</div>`;
   }
 
   // "Today" snapshot — orders dated today, regardless of paid/delivered status,
