@@ -8144,6 +8144,24 @@ function renderTopProducts() {
     : `Grand Total — ${categoryLabel(cat)}`;
 }
 
+// Independent calendar events keep delivery changes from moving received cash.
+function monthlyOrderEvents(o) {
+  const events = [];
+  let remaining = Math.max(0, orderTotal(o));
+  const payments = [...orderPayments(o)].sort((a, b) => String(a.date || o.date || '').localeCompare(String(b.date || o.date || '')));
+  for (const payment of payments) {
+    const date = payment.date || o.date;
+    const amount = Math.min(remaining, Math.max(0, Number(payment.amount) || 0));
+    if (!date || amount <= 0.005) continue;
+    remaining = Math.max(0, remaining - amount);
+    events.push({ date, gross: amount, payment: { ...payment, amount } });
+  }
+  const profitDate = orderCompletionDate(o);
+  if (profitDate) events.push({ date: profitDate, net: orderPaidProfit(o) });
+  if (o.delivered && o.date) events.push({ date: o.date, qty: orderQty(o), completed: true });
+  return events;
+}
+
 function renderMonthly() {
   // Normalize legacy 'unpaid' filter value (now superseded by 'pending').
   const rawFilter = $('#monthlyFilter').value;
@@ -8160,14 +8178,8 @@ function renderMonthly() {
     return orderItems(o).some(it => (it.product || '').toLowerCase().includes(q));
   });
 
-  // Two bucketing modes:
-  //   Cash mode (default / Paid Only): exactly the Dashboard's basis — each
-  //     order's collected money (partials included, capped at its total) and,
-  //     once it's paid, its profit + items land on the ORDER date. So a month
-  //     here always equals the Dashboard / Income Statement for that month.
-  //   Pending mode (Pending filter): unpaid BALANCES are bucketed on the order's
-  //     date so the user can see potential income laid out by when each order
-  //     was placed. Net = unpaid profit (all-or-nothing). Qty = order qty.
+  // Cash belongs to payment dates; fulfilled orders belong to delivery dates.
+  // Pending balances remain on the scheduled order date.
   const dayBuckets = {};
   const monthBuckets = {};
   const ensureDay = (dk) => {
@@ -8202,31 +8214,15 @@ function renderMonthly() {
     });
   } else {
     orders.forEach(o => {
-      const dk = o.date;
-      if (!dk) return;
-      // 1) Money collected on the order (orderPaidRevenue: partials included,
-      // capped at the order total) — the Dashboard's Gross Revenue basis.
-      const gross = orderPaidRevenue(o);
-      if (gross > 0.005) {
-        const day = ensureDay(dk);
-        day.gross += gross;
-        for (const p of orderPayments(o)) {
-          if ((Number(p && p.amount) || 0) > 0) day.payments.push({ order: o, payment: p });
+      for (const event of monthlyOrderEvents(o)) {
+        const day = ensureDay(event.date);
+        const mb = ensureMonth(monthKey(event.date));
+        for (const key of ['gross', 'net', 'qty']) {
+          day[key] += event[key] || 0;
+          mb[key] += event[key] || 0;
         }
-        ensureMonth(monthKey(dk)).gross += gross;
-      }
-      // 2) Profit + qty once the order is paid (orderPaidProfit, rounded per
-      // order) — the Dashboard's Gross Profit basis.
-      if (orderHasLandedProfit(o)) {
-        const profit = orderPaidProfit(o);
-        const qty = orderQty(o);
-        const day = ensureDay(dk);
-        day.net += profit;
-        day.qty += qty;
-        day.orders.push(o);
-        const mb = ensureMonth(monthKey(dk));
-        mb.net += profit;
-        mb.qty += qty;
+        if (event.payment) day.payments.push({ order: o, payment: event.payment });
+        if (event.completed) day.orders.push(o);
       }
     });
     // "All Orders" also layers the still-unpaid balance of each order onto its
@@ -8289,8 +8285,7 @@ function calSummaryHtml(gross, net, qty, pendingGross, pendingNet, pendingQty) {
   const pn = Number(pendingNet) || 0;
   const pq = Number(pendingQty) || 0;
   const hasPending = !__monthlyPending && (pg > 0.005 || pq > 0);
-  // Cash-basis totals — match the Dashboard's Gross Revenue / Gross Profit
-  // cards. Pending amounts are shown as a subtle "+ $X pending" line beneath
+  // Cash-basis totals follow the dates payments were received. Pending amounts are shown as a subtle "+ $X pending" line beneath
   // instead of being folded into the headline number.
   const grossTip = hasPending ? ` title="${fmt$(round2(g))} paid · ${fmt$(round2(pg))} pending"` : '';
   const netTip = hasPending ? ` title="${fmt$(round2(n))} paid · ${fmt$(round2(pn))} pending"` : '';
@@ -8592,7 +8587,7 @@ function ddItemRowHtml(it) {
 function openDayDetail(dateKey) {
   const b = __monthlyDayBuckets[dateKey];
   const pendingOrdersList = Array.isArray(b && b.pendingOrders) ? b.pendingOrders : [];
-  if (!b || (!b.orders.length && !b.payments.length && !pendingOrdersList.length)) return;
+  if (!b || (!b.orders.length && !b.payments.length && !pendingOrdersList.length && !b.net)) return;
 
   // Distinct customers across payments received, orders closed, AND unpaid
   // orders placed that day (All Orders view).
@@ -8637,7 +8632,7 @@ function openDayDetail(dateKey) {
       </div>
       ${b.payments.length ? `
         <div class="dd-section">
-          <div class="dd-section-head">Payments on these orders</div>
+          <div class="dd-section-head">Payments received this day</div>
           <div class="dd-payments">
             ${b.payments.map(pe => {
               const amt = Number(pe.payment && pe.payment.amount) || 0;
