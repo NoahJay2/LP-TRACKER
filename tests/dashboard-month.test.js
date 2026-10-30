@@ -7,8 +7,11 @@ const ctx = vm.createContext({
   round2: n => Math.round(n * 100) / 100,
   orderPaidRevenue: o => o.revenue, orderPaidProfit: o => o.profit,
   orderBalance: o => o.balance || 0,
+  monthlyOrderEvents: o => [{date:o.paymentDate || o.date,gross:o.revenue,net:o.profit}],
+  orderCompletionDate: o => o.paymentDate || o.date,
   sumOperating: expenses => expenses.filter(e => !e.excludeFromNet).reduce((s, e) => s + e.amount, 0),
 });
+vm.runInContext(source.slice(source.indexOf('function cashTotalsForPeriod('), source.indexOf('function dashboardTopItems(')), ctx);
 vm.runInContext(source.slice(source.indexOf('function dashboardMonthOverview('), source.indexOf('function todayDeliveryGroups(')), ctx);
 test('month comparison separates gross and net, excludes future activity from pace', () => {
   const result = ctx.dashboardMonthOverview([
@@ -29,4 +32,15 @@ test('empty January and expenses-only months remain finite and handle year bound
   assert.equal(r.current.net, -10);
   assert.equal(r.pace.net, -310);
   assert.equal(r.pace.revenue, 0);
+});
+
+test('overview comparisons use receipt dates instead of scheduled delivery dates', () => {
+  const result = ctx.dashboardMonthOverview([
+    {date:'2026-11-05',paymentDate:'2026-10-05',revenue:100,profit:60},
+    {date:'2026-10-05',paymentDate:'2026-09-30',revenue:200,profit:110},
+  ], [], '2026-10-10');
+  assert.equal(result.current.revenue,100);
+  assert.equal(result.current.gross,60);
+  assert.equal(result.previous.revenue,200);
+  assert.equal(result.pace.revenue,310);
 });

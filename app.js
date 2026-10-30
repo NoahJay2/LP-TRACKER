@@ -1685,10 +1685,26 @@ modal.addEventListener('click', (e) => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && modal.classList.contains('open')) closeModal(); });
 
+// Shared with the monthly calendar: receipts and realized profit keep their dates.
+function cashTotalsForPeriod(orders, from = '', to = '') {
+  const inRange = date => !!date && (!from || date >= from) && (!to || date <= to);
+  let revenue = 0, gross = 0, paidOrders = 0;
+  for (const order of orders) {
+    for (const event of monthlyOrderEvents(order)) {
+      if (!inRange(event.date)) continue;
+      revenue += event.gross || 0;
+      gross += event.net || 0;
+    }
+    if (inRange(orderCompletionDate(order))) paidOrders++;
+  }
+  return { revenue: round2(revenue), gross: round2(gross), paidOrders };
+}
+
 function dashboardTopItems(orders, today) {
   const products = new Map();
   for (const order of orders) {
-    if (!order.date || order.date.slice(0, 7) !== today.slice(0, 7) || order.date > today || !orderHasLandedProfit(order)) continue;
+    const paidDate = orderCompletionDate(order);
+    if (!paidDate || paidDate.slice(0, 7) !== today.slice(0, 7) || paidDate > today) continue;
     const eligible = orderDiscountableSubtotal(order);
     const discount = orderDiscountAmount(order);
     for (const item of orderItems(order)) {
@@ -1714,9 +1730,7 @@ function dashboardMonthOverview(orders, expenses, today) {
   const previousKey = `${previousEnd.getFullYear()}-${String(previousEnd.getMonth() + 1).padStart(2, '0')}`;
   const key = today.slice(0, 7);
   const totals = (monthKey, cutoff) => {
-    const selected = orders.filter(o => o.date && o.date.slice(0, 7) === monthKey && o.date <= cutoff);
-    const revenue = round2(selected.reduce((sum, o) => sum + orderPaidRevenue(o), 0));
-    const gross = round2(selected.reduce((sum, o) => sum + orderPaidProfit(o), 0));
+    const { revenue, gross } = cashTotalsForPeriod(orders, `${monthKey}-01`, cutoff);
     const spend = sumOperating(expenses.filter(e => {
       const date = e.dateOrdered || e.dateReceived;
       return date && date.slice(0, 7) === monthKey && date <= cutoff;
@@ -1936,8 +1950,7 @@ function renderDashboard() {
   // Cash-basis revenue/profit — count the paid portion of every order, including
   // partial payments. The unpaid balance shows up as Pending below. round2()
   // strips floating-point drift that accumulates when summing many orders.
-  const grossRevenue = round2(orders.reduce((s, o) => s + orderPaidRevenue(o), 0));
-  const grossProfit = round2(orders.reduce((s, o) => s + orderPaidProfit(o), 0));
+  const { revenue: grossRevenue, gross: grossProfit } = cashTotalsForPeriod(orders);
   const pendingGross = round2(orders.reduce((s, o) => s + orderBalance(o), 0));
   const pendingNet = round2(orders.reduce((s, o) => s + orderUnpaidProfit(o), 0));
   // Operating spend only — capital / owner-funded purchases (the vehicle, and
@@ -2026,11 +2039,7 @@ function renderDashboard() {
   //                   payment lands, matching the monthly view).
   // The pending side stays scoped to orders DATED today since those are the
   // ones whose follow-up work is still on today's plate.
-  const todayPaidRev = round2(orders.reduce((sum, o) =>
-    sum + orderPayments(o).reduce((s, p) =>
-      (p && p.date === todayKey) ? s + (Number(p.amount) || 0) : s, 0), 0));
-  const todayPaidNet = round2(orders.reduce((sum, o) =>
-    orderCompletionDate(o) === todayKey ? sum + orderProfit(o) : sum, 0));
+  const { revenue: todayPaidRev, gross: todayPaidNet } = cashTotalsForPeriod(orders, todayKey, todayKey);
   const todayPendingRev = round2(todayOrders.reduce((s, o) => s + orderBalance(o), 0));
   const todayPendingNet = round2(todayOrders.reduce((s, o) => s + orderUnpaidProfit(o), 0));
   const todayLabel = fmtDateShort(todayKey);
@@ -7772,8 +7781,7 @@ function incomeFigures() {
   // Cash basis — paid portion of each order (including partials) flows into
   // revenue / gross. The unpaid balance lands in "Not yet collected". round2()
   // strips floating-point drift that compounds when summing across many orders.
-  const rev = round2(orders.reduce((s, o) => s + orderPaidRevenue(o), 0));
-  const gross = round2(orders.reduce((s, o) => s + orderPaidProfit(o), 0));
+  const { revenue: rev, gross, paidOrders } = cashTotalsForPeriod(state.orders, from, to);
   const cogs = round2(rev - gross);
   // Operating expenses only — capital / owner-funded purchases are held out so
   // Net Profit reflects how the operation itself performed. They come back in
@@ -7786,7 +7794,7 @@ function incomeFigures() {
     allIn: round2(net - capex),
     grossMargin: rev > 0 ? gross / rev * 100 : 0,
     margin: rev > 0 ? net / rev * 100 : 0,
-    paidOrders: orders.filter(orderHasLandedProfit).length,
+    paidOrders,
     pendG: round2(orders.reduce((s, o) => s + orderBalance(o), 0)),
     pendN: round2(orders.reduce((s, o) => s + orderUnpaidProfit(o), 0)),
     cats: expenseCategoryTotals(expenses),
@@ -7796,7 +7804,7 @@ function incomeFigures() {
 function renderIncome() {
   const f = incomeFigures();
   const label = isPeriodLabel(f.from, f.to);
-  $('#isSub').textContent = `${label} · cash basis`;
+  $('#isSub').textContent = `${label} · payment dates`;
   $('#isPeriodLabel').textContent = label;
   $$('.is-presets [data-period]').forEach(b => {
     const [pf, pt] = isPresetRange(b.dataset.period);
