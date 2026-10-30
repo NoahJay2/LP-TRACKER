@@ -12,8 +12,7 @@
 import { db, getState } from './supabase.js';
 import { setWooStock, wooKey } from './woo.js';
 
-// The tracker mirrors WooCommerce's status; Woo itself handles payment
-// reminders and auto-cancelling unpaid orders.
+// Woo owns payment and stock reservation; fulfillment belongs to the tracker.
 //
 // Shown in the tracker. Pending payment and On-hold appear as unpaid orders.
 const SHOWN = new Set(['pending', 'on-hold', 'processing', 'completed']);
@@ -22,8 +21,6 @@ const SHOWN = new Set(['pending', 'on-hold', 'processing', 'completed']);
 const HELD = new Set(['processing', 'on-hold', 'completed']);
 // Money received → Paid.
 const PAID = new Set(['processing', 'completed']);
-// Shipped / done → Fulfilled in the tracker.
-const DONE = new Set(['completed']);
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const norm = (s) => String(s || '').toLowerCase().trim();
@@ -67,18 +64,30 @@ function buildItems(wo, stock) {
       // existing name-based stock matching all line up.
       product: s ? s.name : li.name,
       qty,
-      // Pre-coupon unit price; the coupon becomes the order-level discount.
-      price: qty ? round2(Number(li.subtotal) / qty) : 0,
+      // Woo line totals already include coupons; keep fractional unit cents.
+      price: qty ? Number(li.total ?? li.subtotal) / qty : 0,
       cogs: s ? (Number(s.cost) || 0) : 0,
       discount: null,
     };
   }).filter(it => it.qty > 0);
 }
 
-// What the tracker counts as paid for an order: the Woo total minus shipping.
-// Shipping is a pass-through cost, not revenue or profit, so web orders are
-// imported without it (it's noted on the order instead).
-function wooAmountDue(wo) {
+export function buildFinancialItems(wo, stock, previous = []) {
+  const items = buildItems(wo, stock).map(item => {
+    const old = previous.find(p => norm(p.product) === norm(item.product));
+    return old ? { ...item, cogs: old.cogs } : item;
+  });
+  const subtotal = items.reduce((sum, item) => sum + item.qty * item.price, 0);
+  const adjustment = round2(wooAmountDue(wo) - subtotal);
+  // Taxes and checkout fees are not shipping. Keep them visible and ensure
+  // the tracker balance equals the final checkout amount less shipping.
+  if (adjustment) items.push({ product: 'Website checkout adjustment (taxes / fees)', qty: 1, price: adjustment, cogs: 0, discount: null });
+  return items;
+}
+
+// Final checkout total after all discounts, excluding the actual shipping
+// charge. Free shipping is already zero in Woo; do not recalculate thresholds.
+export function wooAmountDue(wo) {
   return round2((Number(wo.total) || 0) - (Number(wo.shipping_total) || 0));
 }
 
@@ -92,6 +101,7 @@ function buildNotes(wo) {
   const fees = (wo.fee_lines || []).reduce((s, f) => s + (Number(f.total) || 0), 0);
   if (fees) parts.push(`fees $${fees.toFixed(2)}`);
   let notes = parts.join(' · ');
+  if (Number(wo.discount_total) > 0) notes += ` - discounts $${Number(wo.discount_total).toFixed(2)} included`;
   if (wo.customer_note) notes += `\nCustomer note: ${wo.customer_note}`;
   return notes;
 }
@@ -168,8 +178,7 @@ async function claimInventory(id, from, to) {
   return rows && rows[0];
 }
 
-// Remove a tracker order that Woo cancelled / failed / refunded / deleted,
-// giving its stock back first.
+// Remove a cancelled tracker order, giving its stock back first.
 async function removeOrder(id) {
   const [existing] = await db.select('orders', `select=*&${db.eq('id', id)}`);
   if (!existing) return { action: 'skipped' };
@@ -185,7 +194,7 @@ async function removeOrder(id) {
 }
 
 export async function deleteWooOrder(wooOrderId) {
-  return removeOrder(trackerOrderId(wooOrderId));
+  return { action: 'skipped', reason: 'deletion-keeps-tracker-record' };
 }
 
 // When the order was placed, as a UTC timestamp.
@@ -229,9 +238,11 @@ export async function processWooOrder(wo) {
   const included = includeOrders.map(String).includes(String(wo.id));
   if (!included && !(placedAt(wo) >= Date.parse(connectedAt))) return { action: 'skipped', reason: 'before-connection' };
 
-  // Cancelled (incl. Woo's auto-cancel of unpaid orders), failed, refunded,
-  // trashed: not a sale. Woo gives the stock back, so the tracker does too.
-  if (!SHOWN.has(status)) return removeOrder(id);
+  // Cancellation is the only Woo status that removes a tracker order.
+  if (!SHOWN.has(status)) {
+    if (status === 'cancelled') return removeOrder(id);
+    return { action: 'skipped', reason: 'unsupported-status' };
+  }
 
   const stock = await db.select('stock', 'select=id,name,qty,cost,woo_id');
   const [existing] = await db.select('orders', `select=*&${db.eq('id', id)}`);
@@ -253,10 +264,10 @@ export async function processWooOrder(wo) {
       customer: name,
       date: String(wo.date_created || '').slice(0, 10) || null,
       paid,
-      delivered: DONE.has(status),
-      items: buildItems(wo, stock),
+      delivered: false,
+      items: buildFinancialItems(wo, stock),
       payments: paid ? [wooPayment(wo, wooAmountDue(wo))] : [],
-      discount: Number(wo.discount_total) > 0 ? { type: 'amount', value: round2(wo.discount_total) } : null,
+      discount: null,
       notes: buildNotes(wo),
       shipping: 0,
       inventory_applied: false,
@@ -267,17 +278,18 @@ export async function processWooOrder(wo) {
     await upsertCustomer(wo, name);
     action = 'created';
   } else {
-    // Only ever move flags forward: if it was marked paid or fulfilled by
-    // hand in the tracker, a later Woo status doesn't undo that.
-    const patch = { woo_status: status };
-    if (paid && !existing.paid) {
+    // Never overwrite delivered, scheduling, customer details, or manual notes.
+    // Refresh checkout amounts as well as payment: this repairs older imports
+    // that rounded coupons or excluded other checkout adjustments.
+    const patch = { woo_status: status, items: buildFinancialItems(wo, stock, existing.items), discount: null, shipping: 0 };
+    if (paid) {
       const payments = Array.isArray(existing.payments) ? existing.payments : [];
-      const have = payments.reduce((s, p) => s + (Number(p && p.amount) || 0), 0);
-      const balance = round2(wooAmountDue(wo) - have);
-      patch.payments = balance > 0.005 ? [...payments, wooPayment(wo, balance)] : payments;
+      const manual = payments.filter(p => p.id !== `p-woo-${wo.id}`);
+      const have = manual.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+      const balance = Math.max(0, round2(wooAmountDue(wo) - have));
+      patch.payments = balance > 0.005 ? [...manual, wooPayment(wo, balance)] : manual;
       patch.paid = true;
     }
-    if (DONE.has(status) && !existing.delivered) patch.delivered = true;
     await db.update('orders', db.eq('id', id), patch);
     action = 'updated';
   }

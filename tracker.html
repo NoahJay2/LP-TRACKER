@@ -767,7 +767,7 @@
         </div>
         <details class="integ-disclosure"><summary>How syncing works</summary><ul class="integ-rules">
           <li><b>Stock</b> — the tracker owns the count. Website orders deduct here once, and every change to a linked product updates the store.</li>
-          <li><b>Orders</b> — website orders mirror their WooCommerce status: Pending payment and On-hold show as unpaid, Processing → Paid, Completed → Paid + Fulfilled. WooCommerce sends its own payment emails and cancels unpaid orders; cancelled, failed or refunded web orders are removed and their stock returned. Orders placed before the store was connected are never imported, and a web order matching one you already entered (same customer, day and items) is skipped.</li>
+          <li><b>Orders</b> — website orders mirror their WooCommerce status: Pending payment and On-hold show as unpaid, Processing → Paid, Completed → Paid. Fulfillment is managed manually in the tracker. Checkout amounts include discounts and exclude shipping. WooCommerce sends its own payment emails and cancels unpaid orders; cancelled web orders are removed and their stock returned. Orders placed before the store was connected are never imported, and a web order matching one you already entered (same customer, day and items) is skipped.</li>
           <li><b>Products</b> — images and SKUs come from the store. Tracker products you don't link stay private.</li>
         </ul></details>
       </div>
